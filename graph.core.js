@@ -146,6 +146,7 @@
         const det = G.detectModeFromData();
         if (det) document.getElementById('axis-' + det).checked = true;
         G.colEnabled = {};
+        G.hot.getData()[0].forEach((_, c) => { G.colEnabled[c] = true; });
         G.resetScales(true);
         G.renderChart();
     };
@@ -187,6 +188,7 @@
         const svg = d3.select('#chart').append('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('preserveAspectRatio', 'xMidYMid meet').style('background', 'white');
         svg.append('rect').attr('id', 'chart-bg').attr('width', W).attr('height', H).attr('fill', 'white');
         G.initTable();
+        G.hot.getData()[0].forEach((_, c) => { G.colEnabled[c] = true; });
         G.bindScaleInputs();
         G.bindInspectorControls();
         G.bindSupSubControls();
