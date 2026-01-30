@@ -108,59 +108,147 @@
         if (bw > 0) G.previewSeries(G.rollingBaseline, bw, 'baseline-preview');
     };
 
+    const fileHandlers = { instanano: null, csv: 'text', txt: 'text', xls: 'xlsx', xlsx: 'xlsx', xrdml: 'xrdml' };
+    const fileModes = { xrdml: 'xrd', raw: 'xrd', spc: 'uvvis' };
+
     G.handleFileList = async function (src) {
-        const files = src.files || src.items ? [...(src.files || []), ...[...src.items].filter(i => i.kind === 'file').map(i => i.getAsFile())] : [];
+        const items = src && src.items;
+        const files = items && items.length ? await (async () => {
+            const out = [];
+            const readAll = r => new Promise(res => { const a = []; (function n() { r.readEntries(es => { if (!es.length) res(a); else { a.push(...es); n(); } }); })(); });
+            const walk = async (en, p = '') => en.isFile ? await new Promise(r => en.file(f => { f.relativePath = p + f.name; out.push(f); r(); })) : await Promise.all((await readAll(en.createReader())).map(e => walk(e, p + en.name + '/')));
+            for (const it of items) { const en = it.webkitGetAsEntry && it.webkitGetAsEntry(); if (en) await walk(en); }
+            return out;
+        })() : [...(src?.files || src || [])];
         if (!files.length) return;
+
         const nmrFiles = files.filter(f => ['fid', 'acqus', 'procs', 'proc2s'].includes(f.name.toLowerCase()));
-        if (nmrFiles.length) {
-            const rows = await G.parseNMR(nmrFiles);
-            if (rows) {
-                const tbl = [['X-axis', 'Y-axis'], [COLORS[0], COLORS[1]], ['ppm', 'Intensity'], ...rows];
-                G.hot.loadData(tbl);
-                document.getElementById('axis-nmr').checked = true;
-                G.colEnabled = {};
-                G.hot.getData()[0].forEach((_, c) => { G.colEnabled[c] = true; });
-                G.resetScales(true);
-                G.renderChart();
-                return;
-            }
+        if (nmrFiles.length && await G.parseNMR(nmrFiles)) return;
+
+        const file = files[0];
+        const ext = file.name.split('.').pop().toLowerCase();
+
+        if (ext === 'instanano') {
+            const text = await file.text();
+            G.importState(JSON.parse(text));
+            return;
         }
-        for (const file of files) {
-            const name = file.name.toLowerCase();
-            let rows;
-            if (name.endsWith('.instanano')) { G.loadProject(file); return; }
-            else if (name.endsWith('.xlsx') || name.endsWith('.xls')) rows = await G.parseXLSX(file);
-            else if (name.endsWith('.xrdml')) rows = await G.parseXRDML(file);
-            else rows = await G.parseTextFile(file);
-            if (rows && rows.length) {
-                const hasHeader = typeof rows[0][0] === 'string' && isNaN(parseFloat(rows[0][0]));
-                const xName = hasHeader ? rows[0][0] : 'X-axis';
-                const yNames = hasHeader ? rows[0].slice(1) : rows[0].slice(1).map((_, i) => 'Y-axis');
-                const dataRows = hasHeader ? rows.slice(1) : rows;
-                const numCols = (dataRows[0] || []).length;
-                const header = ['X-axis', ...Array(numCols - 1).fill('Y-axis')];
-                const colors = header.map((_, i) => COLORS[i % COLORS.length]);
-                const names = [xName, ...yNames.slice(0, numCols - 1)];
-                G.hot.loadData([header, colors, names, ...dataRows]);
-                break;
-            }
+
+        const handlerType = fileHandlers[ext];
+        if (!handlerType) { alert('Unsupported file type: .' + ext); return; }
+
+        if (fileModes[ext]) {
+            const radio = document.querySelector(`input[name="axistitles"][value="${fileModes[ext]}"]`);
+            if (radio) radio.checked = true;
         }
-        const det = G.detectModeFromData();
-        if (det) document.getElementById('axis-' + det).checked = true;
+
+        let rows;
+        if (handlerType === 'xlsx') {
+            rows = await G.parseXLSX(file);
+        } else if (handlerType === 'xrdml') {
+            rows = await G.parseXRDML(file);
+        } else {
+            rows = await G.parseTextFile(file);
+        }
+
+        if (!rows || !rows.length) return;
+
+        const n = Math.max(...rows.map(r => r.length));
+        const header = Array(n).fill().map((_, i) => i === 0 ? 'X-axis' : 'Y-axis');
+        const color = Array(n).fill().map((_, i) => COLORS[i % COLORS.length]);
+        const name = Array(n).fill('Sample');
+
+        G.hot.loadData([header, color, name, ...rows]);
         G.colEnabled = {};
         G.hot.getData()[0].forEach((_, c) => { G.colEnabled[c] = true; });
+        G.hot.render();
+
+        const mode = G.detectModeFromData();
+        if (mode) {
+            const radio = document.querySelector(`input[name="axistitles"][value="${mode}"]`);
+            if (radio) radio.checked = true;
+        }
+
+        d3.select('#chart').selectAll("g.axis-title, g.legend-group, g.shape-group, defs, foreignObject.user-text").remove();
+        G.disableAreaCal();
+        G.tickLabelStyles = { x: { fontSize: null, color: null }, y: { fontSize: null, color: null } };
         G.resetScales(true);
         G.renderChart();
+        G.checkEmptyColumns();
     };
 
     G.bindFileHandlers = function () {
         const fileinput = document.getElementById('fileinput');
         const dropzone = document.getElementById('dropzone');
+
+        // Set accepted file types
+        fileinput.accept = Object.keys(fileHandlers).map(ext => '.' + ext).join(',');
+
         dropzone.addEventListener('click', () => fileinput.click());
-        dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
-        dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
-        dropzone.addEventListener('drop', async e => { e.preventDefault(); dropzone.classList.remove('dragover'); await G.handleFileList(e.dataTransfer); });
+        ['dragenter', 'dragover'].forEach(evt => dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.add('hover'); }));
+        ['dragleave', 'drop'].forEach(evt => dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.remove('hover'); }));
+        dropzone.addEventListener('drop', async e => { e.preventDefault(); dropzone.classList.remove('hover'); await G.handleFileList(e.dataTransfer); });
         fileinput.addEventListener('change', async () => { await G.handleFileList(fileinput); fileinput.value = ''; });
+    };
+
+    G.bindChartTypeControls = function () {
+        const controls = document.querySelectorAll('input[id]');
+        const showEls = document.querySelectorAll('[data-show]');
+        const radios = document.querySelectorAll('input[name="charttype"]');
+
+        radios.forEach(radio => radio.addEventListener('change', () => {
+            controls.forEach(ctl => {
+                ctl.value = radio.dataset[ctl.id] ?? ctl.dataset?.defaultValue ?? ctl.defaultValue;
+                ctl.dispatchEvent(new Event('input'));
+            });
+
+            showEls.forEach(el => {
+                el.style.display = el.dataset.show.split(/\s+/).includes(radio.id) ? '' : 'none';
+            });
+            const specs = radio.dataset.axis?.split(/\s*,\s*/).map(s => s.trim());
+            if (specs) {
+                const d = G.hot.getData();
+                while (d[0].length < specs.length) {
+                    d.forEach((r, i) => r.push(i === 0 ? specs[r.length].replace('*', '') : i === 1 ? COLORS[r.length % COLORS.length] : i === 2 ? "Sample" : ""));
+                }
+                G.hot.loadData(d);
+
+                let p = specs.findIndex(s => s.endsWith('*'));
+                if (p < 0) p = specs.length;
+                const patterns = specs.map(s => s.replace(/\*$/, ''));
+                const wild = patterns.slice(p);
+
+                G.hot.getData()[0].forEach((orig, i) => {
+                    const lbl = i < p ? patterns[i] : (wild.length ? wild[(i - p) % wild.length] : orig);
+                    G.hot.setDataAtCell(0, i, lbl);
+                    G.colEnabled[i] = G.colEnabled[i] && patterns.includes(lbl);
+                });
+                G.hot.render();
+            }
+
+            G.resetScales(false);
+            G.renderChart();
+            G.checkEmptyColumns();
+        }));
+
+        document.querySelector('input[name="charttype"]:checked')?.dispatchEvent(new Event('change'));
+    };
+
+    G.bindSliderControls = function () {
+        ['smoothingslider', 'baselineslider', 'multiyaxis'].forEach(id => {
+            const input = document.getElementById(id);
+            if (!input) return;
+            function updateThumbColor() { input.classList.toggle('zero', input.value === '0'); }
+            input.addEventListener('input', updateThumbColor);
+            updateThumbColor();
+        });
+
+        document.querySelectorAll('span[data-current-value]').forEach(span => {
+            const slider = document.getElementById(span.dataset.currentValue);
+            if (!slider || slider.type !== 'range') return;
+            span.textContent = slider.value;
+            slider.oninput = () => { span.textContent = slider.value; };
+        });
     };
 
     G.bindKeyboardShortcuts = function () {
@@ -174,12 +262,12 @@
                 if (match) { e.preventDefault(); fn(); }
             });
         }
-        keyBinder(`${modKey}+s`, () => document.getElementById('save').click());
-        keyBinder(`${modKey}+d`, () => document.getElementById('download').click());
+        keyBinder(`${modKey}+s`, () => document.getElementById('save')?.click());
+        keyBinder(`${modKey}+d`, () => document.getElementById('download')?.click());
         keyBinder(`${modKey}+z`, () => { G.resetScales(true); G.renderChart(); });
         keyBinder('Escape', () => G.clearActive());
-        keyBinder('Delete', () => { if (G.activeGroup || G.activeFo) document.getElementById('removebtn').click(); });
-        keyBinder('Backspace', () => { if (G.activeGroup || G.activeFo) document.getElementById('removebtn').click(); });
+        keyBinder('Delete', () => { if (G.activeGroup || G.activeFo) document.getElementById('removebtn')?.click(); });
+        keyBinder('Backspace', () => { if (G.activeGroup || G.activeFo) document.getElementById('removebtn')?.click(); });
     };
 
     G.init = function () {
@@ -190,7 +278,6 @@
         const svg = d3.select('#chart').append('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('preserveAspectRatio', 'xMidYMid meet').style('background', 'white');
         svg.append('rect').attr('id', 'chart-bg').attr('width', W).attr('height', H).attr('fill', 'white');
         G.initTable();
-        // Initialize colEnabled for all columns in the default table data
         G.hot.getData()[0].forEach((_, c) => { G.colEnabled[c] = true; });
         G.bindScaleInputs();
         G.bindInspectorControls();
@@ -203,9 +290,12 @@
         G.bindFileHandlers();
         G.bindExportControls();
         G.bindKeyboardShortcuts();
+        G.bindChartTypeControls();
+        G.bindSliderControls();
         G.prepareShapeLayer();
         G.areacalculation();
-        document.querySelectorAll('input[name="charttype"], input[name="axistitles"], #multiyaxis, #linewidth, #symbolsize, #bins, #opacity').forEach(el => el.addEventListener('change', () => G.renderChart()));
+
+        document.querySelectorAll('input[name="axistitles"], #multiyaxis, #linewidth, #symbolsize, #bins, #opacity').forEach(el => el.addEventListener('change', () => G.renderChart()));
         document.querySelectorAll('input[name="aspectratio"]').forEach(el => el.addEventListener('change', function () {
             const [nw, nh] = this.value.split(':').map(Number);
             const W2 = 600, H2 = W2 * nh / nw;
