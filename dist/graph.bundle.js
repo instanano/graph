@@ -875,9 +875,6 @@ window.GraphPlotter = window.GraphPlotter || {};
     };
 
 })(window.GraphPlotter);
-
-
-// test
 (function (G) {
     const DIM = G.DIM;
 
