@@ -1,0 +1,78 @@
+# GitHub Actions workflow to automatically build bundle
+# Triggers on every push to main branch
+# Creates dist/graph.bundle.js and dist/graph.bundle.min.js
+
+name: Build Bundle
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**.js'
+      - '!dist/**'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install terser for minification
+        run: npm install -g terser
+
+      - name: Create dist folder
+        run: mkdir -p dist
+
+      - name: Build bundle
+        run: |
+          cat \
+            core/config.js \
+            core/utils.js \
+            core/registry.js \
+            table/table.js \
+            charts/line.js \
+            charts/scatter.js \
+            charts/bar.js \
+            charts/area.js \
+            charts/ternary.js \
+            axis/scales.js \
+            axis/draw.js \
+            axis/edit.js \
+            ui/legend.js \
+            ui/tooltip.js \
+            ui/inspector.js \
+            features/shapes.js \
+            features/zoom.js \
+            features/smoothing.js \
+            features/fitting.js \
+            features/tauc.js \
+            parsers/parsers.js \
+            parsers/nmr.js \
+            match/core.js \
+            export/export.js \
+            graph.core.js \
+            > dist/graph.bundle.js
+
+      - name: Minify bundle
+        run: terser dist/graph.bundle.js -o dist/graph.bundle.min.js -c -m
+
+      - name: Show bundle sizes
+        run: |
+          echo "📊 Bundle sizes:"
+          ls -lh dist/*.js | awk '{print $5, $9}'
+
+      - name: Commit built files
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add dist/
+          git diff --staged --quiet || git commit -m "🔨 Auto-build: Update bundle files"
+          git push
