@@ -2235,12 +2235,12 @@ window.overrideScaleformatY = {};
         const data = G.hot.getData(), header = data[0], series = [], rows = data.slice(3);
         let xCol = -1, zCol = -1;
         for (let c = 0; c < header.length; c++) {
-            if (header[c] === 'X-axis' && G.colEnabled[c]) { xCol = c; zCol = -1; }
-            else if (header[c] === 'Z-axis' && G.colEnabled[c]) { zCol = c; }
-            else if (header[c] === 'Y-axis' && G.colEnabled[c]) {
+            if (header[c] === 'X-axis' && G.colEnabled[c] !== false) { xCol = c; zCol = -1; }
+            else if (header[c] === 'Z-axis' && G.colEnabled[c] !== false) { zCol = c; }
+            else if (header[c] === 'Y-axis' && G.colEnabled[c] !== false) {
                 let errorCol = -1;
                 for (let ec = c + 1; ec < header.length && header[ec] !== 'X-axis' && header[ec] !== 'Y-axis'; ec++) {
-                    if (header[ec] === 'Y-error' && G.colEnabled[ec]) { errorCol = ec; break; }
+                    if (header[ec] === 'Y-error' && G.colEnabled[ec] !== false) { errorCol = ec; break; }
                 }
                 const sv = { rawX: [], x: [], y: [], z: zCol >= 0 ? [] : undefined, color: data[1][c], label: data[2][c], error: errorCol >= 0 ? [] : undefined, errorColor: errorCol >= 0 ? data[1][errorCol] : undefined };
                 for (const row of rows) {
@@ -2347,6 +2347,8 @@ window.overrideScaleformatY = {};
                 const tbl = [['X-axis', 'Y-axis'], [COLORS[0], COLORS[1]], ['ppm', 'Intensity'], ...rows];
                 G.hot.loadData(tbl);
                 document.getElementById('axis-nmr').checked = true;
+                G.colEnabled = {};
+                G.hot.getData()[0].forEach((_, c) => { G.colEnabled[c] = true; });
                 G.resetScales(true);
                 G.renderChart();
                 return;
@@ -2417,6 +2419,7 @@ window.overrideScaleformatY = {};
         const svg = d3.select('#chart').append('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('preserveAspectRatio', 'xMidYMid meet').style('background', 'white');
         svg.append('rect').attr('id', 'chart-bg').attr('width', W).attr('height', H).attr('fill', 'white');
         G.initTable();
+        // Initialize colEnabled for all columns in the default table data
         G.hot.getData()[0].forEach((_, c) => { G.colEnabled[c] = true; });
         G.bindScaleInputs();
         G.bindInspectorControls();
