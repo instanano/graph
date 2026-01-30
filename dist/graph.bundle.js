@@ -1,4 +1,8 @@
 window.GraphPlotter = window.GraphPlotter || {};
+window.minorTickOn = {};
+window.useCustomTicksOn = {};
+window.overrideScaleformatY = {};
+
 (function (G) {
     G.COLORS = ["#FFFF00", "#000000", "#0000FF", "#FF0000", "#008000", "#00FFFF", "#FF00FF", "#FFA500", "#800080", "#A52A2A"];
     G.DIM = { W: 600, H: 300, MT: 30, MB: 60, ML: 70, MR: 80 };
