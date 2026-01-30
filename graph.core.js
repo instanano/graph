@@ -180,7 +180,7 @@
     };
 
     G.init = function () {
-        const ratio = document.getElementById('chartaspectratio')?.value || '4:2.85';
+        const ratio = document.querySelector('input[name="aspectratio"]:checked')?.value || '4:2.85';
         const [w, h] = ratio.split(':').map(Number);
         const W = 600, H = W * h / w;
         G.DIM.W = W; G.DIM.H = H;
@@ -201,14 +201,14 @@
         G.prepareShapeLayer();
         G.areacalculation();
         document.querySelectorAll('input[name="charttype"], input[name="axistitles"], #multiyaxis, #linewidth, #symbolsize, #bins, #opacity').forEach(el => el.addEventListener('change', () => G.renderChart()));
-        document.getElementById('chartaspectratio')?.addEventListener('change', function () {
+        document.querySelectorAll('input[name="aspectratio"]').forEach(el => el.addEventListener('change', function () {
             const [nw, nh] = this.value.split(':').map(Number);
             const W2 = 600, H2 = W2 * nh / nw;
             G.DIM.W = W2; G.DIM.H = H2;
             d3.select('#chart svg').attr('viewBox', `0 0 ${W2} ${H2}`).select('#chart-bg').attr('width', W2).attr('height', H2);
             G.resetScales(true);
             G.renderChart();
-        });
+        }));
         svg.on('click', e => { if (e.target === svg.node() || e.target.id === 'chart-bg') G.clearActive(); });
         G.renderChart();
     };
