@@ -1,4 +1,5 @@
 (function(G) {
+    "use strict";
     G.axis.tickEditing = function(svg) {
         svg.selectAll("g.tick,path.domain,text.tick-label,line.minor-tick,g.tick line").style("cursor","pointer").on("click",event=>{
         event.stopPropagation(); G.utils.clearActive();
@@ -23,7 +24,6 @@
         const okA=axisName==="X"||isY||isABC; chk.disabled=!okA; chk.checked=!!(G.state.useCustomTicksOn&&G.state.useCustomTicksOn[key]); sf.disabled = isABC;
         tc.disabled=chk.checked;ctk.disabled=!chk.checked; const smt = document.getElementById('showMinorTicks'); smt.disabled = false; smt.checked = G.state.minorTickOn[key] !== false; });
     };
-
     function bindScaleInput(id, isMin) {
         document.getElementById(id).addEventListener("input", e => { const me = parseFloat(e.target.value),
         other = parseFloat( document.getElementById(id === "scalemin" ? "scalemax" : "scalemin").value);
@@ -31,21 +31,18 @@
         else if (window.selectedAxisName.startsWith("Y")) { const yi = window.activeYi || 0; G.state.overrideMultiY = G.state.overrideMultiY || {};
         G.state.overrideMultiY[yi] = isMin ? [me, other] : [other, me];} else if (["A","B","C"].includes(window.selectedAxisName)) { const letter = window.selectedAxisName.toLowerCase(); G.state.overrideTernary = G.state.overrideTernary || {}; G.state.overrideTernary[letter] = isMin ? [me, other] : [other, me];} G.renderChart();});
     } bindScaleInput("scalemin", true); bindScaleInput("scalemax", false);
-
     document.getElementById('tickcount').addEventListener('input', function(){
         const n = +this.value; if (window.selectedAxisName === "X") { G.state.overrideXTicks = n;}
         else if (window.selectedAxisName === "Y" || window.selectedAxisName.startsWith("Y")) {
         const yi = window.activeYi; G.state.overrideYTicks = G.state.overrideYTicks||{}; G.state.overrideYTicks[yi] = n;}
         else if (["A","B","C"].includes(window.selectedAxisName)) { G.state.overrideTernaryTicks = G.state.overrideTernaryTicks||{};
         G.state.overrideTernaryTicks[ window.selectedAxisName.toLowerCase() ] = n;} G.renderChart();});
-        
     document.getElementById('scaleformat').addEventListener('input', function() {
         const v = +this.value; document.querySelector('label[for="scaleformat"]').textContent = ["Format: 00","Format: K","Format: e"][v]; 
         if (window.selectedAxisName === "X") { G.state.overrideScaleformatX = v;}
         else if (window.selectedAxisName.startsWith("Y")) { const yi = window.activeYi || 0;
         G.state.overrideScaleformatY = G.state.overrideScaleformatY || {};
         G.state.overrideScaleformatY[yi] = v;} G.renderChart();});
-        
     document.getElementById('customticks').addEventListener('input', function() {
         const txt = this.value.trim(); const vals = txt ? txt.split(',').map(s => parseFloat(s.trim())).filter(v => !isNaN(v)) : null;
         if (window.selectedAxisName === "X") { G.state.overrideCustomTicksX = vals;} else if (window.selectedAxisName.startsWith("Y")) 
@@ -55,7 +52,6 @@
         && !['tick-label','tick-x','tick-y'].includes(c)); if (cls) { const letter = cls.split('-')[1]; 
         G.state.overrideCustomTicksTernary = G.state.overrideCustomTicksTernary || {};
         if (vals) G.state.overrideCustomTicksTernary[letter] = vals; else delete G.state.overrideCustomTicksTernary[letter];}} G.renderChart();});
-        
     document.getElementById('useCustomTicks').addEventListener('change',function(){
         const use=this.checked,ct=document.getElementById('customticks'),tc=document.getElementById('tickcount'); ct.disabled=!use;tc.disabled=use;
         const key=window.selectedAxisName==='X'?'X':window.selectedAxisName.startsWith('Y')?('Y'+(window.activeYi||0)):window.selectedAxisName;
@@ -66,7 +62,6 @@
         G.state.overrideCustomTicksY[yi]=vals;} else{const l=key.toLowerCase(); G.state.overrideCustomTicksTernary=G.state.overrideCustomTicksTernary||{};G.state.overrideCustomTicksTernary[l]=vals;} }else{ if(key==='X'){G.state.overrideCustomTicksX=null;}
         else if(key.startsWith('Y')){const yi=window.activeYi||0;G.state.overrideCustomTicksY&&delete G.state.overrideCustomTicksY[yi];}
         else{const l=key.toLowerCase();G.state.overrideCustomTicksTernary&&delete G.state.overrideCustomTicksTernary[l];}} G.renderChart();});
-
     document.getElementById('showMinorTicks').addEventListener('change', function(){
         if (!window.selectedAxisName) return; let key = window.selectedAxisName==='X' ? 'X' : window.selectedAxisName.startsWith('Y') ? ('Y'+(window.activeYi||0)) : window.selectedAxisName; G.state.minorTickOn[key] = this.checked; G.renderChart();});
 })(window.GraphPlotter);
