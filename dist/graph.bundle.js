@@ -230,6 +230,7 @@ window.GraphPlotter = window.GraphPlotter || {
     });
 })(window.GraphPlotter);
 (function(G) {
+    "use strict";
     function drawTernaryPlot(g, series, s, opts = {}) {
         G.axis.drawTernaryAxis(g, s); const DIM = G.config.DIM; const availW = DIM.W - DIM.ML - DIM.MR; const availH = DIM.H - DIM.MT - DIM.MB;
         const side = Math.min(availW, 2 * availH / Math.sqrt(3)); const triH = side * Math.sqrt(3) / 2;
@@ -247,7 +248,6 @@ window.GraphPlotter = window.GraphPlotter || {
         .attr("fill", "none").attr("stroke", sv.color).attr("stroke-width", s.linewidth).attr("d", lineGen);}
         if (opts.symbol) { const sym = d3.symbol().type(G.config.SYMBOL_TYPES[idx % G.config.SYMBOL_TYPES.length]).size(Math.PI * s.symbolsize ** 2);
         points.forEach(d => g.append("path").attr("d", sym).attr("transform", `translate(${d.x},${d.y})`).attr("fill", sv.color));}}); }
-    
     G.ChartRegistry.register({id: "ternary", dimensions: ["x", "y", "z"], draw: (g, series, scales, s) => { G.axis.drawTernaryGridLines(g, s); drawTernaryPlot(g, series, s, { symbol: true });}});
     G.ChartRegistry.register({id: "ternaryline", dimensions: ["x", "y", "z"], draw: (g, series, scales, s) => { G.axis.drawTernaryGridLines(g, s); drawTernaryPlot(g, series, s, { symbol: true, line: true });}});
     G.ChartRegistry.register({id: "ternaryarea", dimensions: ["x", "y", "z"], draw: (g, series, scales, s) => { G.axis.drawTernaryGridLines(g, s); drawTernaryPlot(g, series, s, { area: true });}});
