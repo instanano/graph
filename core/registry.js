@@ -1,4 +1,5 @@
 (function(G) {
+    "use strict";
     const types = new Map();
     G.ChartRegistry = {
         register(def) {
