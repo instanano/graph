@@ -979,22 +979,11 @@ window.GraphPlotter = window.GraphPlotter || {
         const payload = { axis: axisType, paid: upsellData.paid, message: randomMsg, timestamp: Date.now() };
         sessionStorage.setItem(GRAPH_UPSELL_STORAGE, JSON.stringify(payload));
     }
-    const initUpsell = function() {
-        if (typeof jQuery !== 'undefined') {
-            jQuery('#download').on('click', storeGraphUpsell);
-            jQuery('#save').on('click', storeGraphUpsell);
-        } else {
-            const dl = document.getElementById('download');
-            const sv = document.getElementById('save');
-            if (dl) dl.addEventListener('click', storeGraphUpsell);
-            if (sv) sv.addEventListener('click', storeGraphUpsell);
+    document.addEventListener("click", function(e) {
+        if (e.target && (e.target.id === "download" || e.target.id === "save")) {
+            storeGraphUpsell();
         }
-    };
-    if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", initUpsell);
-    } else {
-        initUpsell();
-    }
+    });
 })(window.GraphPlotter);
 (function(G) {
     "use strict";
