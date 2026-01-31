@@ -971,7 +971,6 @@ window.GraphPlotter = window.GraphPlotter || {
     };
     const GRAPH_UPSELL_STORAGE = "instanano_graph_upsell";
     function storeGraphUpsell() {
-        if (sessionStorage.getItem(GRAPH_UPSELL_STORAGE)) return;
         const axisRadio = document.querySelector('input[name="axistitles"]:checked');
         const axisType = axisRadio ? axisRadio.value : "default";
         const upsellData = GRAPH_UPSELL[axisType] || GRAPH_UPSELL.default;
@@ -980,7 +979,10 @@ window.GraphPlotter = window.GraphPlotter || {
         sessionStorage.setItem(GRAPH_UPSELL_STORAGE, JSON.stringify(payload));
     }
     document.addEventListener("click", function(e) {
-        if (e.target && (e.target.id === "download" || e.target.id === "save")) {
+        if (e.target && (e.target.id === "download" || e.target.closest("#download"))) {
+            storeGraphUpsell();
+        }
+        if (e.target && (e.target.id === "save" || e.target.closest("#save"))) {
             storeGraphUpsell();
         }
     });
