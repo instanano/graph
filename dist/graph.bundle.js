@@ -22,6 +22,7 @@ window.GraphPlotter = window.GraphPlotter || {
     };
 })(window.GraphPlotter);
 (function(G) {
+    "use strict";
     G.utils.clearActive = function() { 
         const S = G.state;
         if (S.activeGroup) { S.activeGroup.select(".outline").attr("visibility", "hidden"); S.activeGroup = null;}
@@ -34,9 +35,7 @@ window.GraphPlotter = window.GraphPlotter || {
         window.getSelection().removeAllRanges();
         ['scalemin','scalemax','tickcount','scaleformat','customticks','useCustomTicks','showMinorTicks'].forEach(id => { document.getElementById(id).disabled = true;});
     };
-
     G.utils.rgbToHex = function(rgb) { return "#"+rgb.match(/\d+/g).map(n=>(+n).toString(16).padStart(2,"0")).join(""); };
-
     function dragStarted(event) {
         G.state.hot.deselectCell(); event.sourceEvent.preventDefault(); G.utils.clearActive(); const sel = d3.select(this).raise(); 
         if (sel.classed("shape-group")) { G.features.activateShape(sel);} else { const fo  = sel.node().tagName === "foreignObject" ? sel : sel.select("foreignObject"); const div = fo.select("div"); G.features.activateText(div, fo); setTimeout(() => { window.getSelection().selectAllChildren(div.node());}, 0);}
@@ -51,7 +50,6 @@ window.GraphPlotter = window.GraphPlotter || {
         const div = sel.select("foreignObject div"); if (sel.classed("legend-group")) { this.dataset.savedTransform = sel.attr("transform");} div.on("blur", () => { div.attr("contenteditable", false).style("cursor", "move");});}
     }
     G.utils.applyDrag = d3.drag().on("start", dragStarted).on("drag", dragged).on("end", dragEnded);
-
     G.utils.updateInspector = function(selection) {
         const node = selection.node(); const cs = window.getComputedStyle(node);
         const size = parseFloat(selection.attr("stroke-width")) || parseInt(cs.fontSize, 10);
@@ -66,7 +64,6 @@ window.GraphPlotter = window.GraphPlotter || {
         G.ui.refs.italicBtn.classed("active", isItalic);    
         G.ui.refs.rmBtn.classed("disabled", false);
     };
-
     G.utils.editableText = function(container, { x, y, text, rotation }) {
         const pad = 2; const fo = container.append("foreignObject").attr("x", x).attr("y", y)
         .attr("transform", rotation ? `rotate(${rotation},${x},${y})` : null).attr("overflow", "visible");
