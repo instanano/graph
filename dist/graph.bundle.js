@@ -1000,11 +1000,11 @@ window.GraphPlotter = window.GraphPlotter || {
     }
 })(window.GraphPlotter);
 (function(G) {
+    "use strict";
     const CDN_BASE = 'https://cdn.jsdelivr.net/gh/instanano/graph@latest/match/';
     const matchDataCache = {};
     const buffers = {ftirmatch:{range:20,single:50},xpsmatch:{range:1,single:0.5},ramanmatch:{range:10,single:30},uvvismatch:{range:20,single:40},hnmrmatch:{range:0.2,single:0.5},cnmrmatch:{range:10,single:20}};
     const headers = {ftirmatch:['Peak Position','Group','Class','Intensity'],xpsmatch:['Peak Position','Group','Material','Notes'],ramanmatch:['Raman Shift (cm⁻¹)','Material','Mode','Notes'],uvvismatch:['λmax (nm)','Material','Characteristic','Description'],hnmrmatch:['Chemical Shift (ppm)','Type','Assignment','Description'],cnmrmatch:['Chemical Shift (ppm)','Type','Assignment','Description']};
-    
     async function loadMatchData(id) {
         if (matchDataCache[id]) return matchDataCache[id];
         try {
@@ -1029,7 +1029,6 @@ window.GraphPlotter = window.GraphPlotter || {
         return parts.length > 1 ? (xVal >= parts[0] - buf.range && xVal <= parts[1] + buf.range) : Math.abs(xVal - parts[0]) <= buf.single;});
         d3.select('#matchedData').html(matches.length ? renderMatches(matches, cols) : '<p>No matching peaks found.</p>');
     }
-    
     d3.select('#matchedData').html('<p>Please click any peak.</p>');
     document.getElementById('icon5').addEventListener('change', function() {
     if (this.checked) loadMatchData(document.querySelector('input[name="matchinstrument"]:checked').id);});
