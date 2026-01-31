@@ -564,13 +564,13 @@ window.GraphPlotter = window.GraphPlotter || {
     }
 })(window.GraphPlotter);
 (function(G) {
+    "use strict";
     G.ui.toolTip = function(svg, opts) {
         const tooltip = d3.select('#tooltip'); svg.on('mousemove', function(event) { const [mx, my] = d3.pointer(event, svg.node()); 
         if ( mx < G.config.DIM.ML || mx > G.config.DIM.W - G.config.DIM.MR || my < G.config.DIM.MT || my > G.config.DIM.H - G.config.DIM.MB) return;
         const xVal = opts.xScale.invert(mx).toFixed(4); const yVal = opts.yScale.invert(my).toFixed(4);
         tooltip.html("X-Scale:<b> " + xVal + "</b><br>Y-Scale:<b> " + yVal + "</b>");});
     }
-
     G.ui.areacalculation = function(){
         const svg = d3.select("#chart svg"); if(svg.empty()) return;
         const brush = d3.brushX().extent([[G.config.DIM.ML,G.config.DIM.MT],[G.config.DIM.W-G.config.DIM.MR,G.config.DIM.H-G.config.DIM.MB]]).on("end", brushed),
