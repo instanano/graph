@@ -1,4 +1,5 @@
 (function(G) {
+    "use strict";
     document.getElementById('generateTauc').addEventListener('click', () => {
         const exp = parseFloat(document.querySelector('input[name="tauc"]:checked').value); const raw = G.state.hot.getData().map(r => r.slice());
         const header = raw[0], colors = raw[1], names = raw[2]; const origLen = header.length; const xIdx = header.indexOf('X-axis');
