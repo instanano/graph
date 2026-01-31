@@ -971,6 +971,7 @@ window.GraphPlotter = window.GraphPlotter || {
     }
 })(window.GraphPlotter);
 (function(G) {
+    "use strict";
     G.parsers.parseNMR = async function(files){
         const pathOf = f => (f.webkitRelativePath||f.relativePath||f.name).replace(/\\/g,'/');
         if (!files || !files.length) return false; const M = new Map(files.map(f => [pathOf(f), f]));
