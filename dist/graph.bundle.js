@@ -971,24 +971,29 @@ window.GraphPlotter = window.GraphPlotter || {
     };
     const GRAPH_UPSELL_STORAGE = "instanano_graph_upsell";
     function storeGraphUpsell() {
-        if (sessionStorage.getItem(GRAPH_UPSELL_STORAGE)) return; 
+        if (sessionStorage.getItem(GRAPH_UPSELL_STORAGE)) return;
         const axisRadio = document.querySelector('input[name="axistitles"]:checked');
-        const axisType = axisRadio ? axisRadio.value : "default"; 
+        const axisType = axisRadio ? axisRadio.value : "default";
         const upsellData = GRAPH_UPSELL[axisType] || GRAPH_UPSELL.default;
         const randomMsg = upsellData.msg[Math.floor(Math.random() * upsellData.msg.length)];
         const payload = { axis: axisType, paid: upsellData.paid, message: randomMsg, timestamp: Date.now() };
         sessionStorage.setItem(GRAPH_UPSELL_STORAGE, JSON.stringify(payload));
     }
-    function bindUpsellEvents() {
-        const dl = document.getElementById('download');
-        const sv = document.getElementById('save');
-        if(dl) dl.addEventListener('click', storeGraphUpsell);
-        if(sv) sv.addEventListener('click', storeGraphUpsell);
-    }
+    const initUpsell = function() {
+        if (typeof jQuery !== 'undefined') {
+            jQuery('#download').on('click', storeGraphUpsell);
+            jQuery('#save').on('click', storeGraphUpsell);
+        } else {
+            const dl = document.getElementById('download');
+            const sv = document.getElementById('save');
+            if (dl) dl.addEventListener('click', storeGraphUpsell);
+            if (sv) sv.addEventListener('click', storeGraphUpsell);
+        }
+    };
     if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", bindUpsellEvents);
+        document.addEventListener("DOMContentLoaded", initUpsell);
     } else {
-        bindUpsellEvents();
+        initUpsell();
     }
 })(window.GraphPlotter);
 (function(G) {
