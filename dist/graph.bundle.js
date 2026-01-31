@@ -78,16 +78,14 @@ window.GraphPlotter = window.GraphPlotter || {
         d3.select(div.node()).style("cursor", "move");}); return { fo, div, pad };
     };
 })(window.GraphPlotter);
-(function (G) {
+(function(G) {
     const types = new Map();
     G.ChartRegistry = {
-        register: function (def) {
-            if (!def.id || typeof def.draw !== "function") {
-                throw new Error("Invalid chart registration");
-            }
+        register(def) {
+            if (!def.id || typeof def.draw !== "function") { throw new Error("Invalid chart registration"); }
             types.set(def.id, def);
         },
-        get: function (id) {
+        get(id) {
             const chart = types.get(id);
             if (!chart) throw new Error(`Unknown chart type: ${id}`);
             return chart;
