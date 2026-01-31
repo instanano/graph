@@ -36,7 +36,7 @@
         mode = S.overrideScaleformatTernary?.[axisKey] ?? 0;} return mode === 1 ? ABBR : mode === 2 ? SCI : FULL;
     }
     G.axis.addMinorTicks = function(axisGroup, scale, axisCtor, count = 0, size = 4, strokeWidth = 1, strokeColor = 'currentColor') {
-        if (typeof scale.ticks !== 'function') return; let custom = null, key = null;
+        if (typeof scale.ticks !== 'function') return; let custom = null, key = null, sel = false; // FIXED: Added 'sel' declaration
         if (axisGroup.attr('data-xi') != null) { custom = G.state.overrideCustomTicksX || null; sel = window.selectedAxisName === 'X'; key = 'X'; }
         else if (axisGroup.attr('data-yi') != null) { const yi = +axisGroup.attr('data-yi'); custom = (G.state.overrideCustomTicksY && G.state.overrideCustomTicksY[yi]) || null; sel = window.selectedAxisName === (yi === 0 ? 'Y' : ('Y' + (yi + 1))); key = 'Y'+yi;}
         else if (axisGroup.attr('data-ai') != null) { custom = G.state.overrideCustomTicksTernary?.a || null; sel = window.selectedAxisName === 'A'; key = 'A';}
