@@ -16,11 +16,13 @@
                 const sv = { rawX: [], x: [], y: [], z: zCol >= 0 ? [] : undefined, color: data[1][c], label: data[2][c], error: errorCol >= 0 ? [] : undefined, errorColor: errorCol >= 0 ? data[1][errorCol] : undefined };
                 for (const row of rows) {
                     const xv = parseFloat(row[xCol]), yv = parseFloat(row[c]);
-                    sv.rawX.push(row[xCol]);
-                    sv.x.push(xv);
-                    sv.y.push(yv);
-                    if (zCol >= 0) sv.z.push(parseFloat(row[zCol]));
-                    if (errorCol >= 0) sv.error.push(parseFloat(row[errorCol]));
+                    if (Number.isFinite(xv) && Number.isFinite(yv)) {
+                        sv.rawX.push(row[xCol]);
+                        sv.x.push(xv);
+                        sv.y.push(yv);
+                        if (zCol >= 0) sv.z.push(parseFloat(row[zCol]));
+                        if (errorCol >= 0) sv.error.push(parseFloat(row[errorCol]));
+                    }
                 }
                 series.push(sv);
             }
@@ -70,6 +72,7 @@
             svg.selectAll('g.legend-group').each(function () { savedLegends.push({ col: d3.select(this).attr('data-col'), transform: this.dataset.savedTransform || d3.select(this).attr('transform') }); });
             svg.selectAll('g.axis-title').each(function () { savedAxisTitles.push({ class: d3.select(this).attr('class'), transform: d3.select(this).attr('transform'), html: d3.select(this).select('foreignObject div').html() }); });
             svg.selectAll('g:not(.defs), path.series-path, foreignObject, line, rect:not(#chart-bg)').remove();
+
             const series = G.getSeries();
             const s = G.getSettings();
             const titles = G.getTitles(s.mode);
@@ -78,16 +81,29 @@
             G.computeMultiYScales(scales, s, series);
             window.lastXScale = xScale;
             window.lastYScale = yScale;
+
             G.drawAxis(svg, scales, titles, s, series);
             const chartDef = G.ChartRegistry.get(s.type);
+
+            // Fix clipPath update
             const clipId = 'clip';
             let defs = svg.select('defs');
             if (defs.empty()) defs = svg.append('defs');
-            if (defs.select('#' + clipId).empty()) {
-                defs.append('clipPath').attr('id', clipId).append('rect').attr('x', DIM.ML).attr('y', DIM.MT).attr('width', DIM.W - DIM.ML - DIM.MR).attr('height', DIM.H - DIM.MT - DIM.MB);
+            let clipGroup = defs.select('#' + clipId);
+            if (clipGroup.empty()) {
+                clipGroup = defs.append('clipPath').attr('id', clipId);
+                clipGroup.append('rect');
             }
+            // Always update clip rect dimensions
+            clipGroup.select('rect')
+                .attr('x', DIM.ML)
+                .attr('y', DIM.MT)
+                .attr('width', DIM.W - DIM.ML - DIM.MR)
+                .attr('height', DIM.H - DIM.MT - DIM.MB);
+
             const g = svg.append('g').attr('clip-path', `url(#${clipId})`);
             chartDef.draw(g, series, scales, s);
+
             G.drawLegend();
             G.tickEditing(svg);
             G.toolTip(svg, { xScale, yScale });
@@ -242,9 +258,6 @@
             G.renderChart();
             G.checkEmptyColumns();
         }));
-
-        const checkedRadio = document.querySelector('input[name="charttype"]:checked');
-        if (checkedRadio) checkedRadio.dispatchEvent(new Event('change'));
     };
 
     G.bindSliderControls = function () {
@@ -321,8 +334,10 @@
             svg.on('click', e => { if (e.target === svg.node() || e.target.id === 'chart-bg') G.clearActive(); });
 
             G.bindChartTypeControls();
-            G.resetScales(true);
-            G.renderChart();
+            // Trigger initial chart type setup
+            const checkedRadio = document.querySelector('input[name="charttype"]:checked');
+            if (checkedRadio) checkedRadio.dispatchEvent(new Event('change'));
+
         } catch (err) {
             console.error('init error:', err);
         }
