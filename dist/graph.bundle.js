@@ -1023,122 +1023,52 @@ window.GraphPlotter = window.GraphPlotter || {
         G.state.hot.loadData([header,color,names,...rows]); document.getElementById('axis-nmr').checked=true; G.axis.resetScales(true); G.renderChart(); return true
     }
 })(window.GraphPlotter);
-(function (G) {
-    const CDN_BASE = 'https://cdn.jsdelivr.net/gh/instanano/graph@latest/match';
-    let compositions = null;
-
-    G.MatchEngine = {
-        materials: null,
-        threshold: 50,
-
-        async loadDB(type) {
-            const url = `${CDN_BASE}/${type}/match.json`;
-            const res = await fetch(url);
-            if (!res.ok) return [];
-            this.materials = await res.json();
-            return this.materials;
-        },
-
-        match(peakPositions, options = {}) {
-            const { tolerance = 20, limit = 50, mode } = options;
-            if (!this.materials || !peakPositions.length) return [];
-            const results = [];
-            for (const mat of this.materials) {
-                const refPeaks = mat.peaks || mat.p || [];
-                let matchCount = 0;
-                for (const up of peakPositions) {
-                    for (const rp of refPeaks) {
-                        const refVal = typeof rp === 'number' ? rp : rp.pos || rp[0];
-                        if (Math.abs(up - refVal) <= tolerance) { matchCount++; break; }
-                    }
-                }
-                if (matchCount > 0) {
-                    results.push({ ref: mat.ref || mat.n || mat.name, formula: mat.formula || mat.f, score: matchCount / peakPositions.length, matches: matchCount });
-                }
-            }
-            results.sort((a, b) => b.score - a.score);
-            return results.slice(0, limit);
-        }
-    };
-
-    G.XRDMatch = {
-        binWidth: 0.5,
-        precision: 100,
-        indexCache: {},
-
-        async loadCompositions() {
-            if (compositions) return compositions;
-            const res = await fetch(`${CDN_BASE}/xrd/meta/compositions.json`);
-            compositions = await res.json();
-            return compositions;
-        },
-
-        async loadBin(binId) {
-            if (this.indexCache[binId]) return this.indexCache[binId];
-            const url = `${CDN_BASE}/xrd/index/${binId}.json`;
-            try {
-                const res = await fetch(url);
-                if (!res.ok) return null;
-                const data = await res.json();
-                this.indexCache[binId] = data;
-                return data;
-            } catch (e) { return null; }
-        },
-
-        async search(peaks, options = {}) {
-            const { tolerance = 0.4, elements = [], limit = 50 } = options;
-            await this.loadCompositions();
-            const binsNeeded = new Set();
-            peaks.forEach(peak => {
-                const centerBin = Math.floor(peak / this.binWidth);
-                const rangeBins = Math.ceil(tolerance / this.binWidth);
-                for (let b = centerBin - rangeBins; b <= centerBin + rangeBins; b++) {
-                    if (b >= 0) binsNeeded.add(b);
-                }
-            });
-            const binData = await Promise.all([...binsNeeded].map(b => this.loadBin(b)));
-            const scores = {};
-            binData.filter(Boolean).forEach(bin => {
-                const d = bin.d, c = bin.c;
-                for (let i = 0; i < d.length; i++) {
-                    const refId = d[i] >> 8, offset = d[i] & 0xFF;
-                    const binId = Math.floor(offset / (this.binWidth * this.precision));
-                    const peakPos = (binId * this.binWidth) + (offset / this.precision);
-                    for (const userPeak of peaks) {
-                        if (Math.abs(userPeak - peakPos) <= tolerance) {
-                            scores[refId] = (scores[refId] || 0) + 1;
-                            break;
-                        }
-                    }
-                }
-            });
-            const results = Object.entries(scores).map(([refId, count]) => ({ refId: +refId, score: count / peaks.length, matches: count }));
-            results.sort((a, b) => b.score - a.score);
-            return results.slice(0, limit);
-        }
-    };
-
-    G.bindMatchControls = function () {
-        document.getElementById('matchBtn')?.addEventListener('click', async function () {
-            const mode = document.querySelector('input[name="axistitles"]:checked')?.value;
-            if (!mode) return alert('Select a chart mode first');
-            const series = G.getSeries();
-            if (!series.length) return alert('No data to match');
-            const peaks = [];
-            series.forEach(sv => {
-                const maxY = Math.max(...sv.y.filter(Number.isFinite));
-                sv.y.forEach((y, i) => { if (y > maxY * 0.1 && Number.isFinite(sv.x[i])) peaks.push(sv.x[i]); });
-            });
-            peaks.sort((a, b) => a - b);
-            const uniquePeaks = peaks.filter((v, i, a) => i === 0 || v - a[i - 1] > 1);
-            await G.MatchEngine.loadDB(mode);
-            const results = G.MatchEngine.match(uniquePeaks, { tolerance: mode === 'xrd' ? 0.2 : 20 });
-            const container = document.getElementById('matchResults');
-            if (!results.length) { container.innerHTML = '<p>No matches found</p>'; return; }
-            container.innerHTML = results.map((r, i) => `<div class="match-result"><b>${i + 1}. ${r.ref}</b> (${r.formula || 'N/A'}) - Score: ${(r.score * 100).toFixed(1)}%</div>`).join('');
-        });
-    };
-
+(function(G) {
+    const CDN_BASE = 'https://cdn.jsdelivr.net/gh/instanano/graph@latest/match/';
+    const matchDataCache = {};
+    const buffers = {ftirmatch:{range:20,single:50},xpsmatch:{range:1,single:0.5},ramanmatch:{range:10,single:30},uvvismatch:{range:20,single:40},hnmrmatch:{range:0.2,single:0.5},cnmrmatch:{range:10,single:20}};
+    const headers = {ftirmatch:['Peak Position','Group','Class','Intensity'],xpsmatch:['Peak Position','Group','Material','Notes'],ramanmatch:['Raman Shift (cm⁻¹)','Material','Mode','Notes'],uvvismatch:['λmax (nm)','Material','Characteristic','Description'],hnmrmatch:['Chemical Shift (ppm)','Type','Assignment','Description'],cnmrmatch:['Chemical Shift (ppm)','Type','Assignment','Description']};
+    
+    async function loadMatchData(id) {
+        if (matchDataCache[id]) return matchDataCache[id];
+        try {
+        const folder = id.replace('match', '');
+        const res = await fetch(CDN_BASE + folder + '/match.json');
+        if (!res.ok) throw new Error(res.status);
+        const data = await res.json();
+        matchDataCache[id] = data;
+        return data;
+        } catch (e) { console.error('Load failed:', id, e); return []; }
+    }
+    function renderMatches(matches, cols) {
+        return matches.map(row => `<div class="matchedrow">` + row.map((val, i) => `<div class="matchedrow-h${i+1}"><b>${cols[i]}:</b> ${val}</div>`).join('') + `</div>`).join('');
+    }
+    async function updateMatchTable(xVal) {
+        const sel = document.querySelector('input[name="matchinstrument"]:checked').id;
+        const buf = buffers[sel] || {range:0,single:0};
+        const cols = headers[sel] || [];
+        const dataArr = await loadMatchData(sel);
+        const matches = dataArr.filter(r => {
+        const parts = r[0].split('-').map(Number);
+        return parts.length > 1 ? (xVal >= parts[0] - buf.range && xVal <= parts[1] + buf.range) : Math.abs(xVal - parts[0]) <= buf.single;});
+        d3.select('#matchedData').html(matches.length ? renderMatches(matches, cols) : '<p>No matching peaks found.</p>');
+    }
+    
+    d3.select('#matchedData').html('<p>Please click any peak.</p>');
+    document.getElementById('icon5').addEventListener('change', function() {
+    if (this.checked) loadMatchData(document.querySelector('input[name="matchinstrument"]:checked').id);});
+    document.querySelector('label[for="icon5"]').addEventListener('mouseenter', () => {
+    loadMatchData(document.querySelector('input[name="matchinstrument"]:checked').id);});
+    document.querySelectorAll('input[name="matchinstrument"]').forEach(input => {
+    input.addEventListener('change', async function() {
+    d3.select('#matchedData').html('<p>Loading...</p>');
+    await loadMatchData(this.id);
+    d3.select('#matchedData').html('<p>Please click any peak.</p>');});});
+    d3.select('#chart').on('click.match', async function(event) {
+    if (!document.getElementById('icon5').checked) return;
+    const svgNode = d3.select('#chart svg').node(), [mx, my] = d3.pointer(event, svgNode);
+    if (mx < G.config.DIM.ML || mx > G.config.DIM.W - G.config.DIM.MR || my < G.config.DIM.MT || my > G.config.DIM.H - G.config.DIM.MB) return;
+    await updateMatchTable(G.state.lastXScale.invert(mx));});
 })(window.GraphPlotter);
 (function (G) {
 
