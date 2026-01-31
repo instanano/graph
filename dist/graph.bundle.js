@@ -214,31 +214,18 @@ window.GraphPlotter = window.GraphPlotter || {
         g.selectAll("rect.hist-bin-" + idx).data(bins).enter().append("rect").attr("class", "hist-bin-" + idx).attr("x", d => bandScale(d.x0)).attr("width", bw).attr("y", d => scales.y(d.length)).attr("height", d => (G.config.DIM.H - G.config.DIM.MB) - scales.y(d.length)).attr("fill", sv.color).attr("fill-opacity", 0.5 + 0.5 / series.length);});}
     });
 })(window.GraphPlotter);
-(function (G) {
-
+(function(G) {
     G.ChartRegistry.register({
         id: "area",
-        dimensions: ["x", "y"],
+        dimensions: ["x","y"],
         scaleBuilders: { x: d3.scaleLinear, y: d3.scaleLinear },
         draw: (g, series, scales, s) => {
-            series.forEach((sv, i) => {
-                const yS = scales.y2 ? scales.y2[i] : scales.y;
-                const area = d3.area()
-                    .defined((_, j) => Number.isFinite(sv.x[j]) && Number.isFinite(sv.y[j]))
-                    .x((_, j) => scales.x(sv.x[j]))
-                    .y0(() => yS.range()[0])
-                    .y1((_, j) => yS(sv.y[j]));
-                g.append("path")
-                    .datum(sv.y)
-                    .attr("fill", sv.color)
-                    .attr("fill-opacity", s.opacity)
-                    .attr("stroke", sv.color)
-                    .attr("stroke-width", 0)
-                    .attr("d", area);
-            });
-        }
+        series.forEach((sv, i) => {
+            const yS = scales.y2 ? scales.y2[i] : scales.y;
+            const area = d3.area().defined((_, j) => Number.isFinite(sv.x[j]) && Number.isFinite(sv.y[j])).x((_, j) => scales.x(sv.x[j])).y0(() => yS.range()[0]).y1((_, j) => yS(sv.y[j]));
+            g.append("path").datum(sv.y).attr("fill", sv.color).attr("fill-opacity", s.opacity).attr("stroke", sv.color).attr("stroke-width", 0).attr("d", area);
+        });}
     });
-
 })(window.GraphPlotter);
 (function (G) {
     const DIM = G.DIM;
