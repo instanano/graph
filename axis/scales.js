@@ -1,4 +1,5 @@
 (function(G) {
+    "use strict";
     G.axis.prepareChartContext = function() {
         const s = G.getSettings(); const series = G.getSeries(); 
         const [rw, rh] = s.ratio.split(':').map(Number); 
@@ -9,7 +10,6 @@
         G.state.lastYScale = yScale;
         return { s, series, xScale, yScale, W: G.config.DIM.W, H: G.config.DIM.H, MT: G.config.DIM.MT, MB: G.config.DIM.MB, ML: G.config.DIM.ML, MR: G.config.DIM.MR, titles};
     }
-
     G.axis.makeScales = function(s, series) {
         const DIM = G.config.DIM;
         if (s.type === "histogram") {
@@ -49,13 +49,11 @@
             yScale: d3.scaleLinear().domain(yDom).range([DIM.H - DIM.MB, DIM.MT])
           };
     };
-
     function computeDefaults(series) {
         if (!series.length) return null; const allX = series.flatMap((s) => s.x), allY = series.flatMap((s) => s.y),
         [minX, maxX] = d3.extent(allX), [minY, maxY] = d3.extent(allY), padX = (maxX - minX) * 0.02, padY = (maxY - minY) * 0.06;
         return { minX: minX - padX, maxX: maxX + padX, minY: minY - padY, maxY: maxY + padY,};
     }
-
     G.axis.resetScales = function(full = true) {
         const S = G.state;
         if(full){S.overrideX=null; S.overrideMultiY={};S.overrideXTicks=null; S.overrideYTicks={}; 
