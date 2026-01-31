@@ -1,4 +1,5 @@
 (function(G) {
+    "use strict";
     G.axis.getTitles = function(mode) {
         switch (mode) { case "uvvis":return { x: "Wavelength (nm)", y: "Absorbance (a.u.)" }; 
         case "tauc":return { x: "Energy (eV)", y: "Intensity (a.u.)" }; case "xrd":return { x: "2θ (°)", y: "Intensity (a.u.)" }; 
@@ -11,7 +12,6 @@
         case "nmr":return { x: "δ (ppm)", y: "Intensity (a.u.)" }; case "ternary": return { a: "A-axis", b: "B-axis", c: "C-axis" }; 
         case "tensile": return { x: "Strain", y: "Stress" }; default:return { x: "x-axis", y: "y-axis" };}
     };
-
     function axisTitle(svg, axes, modeKey, DIM) {
         const pad = 5; axes.forEach(axis => { let g = svg.select(`g.axis-title-${axis.key}`); if (g.empty()) { g = svg.append("g")
         .classed(`axis-title axis-title-${axis.key} user-text`, true).attr("data-axis-mode", modeKey)
@@ -23,21 +23,18 @@
         fo.attr("width", w2).attr("x", -w2 / 2).attr("y", 0); g.attr("data-axis-mode", modeKey);}
         g.attr("transform", `translate(${axis.pos[0]},${axis.pos[1]}) ${axis.rotation ? `rotate(${axis.rotation})` : ""}`.replace(/\s+/g, " "));});
     }
-
     G.axis.applyTickStyles = function(g, axisType, idx, scaleFs, defaultColor = 'currentColor') {
         const styles = (G.state.tickLabelStyles[axisType] || {})[idx] || {}; g.selectAll('text').classed('tick-label', true)
         .classed(`tick-${axisType}`, true).style('font-size', styles.fontSize || (scaleFs + 'px'))
         .style('fill', styles.color || defaultColor).style('font-family', styles.fontFamily || 'Arial')
         .style('font-weight', styles.fontWeight || 'normal').style('font-style', styles.fontStyle || 'normal').style('cursor', 'default');
     };
-
     function makeTickFormat(axisKey, idx = 0) {
         const FULL = d3.format(""); const ABBR = d3.format(".2s"); const SCI  = d3.format(".0e"); const S = G.state;
         let mode = 0; if (axisKey === 'x') {mode = S.overrideScaleformatX ?? 0;} else if (axisKey === 'y') {
         mode = S.overrideScaleformatY?.[idx] ?? 0;} else if (axisKey === 'a' || axisKey === 'b' || axisKey === 'c') {
         mode = S.overrideScaleformatTernary?.[axisKey] ?? 0;} return mode === 1 ? ABBR : mode === 2 ? SCI : FULL;
     }
-
     G.axis.addMinorTicks = function(axisGroup, scale, axisCtor, count = 0, size = 4, strokeWidth = 1, strokeColor = 'currentColor') {
         if (typeof scale.ticks !== 'function') return; let custom = null, key = null;
         if (axisGroup.attr('data-xi') != null) { custom = G.state.overrideCustomTicksX || null; sel = window.selectedAxisName === 'X'; key = 'X'; }
@@ -58,7 +55,6 @@
         minors = minors.filter(v => v >= Math.min(domain[0], domain[1]) && v <= Math.max(domain[0], domain[1]));
         const mg = axisGroup.append('g').call(axisCtor(scale).tickValues(minors).tickSize(size).tickFormat('')); mg.select('path.domain').remove(); mg.selectAll('line').classed('minor-tick', true).attr('stroke-width', strokeWidth).attr('stroke', strokeColor);
     }
-
     function multiYaxis(svg, scales, s, series){
         const yScale = scales.y; const DIM = G.config.DIM;
         if (s.multiyaxis === 1 && ["line","area","scatter","scatterline"].includes(s.type) && series.length > 1) { scales.y2 = series.map((sv,i) => {
@@ -72,7 +68,6 @@
         gYi.selectAll("path,line").attr("stroke",sv.color); G.axis.addMinorTicks(gYi,G.state.multiYScales[axisIndex],d3.axisRight,countYi,4,s.scalewidth,sv.color);
         G.axis.applyTickStyles(gYi,"y",axisIndex,s.scaleFs,sv.color);});}
     }
-
     G.axis.drawAxis = function(svg, scales, titles, s, series) {
         const DIM = G.config.DIM;
         if (["ternary","ternaryline","ternaryarea"].includes(s.type)) { svg.selectAll(".axis-title").remove(); G.axis.renderTernaryAxes(svg, s, DIM); return;}
@@ -92,7 +87,6 @@
         svg.append("line").attr("x1", DIM.W - DIM.MR).attr("y1", DIM.MT).attr("x2", DIM.W - DIM.MR).attr("y2", DIM.H - DIM.MB).attr("stroke", "black").attr("stroke-linecap", "square").attr("stroke-width", s.scalewidth); multiYaxis(svg, scales, s, series);
         axisTitle(svg, [{ key: "x", label: titles.x, pos: [DIM.W / 2, DIM.H - DIM.MB / 1.7], rotation: 0, anchor: "middle" }, { key: "y", label: titles.y, pos: [DIM.ML - 60, DIM.H / 2], rotation: -90, anchor: "middle" }], s.mode, DIM);
     };
-
     G.axis.renderTernaryAxes = function(svg, s, DIM) {
         G.axis.drawTernaryAxis(svg, s); const availW = DIM.W - DIM.ML - DIM.MR; const availH = DIM.H - DIM.MT - DIM.MB;
         const side = Math.min(availW, 2 * availH / Math.sqrt(3)); const triH   = side * Math.sqrt(3) / 2;
@@ -106,7 +100,6 @@
         const { fo, div } = G.utils.editableText(g, { x: 0, y: 0, text, rotation: 0 }); const pad = 5;
         fo.attr("width", div.node().scrollWidth + pad).attr("x", - (div.node().scrollWidth + pad) / 2);});
     };
-    
     G.axis.drawTernaryAxis = function(svg,s) {
         const DIM = G.config.DIM; const availW = DIM.W - DIM.ML - DIM.MR; const availH = DIM.H - DIM.MT - DIM.MB;
         const side = Math.min(availW, 2 * availH / Math.sqrt(3)); const triH = side * Math.sqrt(3) / 2;
@@ -134,7 +127,6 @@
         G.axis.addMinorTicks(gB, scaleB, d3.axisLeft, countB, -4, s.scalewidth, 'currentColor');
         G.axis.addMinorTicks(gC, scaleC, d3.axisRight, countC, -4, s.scalewidth, 'currentColor');
     };
-    
     G.axis.drawTernaryGridLines = function(svg, s) {
         const DIM = G.config.DIM; const availW = DIM.W - DIM.ML - DIM.MR, availH = DIM.H - DIM.MT - DIM.MB;
         const side = Math.min(availW, 2 * availH / Math.sqrt(3)), triH = side * Math.sqrt(3) / 2;
