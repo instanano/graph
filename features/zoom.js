@@ -1,4 +1,5 @@
 (function(G) {
+    "use strict";
     $('#zoomBtn').click(function(){
         const btn=$(this);
         if(btn.hasClass('active')){d3.select(".zoom-brush").remove();btn.removeClass('active');return}
