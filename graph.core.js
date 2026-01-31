@@ -1,4 +1,5 @@
 (function(G) {
+    "use strict";
     function getSeries() {
         const s = G.getSettings(), data = G.state.hot.getData(), header = data[0], rows = data.slice(3), enabled = G.state.colEnabled, series = [];
         if (s.type === "ternary" || s.type === "ternaryline" || s.type === "ternaryarea") {
@@ -17,7 +18,6 @@
         const errorColor = errIdx >= 0 ? data[1][errIdx] : null; series.push({ 
         rawX, x: rawX, y: rawY, color: data[1][yIdx], label: data[2][yIdx], error, errorColor});}}}); return series;
     }
-
     function getSettings() {
         const ratio = document.querySelector('input[name="aspectratio"]:checked').value; const preset = G.config.ratioPresets[ratio];
         const s = { type: document.querySelector('input[name="charttype"]:checked').id, symbolsize: +document.getElementById("symbolsize").value, 
@@ -34,7 +34,6 @@
         if (/^-?\d+(\.\d+)?$/.test(val)) { s[key] = +val;} else if (val.includes(',')) { s[key] = val.split(',').map(v => v.trim());}
         else { s[key] = val;}}); return s;
     }
-    
     function computeMultiYScales(scales, s, series) {
         if (s.multiyaxis !== 1 || series.length < 2) return; const multiYScales = series.map((sv, i) => {
         const [minY, maxY] = d3.extent(sv.y); const padY = (maxY - minY) * 0.06;
@@ -42,14 +41,12 @@
         return d3.scaleLinear().domain(domain).range([G.config.DIM.H - G.config.DIM.MB, G.config.DIM.MT]);});
         scales.y2 = multiYScales; scales.y  = multiYScales[0]; G.state.multiYScales = multiYScales;
     }
-    
     function initSvgCanvas(container, { W, H, ML, MR, MT, MB }, clipId = "clip", s = {}) {
         const svg = container.append("svg").attr("viewBox", `0 0 ${W} ${H}`).on("click", event => { if (event.defaultPrevented || event.target !== svg.node()) return; G.utils.clearActive();}); const cp = svg.append("defs").append("clipPath").attr("id", clipId); 
         if (s.type === "ternary" || s.type === "ternaryline" || s.type === "ternaryarea") { const availW = W - ML - MR; const availH = H - MT - MB; const side = Math.min(availW, 2 * availH / Math.sqrt(3)); const triH = side * Math.sqrt(3) / 2; const p1x = ML + (availW - side) / 2; const p1y = MT + (availH - triH) / 2 + triH; const p2x = p1x + side; const p3x = p1x + side / 2; const p3y = p1y - triH; 
         cp.append("polygon").attr("points", `${p1x},${p1y} ${p2x},${p1y} ${p3x},${p3y}`);} 
         else { cp.append("rect").attr("x", ML).attr("y", MT).attr("width", W - ML - MR).attr("height", H - MT - MB);} return svg;
     }
-    
     function renderChart() {
         const container = d3.select("#chart");
         const preserved = container.select("svg").selectAll("g.axis-title, g.legend-group, g.shape-group, foreignObject.user-text").remove(); container.html(""); 
@@ -59,11 +56,9 @@
         const scales = { x: xScale, y: yScale }; computeMultiYScales(scales, s, series); const seriesG = svg.append("g").attr("clip-path","url(#clip)");
         const chartDef = G.ChartRegistry.get(s.type); chartDef.draw(seriesG, series, scales, s);
         G.axis.drawAxis(svg, scales, titles, s, series); G.ui.drawLegend(); G.ui.toolTip(svg, { xScale, yScale });
-        
         G.features.prepareShapeLayer(); 
         G.axis.tickEditing(d3.select('#chart svg'));
     }
-
     function detectModeFromData() {
         const series = G.getSeries();
         if (!series || series.length === 0) return null;
@@ -75,14 +70,12 @@
         if (minX >= 0 && minX <= 10 && maxX >= 80 && maxX <= 90) return 'xrd';
         return null;
     }
-
     function applyGraphRatio(r){
         const c=G.config.ratioPresets[r]||G.config.ratioPresets['4:2.85'], [w,h]=r.split(':').map(Number),
         m=G.state.multiYScales?.length>1?(G.state.multiYScales.length-2)*c.multiygap:0; G.config.DIM.H=Math.round(G.config.DIM.W*h/w); G.config.DIM.MR=80+m; 
         d3.selectAll('#chart svg g.axis-title foreignObject div').style('font-size',c.axisTitleFs+'px').each(function(){let w2=this.scrollWidth+5;d3.select(this.parentNode).attr('width',w2).attr('x',-w2/2)});
         d3.selectAll('#chart svg g.legend-group foreignObject div').style('font-size',c.legendFs+'px').each(function(){d3.select(this.parentNode).attr('width',this.scrollWidth+5)});
     }
-
     function bindEvents(){
         G.state.hot.addHook('afterPaste', () => { setTimeout(() => { G.state.colEnabled = {}; G.state.hot.getData()[0].forEach((_, c) => { G.state.colEnabled[c] = true; }); G.state.hot.render(); const mode = detectModeFromData(); if (mode) { 
         const radio = document.querySelector(`input[name="axistitles"][value="${mode}"]`); if (radio) radio.checked = true;} G.axis.resetScales(true);
@@ -92,13 +85,11 @@
         }); G.state.hot.addHook('beforeKeyDown', e => {const s=G.state.hot.getSelectedLast();if (s && s[0] === 0) {e.stopImmediatePropagation(); e.preventDefault();}}); document.addEventListener('input', e=>{ document.addEventListener('input', e => { if (e.target.id !== 'enableAreaCalc' && e.target.name !== 'sidebar') G.ui.disableAreaCal();}); const t=e.target; if(!t.matches('.control input')) return;
         if(t.name==='axistitles'|| t.name==='aspectratio') G.axis.resetScales(false); if(t.name==='aspectratio'){applyGraphRatio(t.value);} G.renderChart();});
     }
-
     const fileHandlers={ instanano:null, csv:G.parsers.parseText, txt:G.parsers.parseText, xls:G.parsers.parseXLSX, xlsx:G.parsers.parseXLSX, xrdml:G.parsers.parseXRDML};
     const fileModes = {xrdml:'xrd',raw:'xrd',spc:'uvvis'};
     const fileinput=document.getElementById('fileinput');
     fileinput.accept=Object.keys(fileHandlers).map(ext=>'.'+ext).join(',');
     const dropzone=document.getElementById('dropzone');
-    
     async function handleFileList(src){
         const items = src && src.items; const files = items && items.length ? await (async()=>{const out=[];
         const readAll=r=>new Promise(res=>{const a=[];(function n(){r.readEntries(es=>{if(!es.length)res(a);else{a.push(...es);n()}})})()});
@@ -119,13 +110,11 @@
         G.ui.disableAreaCal(); G.state.tickLabelStyles={x:{fontSize:null,color:null},y:{fontSize:null,color:null}};
         G.axis.resetScales(true); G.renderChart(); 
     }
-    
     ['dragenter','dragover'].forEach(evt=>dropzone.addEventListener(evt,e=>{e.preventDefault();dropzone.classList.add('hover')}));
     ['dragleave','drop'].forEach(evt=>dropzone.addEventListener(evt,e=>{e.preventDefault();dropzone.classList.remove('hover')}));
     dropzone.addEventListener('drop', async e=>{ e.preventDefault(); dropzone.classList.remove('hover'); await handleFileList(e.dataTransfer);});
     fileinput.addEventListener('change', async ()=>{ await handleFileList(fileinput.files); });
     dropzone.addEventListener('click',()=>fileinput.click()); 
-
     const controls = document.querySelectorAll('input[id]'); const showEls  = document.querySelectorAll('[data-show]');
     const radios   = document.querySelectorAll('input[name="charttype"]');
     radios.forEach(radio => radio.addEventListener('change', () => { controls.forEach(ctl => {
@@ -138,15 +127,12 @@
     G.state.hot.getData()[0].forEach((orig, i) => { const lbl = i < p ? patterns[i] : (wild.length ? wild[(i - p) % wild.length] : orig);
     G.state.hot.setDataAtCell(0, i, lbl); G.state.colEnabled[i] = G.state.colEnabled[i] && patterns.includes(lbl); }); G.state.hot.render();} 
     G.axis.resetScales(false); G.renderChart(); })); document.querySelector('input[name="charttype"]:checked').dispatchEvent(new Event('change'));
-
     ['smoothingslider','baselineslider','multiyaxis'].forEach(id => { const input = document.getElementById(id);
     function updateThumbColor() { input.classList.toggle('zero', input.value === '0');}
     input.addEventListener('input', updateThumbColor); updateThumbColor();});
-    
     document.querySelectorAll('span[data-current-value]').forEach(span => {
     const slider = document.getElementById(span.dataset.currentValue); if (!slider || slider.type !== 'range') return;
     span.textContent = slider.value; slider.oninput = () => { span.textContent = slider.value;};});
-
     const helpIcon = document.getElementById('help-icon');
     const helpOverlay = document.getElementById('help-prompt-overlay');
     const helpClose = document.getElementById('help-close');
@@ -171,7 +157,6 @@
     keyBinder(`${modKey}+i`, ()=> document.getElementById('enableAreaCalc').click());
     keyBinder(`${modKey}+.`,()=>G.ui.applySupSub('sup'));
     keyBinder(`${modKey}+,`,()=>G.ui.applySupSub('sub'));
-
     const gLink='https://instanano.com/online-graph-plotter/', mWP=document.getElementById('mWP'), mEM=document.getElementById('mEM'), mCP=document.getElementById('mCP');
     mWP.href='https://wa.me/919467826266?text='+encodeURIComponent('Link to open InstaNANO Graph Plotter on your laptop:\n'+gLink);
     mEM.href='mailto:?subject='+encodeURIComponent('InstaNANO Graph Plotter Link')+'&body='+encodeURIComponent("Link to open InstaNANO Graph Plotter on your laptop:\n\n"+gLink);
@@ -179,7 +164,6 @@
     if (matchMedia('(max-width:600px)').matches){
     document.querySelectorAll('input[name=sidebar]').forEach(i=>i.checked=false); document.querySelector('.icon-strip').addEventListener('click',e=>{
     let i=document.getElementById(e.target.closest('label')?.htmlFor); if(i?.checked){e.preventDefault();i.checked=false}});}
-
     const GRAPH_UPSELL = {
     xrd: {paid: "product/xrd-data-matching-online/", msg: ["Plotting XRD data? Get expert phase matching against verified reference databases.", "XRD peaks plotted! Need accurate compound identification for your materials?", "Beautiful XRD graph! Reviewers often ask for proper phase matching with reference cards.", "Need more than a plot? Get professional phase identification and peak assignment.", "XRD data ready! Our experts can match your peaks to thousands of known compounds."]},
     ftir: {paid: "product/ftir-data-matching-online/", msg: ["FTIR spectrum looks great! Need automated compound identification?", "Plotting FTIR? Get your peaks matched against 10,000+ reference materials.", "Beautiful transmittance plot! Want to identify functional groups automatically?", "FTIR graph ready! Our experts can match your peaks to known compounds.", "Nice FTIR spectrum! Reviewers love seeing compound matches with similarity scores."]},
@@ -203,7 +187,6 @@
     const payload = { axis: axisType, paid: upsellData.paid, message: randomMsg, timestamp: Date.now() };
     sessionStorage.setItem(GRAPH_UPSELL_STORAGE, JSON.stringify(payload));}
     $('#download').click(storeGraphUpsell); $('#save').click(storeGraphUpsell);                         
-    
     G.getSeries = getSeries;
     G.getSettings = getSettings;
     G.renderChart = renderChart;
@@ -213,8 +196,7 @@
         G.axis.resetScales(true); 
         G.renderChart();
     };
+    document.addEventListener('DOMContentLoaded', () => {
+        window.GraphPlotter.init();
+    });
 })(window.GraphPlotter);
-
-document.addEventListener('DOMContentLoaded', () => {
-    window.GraphPlotter.init();
-});
