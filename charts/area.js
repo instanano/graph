@@ -1,4 +1,5 @@
 (function(G) {
+    "use strict";
     G.ChartRegistry.register({
         id: "area",
         dimensions: ["x","y"],
