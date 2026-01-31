@@ -92,75 +92,54 @@ window.GraphPlotter = window.GraphPlotter || {
         }
     };
 })(window.GraphPlotter);
-(function (G) {
-    const COLORS = G.COLORS;
-
-    G.initTable = function () {
+(function(G) {
+    G.initTable = function() {
         const container = document.getElementById("table");
-        G.hot = new myTable(container, {
-            data: [["X-axis", "Y-axis"], ["#FFFF00", "#000000"], ["Sample", "Sample"], [10, 223], [20, 132], [30, 532], [40, 242], [50, 300], [70, 100], [100, 250]],
+        G.state.hot = new myTable(container, {
+            data: [["X-axis","Y-axis"],["#FFFF00","#000000"],["Sample","Sample"],[10,223],[20,132],[30,532],[40,242],[50,300],[70,100],[100,250]],
             colHeaders: colIndex => {
-                G.colEnabled[colIndex] = G.colEnabled[colIndex] !== false;
-                return `<input type="checkbox" data-col="${colIndex}" ${G.colEnabled[colIndex] ? "checked" : ""}>`;
-            },
+                G.state.colEnabled[colIndex] = G.state.colEnabled[colIndex] !== false;
+                return `<input type="checkbox" data-col="${colIndex}" ${G.state.colEnabled[colIndex] ? "checked" : ""}>`;},
             rowHeaders: rowIndex => ["Axis", "Color", "Name"][rowIndex] || rowIndex - 2,
-            rowHeaderWidth: 60,
-            colWidths: 70,
-            contextMenu: true,
-            afterRemoveRow: () => { G.resetScales(true); G.renderChart(); },
-            afterRemoveCol: () => { G.resetScales(true); G.renderChart(); },
+            rowHeaderWidth:60, colWidths:70,
+            contextMenu: true, 
+            afterRemoveRow: () => { G.axis.resetScales(true); G.renderChart(); },
+            afterRemoveCol: () => { G.axis.resetScales(true); G.renderChart(); },
             afterCreateCol: (start, count) => {
                 for (let c = start; c < start + count; c++) {
-                    G.hot.setDataAtCell(0, c, "Y-axis");
-                    G.hot.setDataAtCell(1, c, COLORS[c % COLORS.length]);
-                    G.hot.setDataAtCell(2, c, "Sample");
-                }
-            },
+                    G.state.hot.setDataAtCell(0, c, "Y-axis");
+                    G.state.hot.setDataAtCell(1, c, G.config.COLORS[c % G.config.COLORS.length]);
+                    G.state.hot.setDataAtCell(2, c, "Sample");}},
             cells: (row, col) => {
                 const props = {};
-                if (row === 0) {
-                    props.type = "dropdown";
-                    props.source = ["X-axis", "Y-axis", "Z-axis", "Y-error"];
-                    props.className = 'tabledropdown';
-                }
-                if (row === 1) {
-                    props.renderer = (inst, td, r, c, prop, val) => {
-                        td.innerHTML = "";
-                        if (!["X-axis", "Z-axis"].includes(inst.getDataAtCell(0, c))) {
-                            const inp = document.createElement("input");
-                            inp.type = "color";
-                            inp.value = val || COLORS[c % COLORS.length];
-                            inp.oninput = e => inst.setDataAtCell(r, c, e.target.value);
-                            td.appendChild(inp);
-                        }
-                    };
-                }
-                if (row === 2) {
-                    props.renderer = (inst, td, r, c, prop, val) => {
-                        td.innerHTML = ["X-axis", "Z-axis"].includes(inst.getDataAtCell(0, c)) ? "" : (val || "Sample");
-                    };
-                }
+                if (row === 0) { props.type = "dropdown"; props.source = ["X-axis", "Y-axis", "Z-axis", "Y-error"]; props.className = 'tabledropdown';}
+                if (row === 1) { props.renderer = (inst, td, r, c, prop, val) => { td.innerHTML = ""; if (!["X-axis", "Z-axis"]
+                .includes(inst.getDataAtCell(0, c))) { const inp = document.createElement("input"); inp.type = "color"; 
+                inp.value = val || G.config.COLORS[c % G.config.COLORS.length]; inp.oninput = e => inst.setDataAtCell(r, c, e.target.value); td.appendChild(inp);}};}
+                if (row === 2) { props.renderer = (inst, td, r, c, prop, val) => { 
+                td.innerHTML = ["X-axis", "Z-axis"].includes(inst.getDataAtCell(0, c)) ? "" : (val || "Sample");};}
                 const base = props.renderer || myTable.renderers.TextRenderer;
-                props.renderer = function (inst, td, r, c, prop, val) {
+                props.renderer = function(inst, td, r, c, prop, val) {
                     base.apply(this, arguments);
-                    td.style.background = G.colEnabled[c] ? "" : "lightcoral";
-                };
-                return props;
-            }
+                    td.style.background = G.state.colEnabled[c] ? "" : "lightcoral";};
+                return props;}
         });
-        G.hot.addHook("afterCreateCol", G.checkEmptyColumns);
+        G.state.hot.addHook("afterCreateCol", checkEmptyColumns);
         container.addEventListener("change", e => {
             if (e.target.matches('input[type="checkbox"][data-col]')) {
                 const col = +e.target.dataset.col;
-                G.colEnabled[col] = e.target.checked;
-                G.hot.render();
-                G.resetScales(false);
-                G.renderChart();
-                G.checkEmptyColumns();
-            }
-        });
+                G.state.colEnabled[col] = e.target.checked;
+                G.state.hot.render();
+                G.axis.resetScales(false);
+                G.renderChart(); checkEmptyColumns();}});
     };
 
+    function checkEmptyColumns() {
+        const data = G.state.hot.getData(); const dm = document.querySelector('label[for="icon1"]'); if (!dm) return;
+        const shouldShow = data[0].some((_, c) => G.state.colEnabled[c] && data.slice(3).every(r => r[c] == null || r[c] === "" || isNaN(+r[c])));
+        const existingBadge = dm.querySelector(".warning-badge"); if (shouldShow) { if (!existingBadge) { const b = document.createElement("span");
+        b.className = "warning-badge"; b.textContent = "!"; dm.appendChild(b);}} else if (existingBadge) { existingBadge.remove();}
+    }
 })(window.GraphPlotter);
 (function (G) {
     const DIM = G.DIM;
