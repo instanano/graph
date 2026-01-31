@@ -1,7 +1,7 @@
 (function(G) {
     "use strict";
     const GRAPH_UPSELL = {
-        xrd: {paid: "product/xrd-data-matching-online/", msg: ["Plotting XRD data? Get expert phase matching against verified reference databases.", "XRD peaks plotted! Need accurate identification for your materials?", "Beautiful XRD graph! Reviewers often ask for proper phase matching with reference cards.", "Need more than a plot? Get professional phase identification and peak assignment.", "XRD data ready! Our experts can match your peaks to thousands of known compounds."]},
+        xrd: {paid: "product/xrd-data-matching-online/", msg: ["Plotting XRD data? Get expert phase matching against verified reference databases.", "XRD peaks plotted! Need accurate compound identification for your materials?", "Beautiful XRD graph! Reviewers often ask for proper phase matching with reference cards.", "Need more than a plot? Get professional phase identification and peak assignment.", "XRD data ready! Our experts can match your peaks to thousands of known compounds."]},
         ftir: {paid: "product/ftir-data-matching-online/", msg: ["FTIR spectrum looks great! Need automated compound identification?", "Plotting FTIR? Get your peaks matched against 10,000+ reference materials.", "Beautiful transmittance plot! Want to identify functional groups automatically?", "FTIR graph ready! Our experts can match your peaks to known compounds.", "Nice FTIR spectrum! Reviewers love seeing compound matches with similarity scores."]},
         xps: {paid: "product/xps-analysis-online/", msg: ["Plotting XPS data? Get professional peak deconvolution and fitting.", "XPS spectrum ready! Need atomic percentages and oxidation state analysis?", "Great binding energy plot! Our experts can deconvolute overlapping peaks.", "XPS graph looks good! Want publication-ready peak assignments?", "Need more than a plot? Get full XPS analysis with chemical state identification."]},
         raman: {paid: "product/raman-crystallite-size-calculator/", msg: ["Raman spectrum plotted! Need ID/IG ratio and crystallite size analysis?", "Working with carbon materials? Get expert D and G band deconvolution.", "Nice Raman plot! Reviewers often ask for proper peak fitting.", "Raman data ready! Our experts can calculate defect density and crystallite size.", "Beautiful Raman spectrum! Want Tuinstra-Koenig analysis for your publication?"]},
@@ -26,13 +26,15 @@
         const payload = { axis: axisType, paid: upsellData.paid, message: randomMsg, timestamp: Date.now() };
         sessionStorage.setItem(GRAPH_UPSELL_STORAGE, JSON.stringify(payload));
     }
-    if (typeof $ !== 'undefined') {
-        $('#download').click(storeGraphUpsell); 
-        $('#save').click(storeGraphUpsell);
-    } else {
+    function bindUpsellEvents() {
         const dl = document.getElementById('download');
         const sv = document.getElementById('save');
         if(dl) dl.addEventListener('click', storeGraphUpsell);
         if(sv) sv.addEventListener('click', storeGraphUpsell);
+    }
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", bindUpsellEvents);
+    } else {
+        bindUpsellEvents();
     }
 })(window.GraphPlotter);
