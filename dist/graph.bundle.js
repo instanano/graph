@@ -952,6 +952,7 @@ window.GraphPlotter = window.GraphPlotter || {
         document.getElementById('axis-tauc').checked = true; G.state.hot.render(); G.axis.resetScales(true); G.renderChart();}); 
 })(window.GraphPlotter);
 (function(G) {
+    "use strict";
     G.parsers.parseText = function(text){return text.trim().split(/\r?\n/).map(line=>line.split(/,|\t/))}
     G.parsers.parseXLSX = function(buffer){const wb=XLSX.read(new Uint8Array(buffer),{type:'array'});return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1})}
     G.parsers.parseXRDML = function(text) {
