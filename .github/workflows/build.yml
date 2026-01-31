@@ -60,6 +60,7 @@ jobs:
             features/smoothing.js \
             features/fitting.js \
             features/tauc.js \
+            features/upsell.js \
             parsers/parsers.js \
             parsers/nmr.js \
             match/core.js \
