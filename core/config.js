@@ -6,10 +6,10 @@ window.GraphPlotter = window.GraphPlotter || {
         overrideScaleformatX: null, overrideScaleformatY: {}, overrideCustomTicksX: null, overrideCustomTicksY: {}, overrideCustomTicksTernary: {},
         minorTickOn: {}, useCustomTicksOn: {}, shapeMode: "none", drawing: false, drawStart: null, tempShape: null, arrowCount: 0
     },
-    config: {}, utils: {}, ChartRegistry: null, parsers: {}, ui: { refs: {} }, axis: {}, features: {}, init: null, renderChart: null
+    config: {}, utils: {}, ChartRegistry: null, parsers: {}, ui: { refs: {} }, axis: {}, features: {}, init: null, renderChart: null, getSeries: null, getSettings: null
 };
-
 (function(G) {
+    "use strict";
     G.config.COLORS = ["#FFFF00","#000000","#0000FF","#FF0000","#008000","#00FFFF","#FF00FF","#FFA500","#800080","#A52A2A"];
     G.config.DIM = { W: 600, H: 300, MT: 30, MB: 60, ML: 70, MR: 80 };
     G.config.SYMBOL_TYPES = [d3.symbolCircle, d3.symbolTriangle, d3.symbolSquare, d3.symbolDiamond, d3.symbolStar, d3.symbolCross];
