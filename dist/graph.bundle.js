@@ -977,50 +977,23 @@ window.GraphPlotter = window.GraphPlotter || {
         G.state.colEnabled = {}; const total = header.length; for (let c = 0; c < total; c++) G.state.colEnabled[c] = c >= origLen;
         document.getElementById('axis-tauc').checked = true; G.state.hot.render(); G.axis.resetScales(true); G.renderChart();}); 
 })(window.GraphPlotter);
-(function (G) {
-
-    G.parseTextFile = async function (file) {
-        const txt = await file.text();
-        const lines = txt.split(/[\r\n]+/).filter(l => l.trim());
-        return lines.map(l => l.split(/[\t,;]+/).map(c => {
-            const n = parseFloat(c);
-            return isNaN(n) ? c.trim() : n;
-        }));
-    };
-
-    G.parseXLSX = async function (file) {
-        if (typeof XLSX === 'undefined') {
-            await G.loadScript('https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js');
-        }
-        const ab = await file.arrayBuffer();
-        const wb = XLSX.read(ab, { type: 'array' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        return XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-    };
-
-    G.parseXRDML = async function (file) {
-        const txt = await file.text();
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(txt, 'text/xml');
-        const ds = doc.querySelector('dataPoints');
-        const pos = ds.querySelector('positions');
-        const ints = ds.querySelector('intensities');
-        if (!pos || !ints) return null;
-        const start = parseFloat(pos.querySelector('startPosition')?.textContent || 0);
-        const end = parseFloat(pos.querySelector('endPosition')?.textContent || 0);
-        const intArr = ints.textContent.trim().split(/\s+/).map(Number);
-        const step = (end - start) / (intArr.length - 1);
-        return intArr.map((y, i) => [start + i * step, y]);
-    };
-
-    G.loadScript = function (src) {
-        return new Promise((res, rej) => {
-            const s = document.createElement('script');
-            s.src = src; s.onload = res; s.onerror = rej;
-            document.head.appendChild(s);
-        });
-    };
-
+(function(G) {
+    G.parsers.parseText = function(text){return text.trim().split(/\r?\n/).map(line=>line.split(/,|\t/))}
+    G.parsers.parseXLSX = function(buffer){const wb=XLSX.read(new Uint8Array(buffer),{type:'array'});return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1})}
+    G.parsers.parseXRDML = function(text) {
+        const xml = new DOMParser().parseFromString(text, "application/xml");
+        const scan = xml.getElementsByTagName("scan")[0] || xml.getElementsByTagNameNS("*", "scan")[0];
+        let pos = scan.getElementsByTagName("positions"); if (!pos.length) {
+        const dp = scan.getElementsByTagName("dataPoints")[0]; pos = dp ? dp.getElementsByTagName("positions") : pos;}
+        const twoTheta = Array.from(pos).find(p => (p.getAttribute("axis")||"").toLowerCase().includes("2theta"));
+        const start = parseFloat((twoTheta.getElementsByTagName("startPosition")[0] || twoTheta.getElementsByTagNameNS("*","startPosition")[0]).textContent);
+        const end = parseFloat((twoTheta.getElementsByTagName("endPosition")[0] || twoTheta.getElementsByTagNameNS("*","endPosition")[0]).textContent);
+        let intens = scan.getElementsByTagName("counts"); if (!intens.length) { intens = scan.getElementsByTagName("intensities");
+        if (!intens.length) { const dp = scan.getElementsByTagName("dataPoints")[0];
+        intens = dp ? dp.getElementsByTagName("intensities") : intens;}}
+        const arr = intens[0].textContent.trim().split(/\s+/).map(Number); const n = arr.length, step = (end - start) / (n - 1);
+        return Array.from({ length: n }, (_, i) => [ start + step * i, arr[i] ]);
+    }
 })(window.GraphPlotter);
 (function (G) {
 
