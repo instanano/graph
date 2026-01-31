@@ -972,10 +972,11 @@ window.GraphPlotter = window.GraphPlotter || {
     const GRAPH_UPSELL_STORAGE = "instanano_graph_upsell";
     function storeGraphUpsell() {
         const axisRadio = document.querySelector('input[name="axistitles"]:checked');
-        const axisType = axisRadio ? axisRadio.value : "default";
+        const axisType = axisRadio ? axisRadio.value : "default"; 
         const upsellData = GRAPH_UPSELL[axisType] || GRAPH_UPSELL.default;
         const randomMsg = upsellData.msg[Math.floor(Math.random() * upsellData.msg.length)];
         const payload = { axis: axisType, paid: upsellData.paid, message: randomMsg, timestamp: Date.now() };
+        sessionStorage.removeItem("instanano_graph_upsell_shown");
         sessionStorage.setItem(GRAPH_UPSELL_STORAGE, JSON.stringify(payload));
     }
     document.addEventListener("click", function(e) {
