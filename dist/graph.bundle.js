@@ -91,6 +91,7 @@ window.GraphPlotter = window.GraphPlotter || {
     };
 })(window.GraphPlotter);
 (function(G) {
+    "use strict";
     G.initTable = function() {
         const container = document.getElementById("table");
         G.state.hot = new myTable(container, {
@@ -131,7 +132,6 @@ window.GraphPlotter = window.GraphPlotter || {
                 G.axis.resetScales(false);
                 G.renderChart(); checkEmptyColumns();}});
     };
-
     function checkEmptyColumns() {
         const data = G.state.hot.getData(); const dm = document.querySelector('label[for="icon1"]'); if (!dm) return;
         const shouldShow = data[0].some((_, c) => G.state.colEnabled[c] && data.slice(3).every(r => r[c] == null || r[c] === "" || isNaN(+r[c])));
