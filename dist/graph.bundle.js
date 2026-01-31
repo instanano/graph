@@ -528,6 +528,7 @@ window.GraphPlotter = window.GraphPlotter || {
         if (!window.selectedAxisName) return; let key = window.selectedAxisName==='X' ? 'X' : window.selectedAxisName.startsWith('Y') ? ('Y'+(window.activeYi||0)) : window.selectedAxisName; G.state.minorTickOn[key] = this.checked; G.renderChart();});
 })(window.GraphPlotter);
 (function(G) {
+    "use strict";
     function drawLegendMarker(g, type, s, d, i, sw) {
         g.selectAll(".legend-marker").remove(); switch (type) { case "scatter": case "ternary": { const shape = G.config.SYMBOL_TYPES[i % G.config.SYMBOL_TYPES.length], sym = d3.symbol().type(shape).size(Math.PI * s.symbolsize ** 2);
         g.append("path").classed("legend-marker", true).attr("d", sym).attr("transform", `translate(${sw / 2},0)`).attr("fill", d.color); break;}
@@ -538,7 +539,6 @@ window.GraphPlotter = window.GraphPlotter || {
         case "area": case "ternaryarea": { g.append("rect").classed("legend-marker", true).attr("width", sw).attr("height", 8).attr("y", -4).attr("fill", d.color).attr("fill-opacity", s.opacity); break;}
         default: { g.append("line").classed("legend-marker", true).attr("x2", sw).attr("stroke", d.color).attr("stroke-width", s.linewidth);}}
     }
-
     G.ui.drawLegend = function() {
         const svg = d3.select('#chart svg'); const data = G.state.hot.getData(), header = data[0], series = G.getSeries(), s = G.getSettings();
         const cols = header.map((v,i) => v === 'Y-axis' && G.state.colEnabled[i] ? i : -1).filter(i => i >= 0);
@@ -554,7 +554,6 @@ window.GraphPlotter = window.GraphPlotter || {
         legends.select('foreignObject div').text(d => data[2][d]); legends.each(function (d, idx) {
         d3.select(this).selectAll('.legend-marker').remove(); drawLegendMarker(d3.select(this), s.type, s, series[idx], idx, M);});
     }
-
     G.ui.drawErrorBars = function(g, series, scales, s) {
         const bw = s.type==="bar" && scales.x.bandwidth ? scales.x.bandwidth() : 0, barW = bw/series.length, cap = s.type==="bar" ? barW*0.2 : s.symbolsize;
         series.forEach((sv,i) => { if (!sv.error) return; sv.rawX.forEach((xVal,j) => { const err = sv.error[j]; if (!isFinite(err)) return;
