@@ -1,4 +1,5 @@
 (function(G) {
+    "use strict";
     async function htmlPrompt(message, defaultValue) {
         return new Promise(res => { $('#html-prompt-message').text(message); $('#html-prompt-input').val(defaultValue); 
         $('#popup-prompt-overlay').css('display','flex').fadeIn(150); $('#html-prompt-input').focus().off('keydown').on('keydown', e => {
@@ -6,7 +7,6 @@
         $('#html-prompt-ok').off('click').on('click', () => { $('#popup-prompt-overlay').fadeOut(150); res($('#html-prompt-input').val());});
         $('#html-prompt-cancel').off('click').on('click', () => { $('#popup-prompt-overlay').fadeOut(150); res(null);});});
     }
-
     $('#download').click(async function(e){
         e.preventDefault(); if (!myUserVars.isLoggedIn) { e.stopPropagation(); $('#ajax-login-modal').show(); return}     
         $('#transparent-option').show();
@@ -32,7 +32,6 @@
             if (!transparent) { ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);}
             ctx.drawImage(img,0,0,c.width,c.height);
             c.toBlob(b=>{const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download = `chart@${dpi}dpi${transparent ? '_transparent' : ''}.png`;a.click();},"image/png");}; img.src=data;})
-        
     $('#save').click(async function(e){  
         e.preventDefault(); if (!myUserVars.isLoggedIn) { e.stopPropagation(); $('#ajax-login-modal').show(); return} 
         $('#transparent-option').hide();
@@ -46,7 +45,6 @@
         minorTickOn: G.state.minorTickOn || {}, useCustomTicksOn:G.state.useCustomTicksOn||{}};
         const u=URL.createObjectURL(new Blob([JSON.stringify(payload)])), a=document.createElement('a'), name = await htmlPrompt( "Enter file name", `Project_${ts}`); if(!name) return; a.href=u; a.download=`${name}.instanano`; 
         document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(u);})
-    
     G.importState = function(s){ G.state.hot.loadData(s.table); G.state.colEnabled=s.col; G.state.overrideX = s.overrideX; G.state.overrideMultiY = s.overrideMultiY;
         G.state.overrideXTicks= s.overrideXTicks; G.state.overrideYTicks = s.overrideYTicks; G.state.overrideTernaryTicks = s.overrideTernaryTicks;
         G.state.overrideScaleformatX = s.overrideScaleformatX; G.state.overrideScaleformatY = s.overrideScaleformatY;
