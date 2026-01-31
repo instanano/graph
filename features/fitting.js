@@ -1,10 +1,10 @@
 (function(G) {
+    "use strict";
     function linearFit(xs,ys){const X=[],Y=[];for(let i=0;i<xs.length;i++){const x=+xs[i],y=+ys[i];if(Number.isFinite(x)&&Number.isFinite(y)){X.push(x);Y.push(y)}}const n=X.length;if(n<2)return null;let sx=0,sy=0,sxx=0,sxy=0,syy=0;for(let i=0;i<n;i++){const x=X[i],y=Y[i];sx+=x;sy+=y;sxx+=x*x;sxy+=x*y;syy+=y*y}const den=n*sxx-sx*sx;if(den===0)return null;const m=(n*sxy-sx*sy)/den,b=(sy-m*sx)/n,yb=sy/n;let st=0,sr=0;for(let i=0;i<n;i++){const yt=Y[i],yf=m*X[i]+b;st+=(yt-yb)*(yt-yb);sr+=(yt-yf)*(yt-yf)}const r2=st>0?1-sr/st:1;return{m,b,r2}}
     function solve3(a,b){let A=a.map(r=>r.slice()),B=b.slice();for(let i=0;i<3;i++){let p=i;for(let r=i+1;r<3;r++)if(Math.abs(A[r][i])>Math.abs(A[p][i]))p=r;[A[i],A[p]]=[A[p],A[i]];[B[i],B[p]]=[B[p],B[i]];const pv=A[i][i];if(pv===0)return null;for(let j=i;j<3;j++)A[i][j]/=pv;B[i]/=pv;for(let r=0;r<3;r++)if(r!==i){const f=A[r][i];for(let j=i;j<3;j++)A[r][j]-=f*A[i][j];B[r]-=f*B[i]}}return B}
     function quadraticFit(xs,ys){let s0=0,s1=0,s2=0,s3=0,s4=0,t0=0,t1=0,t2=0,c=0;for(let i=0;i<xs.length;i++){const x=+xs[i],y=+ys[i];if(Number.isFinite(x)&&Number.isFinite(y)){const x2=x*x,x3=x2*x,x4=x3*x;s0+=1;s1+=x;s2+=x2;s3+=x3;s4+=x4;t0+=y;t1+=x*y;t2+=x2*y;c++}}if(c<3)return null;const sol=solve3([[s4,s3,s2],[s3,s2,s1],[s2,s1,s0]],[t2,t1,t0]);if(!sol)return null;const [a,b,c0]=sol;let yb=t0/s0,st=0,sr=0;for(let i=0;i<xs.length;i++){const x=+xs[i],y=+ys[i];if(Number.isFinite(x)&&Number.isFinite(y)){const yf=a*x*x+b*x+c0;st+=(y-yb)*(y-yb);sr+=(y-yf)*(y-yf)}}const r2=st>0?1-sr/st:1;return{a,b,c:c0,r2}}
     function predictLinear(m,b,x){return m*x+b}
     function predictQuadratic(a,b,c,x){return a*x*x+b*x+c}
-
     document.getElementById('applyfit').onclick = function() { const btn = d3.select(this);
         if (btn.classed('active')) { d3.select(".fit-brush").remove();
         btn.classed('active', false).style("background", null); return;}
