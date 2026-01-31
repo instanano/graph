@@ -48,7 +48,7 @@
         .style("padding", `${pad}px`).style("cursor", "move").style("font-size", "12px").html(text); const w = div.node().scrollWidth;
         const h = div.node().scrollHeight; fo.attr("width",  w + pad).attr("height", h + pad); div.on("input", () => {
         const nw = div.node().scrollWidth; const nh = div.node().scrollHeight; fo.attr("width",  nw + pad).attr("height", nh + pad);})
-        .on("keydown", e => { if (e.key === "Enter") { e.preventDefault(); this.blur();}}).on("blur", () => {
+        .on("keydown", function(e) { if (e.key === "Enter") { e.preventDefault(); this.blur();}}).on("blur", () => {
         d3.select(div.node()).style("cursor", "move");}); return { fo, div, pad };
     };
 })(window.GraphPlotter);
