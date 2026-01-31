@@ -1,4 +1,5 @@
 (function(G) {
+    "use strict";
     function movingAverage(a,w){
         const h=Math.floor(w/2),m=[];
         for(let i=0;i<a.length;i++){
@@ -7,7 +8,6 @@
             if(j>=0&&j<a.length&&isFinite(a[j])){ s+=a[j]; c++; }}
           m[i]=c?s/c:NaN;}
         return m;}
-        
     function rollingBaseline(a, w) {
       const h = Math.floor(w / 2), e = [], b = [];
       for (let i = 0; i < a.length; i++) {
@@ -23,7 +23,6 @@
             M = Math.max(M, e[j]);}}
         b[i] = M === -Infinity ? NaN : M;}
       return b;} 
-    
     function process(suffix, fn, w){
         const tbl = G.state.hot.getData(), hdr = tbl[0], rows = tbl.slice(3), baseNames = tbl[2].slice();
         hdr.forEach((h,i)=>{
@@ -37,7 +36,6 @@
         G.state.hot.loadData(tbl);
         G.axis.resetScales(true);
         G.renderChart();}
-
     function previewSeries(fn, w, cssClass) {
         const svg = d3.select("#chart svg"); svg.selectAll(`g.${cssClass}`).remove(); if (w <= 0) return;
         const opts = G.getSettings(); const isFTIR = opts.mode === "ftir" && cssClass === "baseline-preview";
@@ -48,11 +46,9 @@
         .attr("clip-path", "url(#clip)"); chartDef.draw(g, data, { x: G.state.lastXScale, y: G.state.lastYScale }, opts);
         g.selectAll("path").attr("stroke", "gray").attr("stroke-width", opts.linewidth);
     }
-
     document.getElementById("applysmoothing").onclick = () => {
         const w = +document.getElementById("smoothingslider").value; if (w > 0) {
         process("smoothed", movingAverage, w); document.getElementById("smoothingslider").value = 0;}};
-        
     document.getElementById("applybaseline").onclick = () => {
         const w = +document.getElementById("baselineslider").value; if (w <= 0) return; const s = G.getSettings();
         if (s.mode === "ftir") { process("baseline", (signal, win) => { const inv = signal.map(v => -v);
@@ -64,7 +60,6 @@
         const env = rollingBaseline(signal, win);
         return signal.map((v, i) => isFinite(v) && isFinite(env[i]) ? v - env[i] : NaN);}, w);}
         document.getElementById("baselineslider").value = 0;};
-    
     ['smoothing','baseline'].forEach(type=> document.getElementById(type+'slider').addEventListener('input',e=>{
         if(type==='smoothing') G.renderChart(); previewSeries(type==='smoothing'?movingAverage:rollingBaseline, +e.target.value, `${type}-preview`);}));
 })(window.GraphPlotter);
