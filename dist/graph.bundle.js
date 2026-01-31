@@ -191,6 +191,7 @@ window.GraphPlotter = window.GraphPlotter || {
     });
 })(window.GraphPlotter);
 (function(G) {
+    "use strict";
     G.ChartRegistry.register({
         id: "bar",
         dimensions: ["x","y"],
