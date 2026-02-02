@@ -1,18 +1,13 @@
-# GitHub Actions workflow to automatically build bundle
-# Triggers on every push to main branch
-# Creates dist/graph.bundle.js and dist/graph.bundle.min.js
-
 name: Build Bundle
 
 on:
   push:
-    branches: [main]
+    branches: [main, beta]
     paths:
       - '**.js'
       - '!dist/**'
-  workflow_dispatch:  # Allow manual trigger
+  workflow_dispatch:
 
-# Required permissions for pushing commits
 permissions:
   contents: write
 
@@ -82,4 +77,4 @@ jobs:
           git config --local user.name "github-actions[bot]"
           git add dist/
           git diff --staged --quiet || git commit -m "🔨 Auto-build: Update bundle files"
-          git push
+          git push origin HEAD:${{ github.ref }}
