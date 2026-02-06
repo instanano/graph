@@ -10,14 +10,12 @@
         hnmrmatch: { buf: { range: 0.2, single: 0.5 }, cols: ['Chemical Shift (ppm)', 'Type', 'Assignment', 'Description'] },
         cnmrmatch: { buf: { range: 10, single: 20 }, cols: ['Chemical Shift (ppm)', 'Type', 'Assignment', 'Description'] }
     };
-
     async function fetchData(id) {
         if (cache[id]) return cache[id];
         const folder = id.replace('match', '');
         const res = await fetch(`${CDN_BASE}${folder}/match.json`);
         return cache[id] = await res.json();
     }
-
     G.matchStandard = {
         isStandard: (id) => !!config[id],
         search: async (id, xVal) => {
@@ -29,10 +27,7 @@
                     ? (xVal >= p[0] - buf.range && xVal <= p[1] + buf.range)
                     : Math.abs(xVal - p[0]) <= buf.single;
             });
-            return {
-                matches: matches.map(row => ({ row })),
-                cols
-            };
+            return { matches: matches.map(row => ({ row })), cols };
         }
     };
-})(window.G = window.G || {});
+})(window.GraphPlotter);
