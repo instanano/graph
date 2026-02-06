@@ -1,46 +1,79 @@
 (function(G) {
     "use strict";
-    const CDN_BASE = 'https://cdn.jsdelivr.net/gh/instanano/graph@latest/match/';
-    const matchDataCache = {};
-    const buffers = {ftirmatch:{range:20,single:50},xpsmatch:{range:1,single:0.5},ramanmatch:{range:10,single:30},uvvismatch:{range:20,single:40},hnmrmatch:{range:0.2,single:0.5},cnmrmatch:{range:10,single:20}};
-    const headers = {ftirmatch:['Peak Position','Group','Class','Intensity'],xpsmatch:['Peak Position','Group','Material','Notes'],ramanmatch:['Raman Shift (cm⁻¹)','Material','Mode','Notes'],uvvismatch:['λmax (nm)','Material','Characteristic','Description'],hnmrmatch:['Chemical Shift (ppm)','Type','Assignment','Description'],cnmrmatch:['Chemical Shift (ppm)','Type','Assignment','Description']};
-    async function loadMatchData(id) {
-        if (matchDataCache[id]) return matchDataCache[id];
-        try {
-        const folder = id.replace('match', '');
-        const res = await fetch(CDN_BASE + folder + '/match.json');
-        if (!res.ok) throw new Error(res.status);
-        const data = await res.json();
-        matchDataCache[id] = data;
-        return data;
-        } catch (e) { console.error('Load failed:', id, e); return []; }
-    }
+
+    // Helper to render matched rows
     function renderMatches(matches, cols) {
-        return matches.map(row => `<div class="matchedrow">` + row.map((val, i) => `<div class="matchedrow-h${i+1}"><b>${cols[i]}:</b> ${val}</div>`).join('') + `</div>`).join('');
+        if (!matches.length) return '<p>No matching peaks found.</p>';
+        
+        return matches.map(item => {
+            // Check if item has 'row' property (XRD) or is direct array (Standard)
+            const rowData = item.row || item.row || item; 
+            // Store reference peaks in data attribute for click handling
+            const peakDataAttr = item.peaks ? ` data-peaks='${JSON.stringify(item.peaks)}'` : '';
+            
+            return `<div class="matchedrow"${peakDataAttr} style="cursor:pointer;">` + 
+                rowData.map((val, i) => `<div><b>${cols[i]}:</b> ${val}</div>`).join('') + 
+                `</div>`;
+        }).join('');
     }
-    async function updateMatchTable(xVal) {
-        const sel = document.querySelector('input[name="matchinstrument"]:checked').id;
-        const buf = buffers[sel] || {range:0,single:0};
-        const cols = headers[sel] || [];
-        const dataArr = await loadMatchData(sel);
-        const matches = dataArr.filter(r => {
-        const parts = r[0].split('-').map(Number);
-        return parts.length > 1 ? (xVal >= parts[0] - buf.range && xVal <= parts[1] + buf.range) : Math.abs(xVal - parts[0]) <= buf.single;});
-        d3.select('#matchedData').html(matches.length ? renderMatches(matches, cols) : '<p>No matching peaks found.</p>');
-    }
-    d3.select('#matchedData').html('<p>Please click any peak.</p>');
-    document.getElementById('icon5').addEventListener('change', function() {
-    if (this.checked) loadMatchData(document.querySelector('input[name="matchinstrument"]:checked').id);});
-    document.querySelector('label[for="icon5"]').addEventListener('mouseenter', () => {
-    loadMatchData(document.querySelector('input[name="matchinstrument"]:checked').id);});
+
+    // 1. Handle Instrument Selection Change
     document.querySelectorAll('input[name="matchinstrument"]').forEach(input => {
-    input.addEventListener('change', async function() {
-    d3.select('#matchedData').html('<p>Loading...</p>');
-    await loadMatchData(this.id);
-    d3.select('#matchedData').html('<p>Please click any peak.</p>');});});
+        input.addEventListener('change', function() {
+            G.matchXRD.clear(); // Clear all peaks (User + Ref)
+            d3.select('#matchedData').html('<p>Please click any peak.</p>');
+            if (this.id === 'xrdmatch') {
+                document.getElementById('xrd-match-label').textContent = "Select Peak";
+            } else {
+                // Reset label if switching away
+                document.getElementById('xrd-match-label').textContent = "XRD Data Match"; 
+            }
+        });
+    });
+
+    // 2. Handle Graph Clicks (Adding Peaks)
     d3.select('#chart').on('click.match', async function(event) {
-    if (!document.getElementById('icon5').checked) return;
-    const svgNode = d3.select('#chart svg').node(), [mx, my] = d3.pointer(event, svgNode);
-    if (mx < G.config.DIM.ML || mx > G.config.DIM.W - G.config.DIM.MR || my < G.config.DIM.MT || my > G.config.DIM.H - G.config.DIM.MB) return;
-    await updateMatchTable(G.state.lastXScale.invert(mx));});
+        const isMatchEnabled = document.getElementById('icon5').checked;
+        if (!isMatchEnabled) return;
+
+        const svgNode = d3.select('#chart svg').node();
+        const [mx, my] = d3.pointer(event, svgNode);
+        
+        // Bounds Check
+        if (mx < G.config.DIM.ML || mx > G.config.DIM.W - G.config.DIM.MR || 
+            my < G.config.DIM.MT || my > G.config.DIM.H - G.config.DIM.MB) return;
+
+        const xVal = G.state.lastXScale.invert(mx);
+        const sel = document.querySelector('input[name="matchinstrument"]:checked').id;
+
+        if (sel === 'xrdmatch') {
+            G.matchXRD.addPeak(xVal);
+        } else if (G.matchStandard.isStandard(sel)) {
+            const { matches, cols } = await G.matchStandard.search(sel, xVal);
+            d3.select('#matchedData').html(renderMatches(matches, cols));
+        }
+    });
+
+    // 3. Handle "Search Database" Button Click
+    document.getElementById('xrd-match-label').addEventListener('click', async function(e) {
+        const radio = document.getElementById('xrdmatch');
+        if (radio.checked && this.textContent === "Search Database") {
+            const { matches, cols } = await G.matchXRD.search();
+            d3.select('#matchedData').html(renderMatches(matches, cols));
+        }
+    });
+
+    // 4. Handle Click on Result Row (Visualize Reference Peaks)
+    d3.select('#matchedData').on('click', function(e) {
+        const target = e.target.closest('.matchedrow');
+        if (target && target.dataset.peaks) {
+            // Remove active class from others and add to current
+            d3.selectAll('.matchedrow').style('background', ''); 
+            target.style.background = '#f0f8ff'; 
+
+            const peaks = JSON.parse(target.dataset.peaks);
+            G.matchXRD.showReferencePeaks(peaks);
+        }
+    });
+
 })(window.GraphPlotter);
