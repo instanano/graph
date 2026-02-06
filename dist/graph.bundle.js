@@ -1056,7 +1056,14 @@ window.GraphPlotter = window.GraphPlotter || {
         });
     });
     const fs = document.getElementById('xrd-filter-section');
+    const ei = document.getElementById('xrd-elements');
     ['click', 'mousedown', 'pointerdown', 'focusin', 'input', 'keydown', 'keyup'].forEach(ev => fs?.addEventListener(ev, e => { e.stopPropagation(); setTimeout(() => G.matchXRD?.render(), 10); }));
+    ei?.addEventListener('input', () => {
+        if (!G.matchXRD) return;
+        const v = G.matchXRD.validate(ei.value);
+        ei.style.outline = v.valid ? '' : '2px solid red';
+        ei.title = v.valid ? '' : 'Invalid: ' + v.invalid.join(', ');
+    });
     d3.select('#chart').on('click.match', async function (e) {
         if (!document.getElementById('icon5').checked) return;
         const svg = d3.select('#chart svg').node();
@@ -1083,10 +1090,13 @@ window.GraphPlotter = window.GraphPlotter || {
         }
     });
     document.getElementById('xrd-search-btn')?.addEventListener('click', async function () {
-        const ei = document.getElementById('xrd-elements');
+        const el = document.getElementById('xrd-elements');
         const lm = document.getElementById('xrd-logic-mode');
         const ec = document.getElementById('xrd-element-count');
-        if (ei && lm && ec && G.matchXRD) G.matchXRD.setFilter(ei.value.split(',').filter(e => e.trim()), lm.value, parseInt(ec.value) || 0);
+        if (!G.matchXRD) return;
+        const v = G.matchXRD.validate(el?.value || '');
+        if (!v.valid) { el.style.outline = '2px solid red'; el.title = 'Invalid: ' + v.invalid.join(', '); return; }
+        G.matchXRD.setFilter((el?.value || '').split(',').filter(e => e.trim()), lm?.value, parseInt(ec?.value) || 0);
         const { matches, cols } = await G.matchXRD.search();
         d3.select('#matchedData').html(renderMatches(matches, cols));
     });
@@ -1192,6 +1202,12 @@ window.GraphPlotter = window.GraphPlotter || {
             });
         },
         clear: () => { selectedPeaks = []; d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); updateLabel("Select Peak"); },
+        validate: (input) => {
+            if (!input.trim()) return { valid: true, invalid: [] };
+            const parts = input.split(',').map(e => e.trim()).filter(e => e);
+            const invalid = parts.filter(e => !PERIODIC_TABLE[e]);
+            return { valid: invalid.length === 0, invalid };
+        },
         setFilter: (els, mode, count) => {
             const nums = [];
             for (const e of els) { const t = e.trim(); if (PERIODIC_TABLE[t]) nums.push(PERIODIC_TABLE[t]); }
