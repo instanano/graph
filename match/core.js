@@ -17,6 +17,8 @@
             if (this.id === 'xrdmatch') document.getElementById('xrd-match-label').textContent = "Select Peak";
         });
     });
+    document.getElementById('xrd-filter-section')?.addEventListener('click', e => { e.stopPropagation(); G.matchXRD?.render(); });
+    document.getElementById('xrd-filter-section')?.addEventListener('mousedown', e => e.stopPropagation());
     d3.select('#chart').on('click.match', async function (e) {
         if (!document.getElementById('icon5').checked) return;
         const svg = d3.select('#chart svg').node();
@@ -54,8 +56,6 @@
         if (G.matchXRD) G.matchXRD.clear();
         d3.select('#matchedData').html('<p>Please click any peak.</p>');
     });
-    document.getElementById('xrd-elements')?.addEventListener('click', function (e) { e.stopPropagation(); });
-    document.getElementById('xrd-elements')?.addEventListener('focus', function (e) { e.stopPropagation(); });
     d3.select('#matchedData').on('click', function (e) {
         const t = e.target.closest('.matchedrow');
         if (t && t.dataset.peaks) {
