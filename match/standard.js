@@ -1,14 +1,14 @@
-(function(G) {
+(function (G) {
     "use strict";
     const CDN_BASE = 'https://cdn.jsdelivr.net/gh/instanano/graph_static@latest/match/';
     const cache = {};
     const config = {
-        ftirmatch:   { buf:{range:20, single:50},  cols:['Peak Position','Group','Class','Intensity'] },
-        xpsmatch:    { buf:{range:1,  single:0.5}, cols:['Peak Position','Group','Material','Notes'] },
-        ramanmatch:  { buf:{range:10, single:30},  cols:['Raman Shift (cm⁻¹)','Material','Mode','Notes'] },
-        uvvismatch:  { buf:{range:20, single:40},  cols:['λmax (nm)','Material','Characteristic','Description'] },
-        hnmrmatch:   { buf:{range:0.2,single:0.5}, cols:['Chemical Shift (ppm)','Type','Assignment','Description'] },
-        cnmrmatch:   { buf:{range:10, single:20},  cols:['Chemical Shift (ppm)','Type','Assignment','Description'] }
+        ftirmatch: { buf: { range: 20, single: 50 }, cols: ['Peak Position', 'Group', 'Class', 'Intensity'] },
+        xpsmatch: { buf: { range: 1, single: 0.5 }, cols: ['Peak Position', 'Group', 'Material', 'Notes'] },
+        ramanmatch: { buf: { range: 10, single: 30 }, cols: ['Raman Shift (cm⁻¹)', 'Material', 'Mode', 'Notes'] },
+        uvvismatch: { buf: { range: 20, single: 40 }, cols: ['λmax (nm)', 'Material', 'Characteristic', 'Description'] },
+        hnmrmatch: { buf: { range: 0.2, single: 0.5 }, cols: ['Chemical Shift (ppm)', 'Type', 'Assignment', 'Description'] },
+        cnmrmatch: { buf: { range: 10, single: 20 }, cols: ['Chemical Shift (ppm)', 'Type', 'Assignment', 'Description'] }
     };
 
     async function fetchData(id) {
@@ -25,15 +25,14 @@
             const { buf, cols } = config[id];
             const matches = data.filter(r => {
                 const p = r[0].split('-').map(Number);
-                return p.length > 1 
-                    ? (xVal >= p[0] - buf.range && xVal <= p[1] + buf.range) 
+                return p.length > 1
+                    ? (xVal >= p[0] - buf.range && xVal <= p[1] + buf.range)
                     : Math.abs(xVal - p[0]) <= buf.single;
             });
-            // Return in a structure compatible with the new core renderer
-            return { 
-                matches: matches.map(row => ({ row })), // Wrap in object
-                cols 
+            return {
+                matches: matches.map(row => ({ row })),
+                cols
             };
         }
     };
-})(window.GraphPlotter);
+})(window.G = window.G || {});
