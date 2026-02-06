@@ -1,6 +1,8 @@
 (function (G) {
     "use strict";
 
+    let xrdResults = [];
+
     function renderXRDMatches(results) {
         if (!results || results.length === 0) {
             return '<p>No matching peaks found.</p>';
@@ -28,57 +30,81 @@
         }).join('');
     }
 
-    let xrdResults = [];
+    function updatePeaksList() {
+        const list = document.getElementById('xrd-peaks-list');
+        if (!list || !G.matchXRD) return;
 
-    document.querySelectorAll('input[name="matchinstrument"]').forEach(input => {
-        input.addEventListener('change', function () {
+        const peaks = G.matchXRD.getPeaks();
+        list.innerHTML = peaks.map((p, i) =>
+            `<span style="background:#e3f2fd;padding:2px 8px;border-radius:12px;font-size:12px;display:inline-flex;align-items:center;gap:4px">
+                ${p.toFixed(2)}°
+                <span data-idx="${i}" style="cursor:pointer;color:#f44336;font-weight:bold">×</span>
+            </span>`
+        ).join('');
+
+        list.querySelectorAll('[data-idx]').forEach(btn => {
+            btn.addEventListener('click', function () {
+                G.matchXRD.removePeak(parseInt(this.dataset.idx));
+                updatePeaksList();
+            });
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+
+        document.querySelectorAll('input[name="matchinstrument"]').forEach(input => {
+            input.addEventListener('change', function () {
+                if (G.matchXRD) {
+                    G.matchXRD.clearPeaks();
+                    G.matchXRD.clearReferencePreview();
+                    G.matchXRD.clearElementFilter();
+                }
+                xrdResults = [];
+                const matchedData = document.getElementById('matchedData');
+                if (matchedData) matchedData.innerHTML = '<p>Select peaks to search.</p>';
+
+                const filterSection = document.getElementById('xrd-filter-section');
+                if (filterSection) {
+                    filterSection.style.display = this.id === 'xrdmatch' ? 'block' : 'none';
+                }
+
+                updatePeaksList();
+            });
+        });
+
+        document.getElementById('xrd-add-peak')?.addEventListener('click', function () {
+            const input = document.getElementById('xrd-peak-input');
+            if (!input || !G.matchXRD) return;
+
+            const val = parseFloat(input.value);
+            if (!isNaN(val) && val >= 0 && val <= 180) {
+                G.matchXRD.addPeak(val);
+                updatePeaksList();
+                input.value = '';
+                input.focus();
+            }
+        });
+
+        document.getElementById('xrd-peak-input')?.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                document.getElementById('xrd-add-peak')?.click();
+            }
+        });
+
+        document.getElementById('xrd-clear-peaks')?.addEventListener('click', function () {
             if (G.matchXRD) {
                 G.matchXRD.clearPeaks();
                 G.matchXRD.clearReferencePreview();
-                G.matchXRD.clearElementFilter();
             }
             xrdResults = [];
-            document.getElementById('matchedData').innerHTML = '<p>Click on chart to select peaks.</p>';
-
-            const filterSection = document.getElementById('xrd-filter-section');
-            if (filterSection) {
-                filterSection.style.display = this.id === 'xrdmatch' ? 'block' : 'none';
-            }
-
-            const label = document.getElementById('xrd-match-label');
-            if (label) {
-                label.textContent = this.id === 'xrdmatch' ? 'XRD Data Match' : 'XRD Data Match';
-            }
+            updatePeaksList();
+            const matchedData = document.getElementById('matchedData');
+            if (matchedData) matchedData.innerHTML = '<p>Select peaks to search.</p>';
         });
-    });
 
-    d3.select('#chart-area').on('click.match', async function (event) {
-        const isMatchEnabled = document.getElementById('icon5')?.checked;
-        if (!isMatchEnabled) return;
+        document.getElementById('xrd-search-btn')?.addEventListener('click', async function () {
+            if (!G.matchXRD) return;
 
-        const svgNode = d3.select('#chart-area svg').node();
-        if (!svgNode) return;
-
-        const [mx, my] = d3.pointer(event, svgNode);
-
-        if (!G.currentScales || !G.currentScales.x) return;
-
-        const xVal = G.currentScales.x.invert(mx);
-        const sel = document.querySelector('input[name="matchinstrument"]:checked')?.id;
-
-        if (sel === 'xrdmatch' && G.matchXRD) {
-            G.matchXRD.addPeak(xVal);
-            G.matchXRD.updatePeakList();
-            document.getElementById('xrd-match-label').textContent = 'Search Database';
-        } else if (G.matchStandard && G.matchStandard.isStandard(sel)) {
-            const { matches, cols } = await G.matchStandard.search(sel, xVal);
-            document.getElementById('matchedData').innerHTML = renderStandardMatches(matches, cols);
-        }
-    });
-
-    document.getElementById('xrd-match-label')?.addEventListener('click', async function (e) {
-        const radio = document.getElementById('xrdmatch');
-        if (radio?.checked && this.textContent === 'Search Database' && G.matchXRD) {
             const elementsInput = document.getElementById('xrd-elements');
             const logicMode = document.getElementById('xrd-logic-mode');
             const elementCount = document.getElementById('xrd-element-count');
@@ -89,12 +115,13 @@
             }
 
             xrdResults = await G.matchXRD.search();
-            document.getElementById('matchedData').innerHTML = renderXRDMatches(xrdResults);
+            const matchedData = document.getElementById('matchedData');
+            if (matchedData) matchedData.innerHTML = renderXRDMatches(xrdResults);
 
             document.querySelectorAll('.xrd-result').forEach(el => {
                 el.addEventListener('mouseenter', function () {
                     const idx = parseInt(this.dataset.idx);
-                    if (xrdResults[idx]) {
+                    if (xrdResults[idx] && G.matchXRD) {
                         G.matchXRD.renderReferencePreview(xrdResults[idx]);
                     }
                 });
@@ -102,37 +129,32 @@
                     const idx = parseInt(this.dataset.idx);
                     document.querySelectorAll('.xrd-result').forEach(r => r.style.borderColor = '#ddd');
                     this.style.borderColor = '#2196F3';
-                    if (xrdResults[idx]) {
+                    if (xrdResults[idx] && G.matchXRD) {
                         G.matchXRD.renderReferencePreview(xrdResults[idx]);
                     }
                 });
             });
-        }
-    });
+        });
 
-    document.getElementById('xrd-clear-filter')?.addEventListener('click', function () {
-        const elementsInput = document.getElementById('xrd-elements');
-        const logicMode = document.getElementById('xrd-logic-mode');
-        const elementCount = document.getElementById('xrd-element-count');
-        if (elementsInput) elementsInput.value = '';
-        if (logicMode) logicMode.value = 'and';
-        if (elementCount) elementCount.value = '0';
-        if (G.matchXRD) G.matchXRD.clearElementFilter();
-    });
+        d3.select('#chart-area').on('click.match', async function (event) {
+            const isMatchEnabled = document.getElementById('icon5')?.checked;
+            if (!isMatchEnabled) return;
 
-    document.getElementById('xrd-clear-peaks')?.addEventListener('click', function () {
-        if (G.matchXRD) {
-            G.matchXRD.clearPeaks();
-            G.matchXRD.updatePeakList();
-            G.matchXRD.clearReferencePreview();
-        }
-        xrdResults = [];
-        document.getElementById('matchedData').innerHTML = '<p>Click on chart to select peaks.</p>';
-        document.getElementById('xrd-match-label').textContent = 'XRD Data Match';
-    });
+            const sel = document.querySelector('input[name="matchinstrument"]:checked')?.id;
+            if (sel === 'xrdmatch') return;
 
-    document.getElementById('xrd-search-btn')?.addEventListener('click', function () {
-        document.getElementById('xrd-match-label')?.click();
+            const svgNode = d3.select('#chart-area svg').node();
+            if (!svgNode || !G.currentScales?.x) return;
+
+            const [mx] = d3.pointer(event, svgNode);
+            const xVal = G.currentScales.x.invert(mx);
+
+            if (G.matchStandard && G.matchStandard.isStandard(sel)) {
+                const { matches, cols } = await G.matchStandard.search(sel, xVal);
+                const matchedData = document.getElementById('matchedData');
+                if (matchedData) matchedData.innerHTML = renderStandardMatches(matches, cols);
+            }
+        });
     });
 
 })(window.G = window.G || {});
