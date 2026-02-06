@@ -22,20 +22,30 @@
         if (mode === 'only') { if (ca.length !== elements.length) return false; for (const e of elements) if (!cs.has(e)) return false; return true; }
         return true;
     };
+    const normalizeIntensity = () => {
+        if (!selectedPeaks.length) return;
+        const maxInt = Math.max(...selectedPeaks.map(p => p.intensity));
+        if (maxInt > 0) selectedPeaks.forEach(p => p.normInt = (p.intensity / maxInt) * 100);
+    };
     G.matchXRD = {
-        addPeak: (x) => { selectedPeaks.push(x); G.matchXRD.render(); updateLabel("Search Database"); },
+        addPeak: (x, intensity) => {
+            selectedPeaks.push({ x, intensity, normInt: 0 });
+            normalizeIntensity();
+            G.matchXRD.render();
+            updateLabel("Search Database");
+        },
         render: () => {
             const svg = d3.select('#chart svg');
             svg.selectAll('.xrd-user-peak').remove();
-            selectedPeaks.forEach((x, i) => {
-                const xp = G.state.lastXScale(x);
+            selectedPeaks.forEach((p, i) => {
+                const xp = G.state.lastXScale(p.x);
                 svg.append('line').attr('class', 'xrd-user-peak')
                     .attr('x1', xp).attr('x2', xp)
                     .attr('y1', G.config.DIM.H - G.config.DIM.MB)
                     .attr('y2', G.config.DIM.H - G.config.DIM.MB - 15)
                     .attr('stroke', 'red').attr('stroke-width', 3)
                     .style('cursor', 'pointer')
-                    .on('click', (e) => { e.stopPropagation(); selectedPeaks.splice(i, 1); if (!selectedPeaks.length) updateLabel("Select Peak"); G.matchXRD.render(); });
+                    .on('click', (e) => { e.stopPropagation(); selectedPeaks.splice(i, 1); normalizeIntensity(); if (!selectedPeaks.length) updateLabel("Select Peak"); G.matchXRD.render(); });
             });
         },
         showRef: (peaks, ints) => {
@@ -44,7 +54,7 @@
             peaks.forEach((x, i) => {
                 const xp = G.state.lastXScale(x);
                 if (xp < G.config.DIM.ML || xp > G.config.DIM.W - G.config.DIM.MR) return;
-                const h = 15 + ((ints?.[i] ?? 100) / 100) * 25;
+                const h = 5 + ((ints?.[i] ?? 100) / 100) * 35;
                 svg.append('line').attr('class', 'xrd-ref-peak')
                     .attr('x1', xp).attr('x2', xp)
                     .attr('y1', G.config.DIM.H - G.config.DIM.MB)
@@ -75,13 +85,13 @@
             }
             const candidates = new Map();
             const binSet = new Set();
-            for (const up of selectedPeaks) binSet.add(Math.floor(up / BIN_WIDTH));
+            for (const p of selectedPeaks) binSet.add(Math.floor(p.x / BIN_WIDTH));
             const binArr = [...binSet];
             const fetches = await Promise.all(binArr.map(b => fetch(`${XRD_BASE}index/${b}.json`).then(r => r.ok ? r.json() : null).catch(() => null)));
             const binData = {};
             binArr.forEach((b, i) => { if (fetches[i]) binData[b] = fetches[i]; });
             for (const up of selectedPeaks) {
-                const bid = Math.floor(up / BIN_WIDTH);
+                const bid = Math.floor(up.x / BIN_WIDTH);
                 const idx = binData[bid];
                 if (!idx) continue;
                 for (let j = 0; j < idx.d.length; j++) {
@@ -89,10 +99,10 @@
                     if (!passesFilter(cid)) continue;
                     const rid = p >> 8, off = p & 0xFF;
                     const rp = (bid * BIN_WIDTH) + (off / PRECISION);
-                    const diff = Math.abs(up - rp);
+                    const diff = Math.abs(up.x - rp);
                     if (diff <= TOLERANCE) {
                         if (!candidates.has(rid)) candidates.set(rid, []);
-                        candidates.get(rid).push({ rp, diff });
+                        candidates.get(rid).push({ rp, diff, userInt: up.normInt });
                     }
                 }
             }
@@ -115,15 +125,18 @@
                 for (let i = 0; i < totalRefPeaks; i++) {
                     const rp = refPeaks[i];
                     const ri = refInts[i] || 50;
-                    let bestDiff = TOLERANCE + 1;
+                    let bestMatch = null;
                     for (const up of selectedPeaks) {
-                        const diff = Math.abs(up - rp);
-                        if (diff <= TOLERANCE && diff < bestDiff) bestDiff = diff;
+                        const diff = Math.abs(up.x - rp);
+                        if (diff <= TOLERANCE && (!bestMatch || diff < bestMatch.diff)) {
+                            bestMatch = { diff, userInt: up.normInt };
+                        }
                     }
-                    if (bestDiff <= TOLERANCE) {
+                    if (bestMatch) {
                         matchCount++;
-                        posPenalty += (bestDiff / TOLERANCE) * 8;
-                        intPenalty += ((100 - ri) / 100) * 2;
+                        posPenalty += (bestMatch.diff / TOLERANCE) * 8;
+                        const intDiff = Math.abs(bestMatch.userInt - ri);
+                        intPenalty += (intDiff / 100) * 2;
                     } else {
                         posPenalty += 8;
                         intPenalty += 2;
