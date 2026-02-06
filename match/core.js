@@ -19,6 +19,8 @@
     });
     document.getElementById('xrd-filter-section')?.addEventListener('click', e => { e.stopPropagation(); G.matchXRD?.render(); });
     document.getElementById('xrd-filter-section')?.addEventListener('mousedown', e => e.stopPropagation());
+    document.getElementById('xrd-filter-section')?.addEventListener('pointerdown', e => e.stopPropagation());
+    document.getElementById('xrd-filter-section')?.addEventListener('focusin', e => { e.stopPropagation(); setTimeout(() => G.matchXRD?.render(), 10); });
     d3.select('#chart').on('click.match', async function (e) {
         if (!document.getElementById('icon5').checked) return;
         const svg = d3.select('#chart svg').node();
