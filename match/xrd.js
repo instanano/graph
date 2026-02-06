@@ -54,6 +54,12 @@
             });
         },
         clear: () => { selectedPeaks = []; d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); updateLabel("Select Peak"); },
+        validate: (input) => {
+            if (!input.trim()) return { valid: true, invalid: [] };
+            const parts = input.split(',').map(e => e.trim()).filter(e => e);
+            const invalid = parts.filter(e => !PERIODIC_TABLE[e]);
+            return { valid: invalid.length === 0, invalid };
+        },
         setFilter: (els, mode, count) => {
             const nums = [];
             for (const e of els) { const t = e.trim(); if (PERIODIC_TABLE[t]) nums.push(PERIODIC_TABLE[t]); }
