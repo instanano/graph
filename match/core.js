@@ -17,6 +17,7 @@
             if (this.id === 'xrdmatch') document.getElementById('xrd-match-label').textContent = "Select Peak";
         });
     });
+    ['icon1', 'icon2', 'icon3', 'icon4'].forEach(id => document.getElementById(id)?.addEventListener('change', () => { if (G.matchXRD) G.matchXRD.clear(); }));
     const fs = document.getElementById('xrd-filter-section');
     const ei = document.getElementById('xrd-elements');
     ['click', 'mousedown', 'pointerdown', 'focusin', 'input', 'keydown', 'keyup'].forEach(ev => fs?.addEventListener(ev, e => { e.stopPropagation(); setTimeout(() => G.matchXRD?.render(), 10); }));
