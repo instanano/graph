@@ -34,7 +34,9 @@
         const x = G.state.lastXScale.invert(mx);
         const sel = document.querySelector('input[name="matchinstrument"]:checked').id;
         if (sel === 'xrdmatch') {
-            G.matchXRD.addPeak(x);
+            let intensity = G.state.lastYScale.invert(my);
+            if (intensity < 0) intensity = 0;
+            G.matchXRD.addPeak(x, intensity);
         } else if (G.matchStandard && G.matchStandard.isStandard(sel)) {
             const { matches, cols } = await G.matchStandard.search(sel, x);
             d3.select('#matchedData').html(renderMatches(matches, cols));
