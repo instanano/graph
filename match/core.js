@@ -1,79 +1,138 @@
-(function(G) {
+(function (G) {
     "use strict";
 
-    // Helper to render matched rows
-    function renderMatches(matches, cols) {
+    function renderXRDMatches(results) {
+        if (!results || results.length === 0) {
+            return '<p>No matching peaks found.</p>';
+        }
+
+        return results.map((item, idx) => {
+            return `<div class="matchedrow xrd-result" data-idx="${idx}" style="cursor:pointer;padding:8px;margin:4px 0;border:1px solid #ddd;border-radius:4px;">
+                <div style="display:flex;justify-content:space-between">
+                    <strong>${item.formula}</strong>
+                    <span style="color:#2196F3">${item.score}%</span>
+                </div>
+                <div style="font-size:11px;color:#666">Ref: ${item.refCode}</div>
+            </div>`;
+        }).join('');
+    }
+
+    function renderStandardMatches(matches, cols) {
         if (!matches.length) return '<p>No matching peaks found.</p>';
-        
+
         return matches.map(item => {
-            // Check if item has 'row' property (XRD) or is direct array (Standard)
-            const rowData = item.row || item.row || item; 
-            // Store reference peaks in data attribute for click handling
-            const peakDataAttr = item.peaks ? ` data-peaks='${JSON.stringify(item.peaks)}'` : '';
-            
-            return `<div class="matchedrow"${peakDataAttr} style="cursor:pointer;">` + 
-                rowData.map((val, i) => `<div><b>${cols[i]}:</b> ${val}</div>`).join('') + 
+            const rowData = item.row || item;
+            return `<div class="matchedrow" style="cursor:pointer;">` +
+                rowData.map((val, i) => `<div><b>${cols[i]}:</b> ${val}</div>`).join('') +
                 `</div>`;
         }).join('');
     }
 
-    // 1. Handle Instrument Selection Change
+    let xrdResults = [];
+
     document.querySelectorAll('input[name="matchinstrument"]').forEach(input => {
-        input.addEventListener('change', function() {
-            G.matchXRD.clear(); // Clear all peaks (User + Ref)
-            d3.select('#matchedData').html('<p>Please click any peak.</p>');
-            if (this.id === 'xrdmatch') {
-                document.getElementById('xrd-match-label').textContent = "Select Peak";
-            } else {
-                // Reset label if switching away
-                document.getElementById('xrd-match-label').textContent = "XRD Data Match"; 
+        input.addEventListener('change', function () {
+            if (G.matchXRD) {
+                G.matchXRD.clearPeaks();
+                G.matchXRD.clearReferencePreview();
+                G.matchXRD.clearElementFilter();
+            }
+            xrdResults = [];
+            document.getElementById('matchedData').innerHTML = '<p>Click on chart to select peaks.</p>';
+
+            const filterSection = document.getElementById('xrd-filter-section');
+            if (filterSection) {
+                filterSection.style.display = this.id === 'xrdmatch' ? 'block' : 'none';
+            }
+
+            const label = document.getElementById('xrd-match-label');
+            if (label) {
+                label.textContent = this.id === 'xrdmatch' ? 'XRD Data Match' : 'XRD Data Match';
             }
         });
     });
 
-    // 2. Handle Graph Clicks (Adding Peaks)
-    d3.select('#chart').on('click.match', async function(event) {
-        const isMatchEnabled = document.getElementById('icon5').checked;
+    d3.select('#chart-area').on('click.match', async function (event) {
+        const isMatchEnabled = document.getElementById('icon5')?.checked;
         if (!isMatchEnabled) return;
 
-        const svgNode = d3.select('#chart svg').node();
+        const svgNode = d3.select('#chart-area svg').node();
+        if (!svgNode) return;
+
         const [mx, my] = d3.pointer(event, svgNode);
-        
-        // Bounds Check
-        if (mx < G.config.DIM.ML || mx > G.config.DIM.W - G.config.DIM.MR || 
-            my < G.config.DIM.MT || my > G.config.DIM.H - G.config.DIM.MB) return;
 
-        const xVal = G.state.lastXScale.invert(mx);
-        const sel = document.querySelector('input[name="matchinstrument"]:checked').id;
+        if (!G.currentScales || !G.currentScales.x) return;
 
-        if (sel === 'xrdmatch') {
+        const xVal = G.currentScales.x.invert(mx);
+        const sel = document.querySelector('input[name="matchinstrument"]:checked')?.id;
+
+        if (sel === 'xrdmatch' && G.matchXRD) {
             G.matchXRD.addPeak(xVal);
-        } else if (G.matchStandard.isStandard(sel)) {
+            G.matchXRD.updatePeakList();
+            document.getElementById('xrd-match-label').textContent = 'Search Database';
+        } else if (G.matchStandard && G.matchStandard.isStandard(sel)) {
             const { matches, cols } = await G.matchStandard.search(sel, xVal);
-            d3.select('#matchedData').html(renderMatches(matches, cols));
+            document.getElementById('matchedData').innerHTML = renderStandardMatches(matches, cols);
         }
     });
 
-    // 3. Handle "Search Database" Button Click
-    document.getElementById('xrd-match-label').addEventListener('click', async function(e) {
+    document.getElementById('xrd-match-label')?.addEventListener('click', async function (e) {
         const radio = document.getElementById('xrdmatch');
-        if (radio.checked && this.textContent === "Search Database") {
-            const { matches, cols } = await G.matchXRD.search();
-            d3.select('#matchedData').html(renderMatches(matches, cols));
+        if (radio?.checked && this.textContent === 'Search Database' && G.matchXRD) {
+            const elementsInput = document.getElementById('xrd-elements');
+            const logicMode = document.getElementById('xrd-logic-mode');
+            const elementCount = document.getElementById('xrd-element-count');
+
+            if (elementsInput && logicMode && elementCount) {
+                const els = elementsInput.value.split(',').map(e => e.trim()).filter(e => e);
+                G.matchXRD.setElementFilter(els, logicMode.value, parseInt(elementCount.value) || 0);
+            }
+
+            xrdResults = await G.matchXRD.search();
+            document.getElementById('matchedData').innerHTML = renderXRDMatches(xrdResults);
+
+            document.querySelectorAll('.xrd-result').forEach(el => {
+                el.addEventListener('mouseenter', function () {
+                    const idx = parseInt(this.dataset.idx);
+                    if (xrdResults[idx]) {
+                        G.matchXRD.renderReferencePreview(xrdResults[idx]);
+                    }
+                });
+                el.addEventListener('click', function () {
+                    const idx = parseInt(this.dataset.idx);
+                    document.querySelectorAll('.xrd-result').forEach(r => r.style.borderColor = '#ddd');
+                    this.style.borderColor = '#2196F3';
+                    if (xrdResults[idx]) {
+                        G.matchXRD.renderReferencePreview(xrdResults[idx]);
+                    }
+                });
+            });
         }
     });
 
-    // 4. Handle Click on Result Row (Visualize Reference Peaks)
-    d3.select('#matchedData').on('click', function(e) {
-        const target = e.target.closest('.matchedrow');
-        if (target && target.dataset.peaks) {
-            // Remove active class from others and add to current
-            d3.selectAll('.matchedrow').style('background', ''); 
-            target.style.background = '#f0f8ff'; 
-
-            const peaks = JSON.parse(target.dataset.peaks);
-            G.matchXRD.showReferencePeaks(peaks);
-        }
+    document.getElementById('xrd-clear-filter')?.addEventListener('click', function () {
+        const elementsInput = document.getElementById('xrd-elements');
+        const logicMode = document.getElementById('xrd-logic-mode');
+        const elementCount = document.getElementById('xrd-element-count');
+        if (elementsInput) elementsInput.value = '';
+        if (logicMode) logicMode.value = 'and';
+        if (elementCount) elementCount.value = '0';
+        if (G.matchXRD) G.matchXRD.clearElementFilter();
     });
 
-})(window.GraphPlotter);
+    document.getElementById('xrd-clear-peaks')?.addEventListener('click', function () {
+        if (G.matchXRD) {
+            G.matchXRD.clearPeaks();
+            G.matchXRD.updatePeakList();
+            G.matchXRD.clearReferencePreview();
+        }
+        xrdResults = [];
+        document.getElementById('matchedData').innerHTML = '<p>Click on chart to select peaks.</p>';
+        document.getElementById('xrd-match-label').textContent = 'XRD Data Match';
+    });
+
+    document.getElementById('xrd-search-btn')?.addEventListener('click', function () {
+        document.getElementById('xrd-match-label')?.click();
+    });
+
+})(window.G = window.G || {});
