@@ -1038,114 +1038,70 @@ window.GraphPlotter = window.GraphPlotter || {
 })(window.GraphPlotter);
 (function (G) {
     "use strict";
-
-    function renderMatches(matches, cols) {
-        if (!matches.length) return '<p>No matching peaks found.</p>';
-
-        return matches.map(item => {
-            const rowData = item.row || item;
-            const peakDataAttr = item.peaks ? ` data-peaks='${JSON.stringify(item.peaks)}' data-intensities='${JSON.stringify(item.intensities || [])}'` : '';
-
-            return `<div class="matchedrow"${peakDataAttr} style="cursor:pointer;">` +
-                rowData.map((val, i) => `<div><b>${cols[i]}:</b> ${val}</div>`).join('') +
-                `</div>`;
+    function renderMatches(m, c) {
+        if (!m.length) return '<p>No matching peaks found.</p>';
+        return m.map(i => {
+            const r = i.row || i;
+            const pa = i.peaks ? ` data-peaks='${JSON.stringify(i.peaks)}' data-ints='${JSON.stringify(i.intensities || [])}'` : '';
+            return `<div class="matchedrow"${pa} style="cursor:pointer;">` + r.map((v, j) => `<div><b>${c[j]}:</b> ${v}</div>`).join('') + `</div>`;
         }).join('');
     }
-
-    // 1. Handle Instrument Selection Change
-    document.querySelectorAll('input[name="matchinstrument"]').forEach(input => {
-        input.addEventListener('change', function () {
-            if (G.matchXRD) {
-                G.matchXRD.clear();
-                G.matchXRD.clearElementFilter();
-            }
+    document.querySelectorAll('input[name="matchinstrument"]').forEach(inp => {
+        inp.addEventListener('change', function () {
+            if (G.matchXRD) { G.matchXRD.clear(); G.matchXRD.clearFilter(); }
             d3.select('#matchedData').html('<p>Please click any peak.</p>');
-
-            const filterSection = document.getElementById('xrd-filter-section');
-            if (filterSection) {
-                filterSection.style.display = this.id === 'xrdmatch' ? 'block' : 'none';
-            }
-
-            if (this.id === 'xrdmatch') {
-                document.getElementById('xrd-match-label').textContent = "Select Peak";
-            }
+            const fs = document.getElementById('xrd-filter-section');
+            if (fs) fs.style.display = this.id === 'xrdmatch' ? 'block' : 'none';
+            if (this.id === 'xrdmatch') document.getElementById('xrd-match-label').textContent = "Select Peak";
         });
     });
-
-    // 2. Handle Graph Clicks (Adding Peaks)
-    d3.select('#chart').on('click.match', async function (event) {
-        const isMatchEnabled = document.getElementById('icon5').checked;
-        if (!isMatchEnabled) return;
-
-        const svgNode = d3.select('#chart svg').node();
-        const [mx, my] = d3.pointer(event, svgNode);
-
-        if (mx < G.config.DIM.ML || mx > G.config.DIM.W - G.config.DIM.MR ||
-            my < G.config.DIM.MT || my > G.config.DIM.H - G.config.DIM.MB) return;
-
-        const xVal = G.state.lastXScale.invert(mx);
+    d3.select('#chart').on('click.match', async function (e) {
+        if (!document.getElementById('icon5').checked) return;
+        const svg = d3.select('#chart svg').node();
+        const [mx, my] = d3.pointer(e, svg);
+        if (mx < G.config.DIM.ML || mx > G.config.DIM.W - G.config.DIM.MR || my < G.config.DIM.MT || my > G.config.DIM.H - G.config.DIM.MB) return;
+        const x = G.state.lastXScale.invert(mx);
         const sel = document.querySelector('input[name="matchinstrument"]:checked').id;
-
         if (sel === 'xrdmatch') {
-            G.matchXRD.addPeak(xVal);
+            G.matchXRD.addPeak(x);
         } else if (G.matchStandard && G.matchStandard.isStandard(sel)) {
-            const { matches, cols } = await G.matchStandard.search(sel, xVal);
+            const { matches, cols } = await G.matchStandard.search(sel, x);
             d3.select('#matchedData').html(renderMatches(matches, cols));
         }
     });
-
-    // 3. Handle "Search Database" Button Click
-    document.getElementById('xrd-match-label')?.addEventListener('click', async function (e) {
-        const radio = document.getElementById('xrdmatch');
-        if (radio?.checked && this.textContent === "Search Database") {
-            const elementsInput = document.getElementById('xrd-elements');
-            const logicMode = document.getElementById('xrd-logic-mode');
-            const elementCount = document.getElementById('xrd-element-count');
-
-            if (elementsInput && logicMode && elementCount && G.matchXRD) {
-                const els = elementsInput.value.split(',').map(e => e.trim()).filter(e => e);
-                G.matchXRD.setElementFilter(els, logicMode.value, parseInt(elementCount.value) || 0);
-            }
-
+    document.getElementById('xrd-match-label')?.addEventListener('click', async function () {
+        const r = document.getElementById('xrdmatch');
+        if (r?.checked && this.textContent === "Search Database") {
+            const ei = document.getElementById('xrd-elements');
+            const lm = document.getElementById('xrd-logic-mode');
+            const ec = document.getElementById('xrd-element-count');
+            if (ei && lm && ec && G.matchXRD) G.matchXRD.setFilter(ei.value.split(',').filter(e => e.trim()), lm.value, parseInt(ec.value) || 0);
             const { matches, cols } = await G.matchXRD.search();
             d3.select('#matchedData').html(renderMatches(matches, cols));
         }
     });
-
-    // 3b. Also handle Search Database button click
     document.getElementById('xrd-search-btn')?.addEventListener('click', async function () {
-        const elementsInput = document.getElementById('xrd-elements');
-        const logicMode = document.getElementById('xrd-logic-mode');
-        const elementCount = document.getElementById('xrd-element-count');
-
-        if (elementsInput && logicMode && elementCount && G.matchXRD) {
-            const els = elementsInput.value.split(',').map(e => e.trim()).filter(e => e);
-            G.matchXRD.setElementFilter(els, logicMode.value, parseInt(elementCount.value) || 0);
-        }
-
+        const ei = document.getElementById('xrd-elements');
+        const lm = document.getElementById('xrd-logic-mode');
+        const ec = document.getElementById('xrd-element-count');
+        if (ei && lm && ec && G.matchXRD) G.matchXRD.setFilter(ei.value.split(',').filter(e => e.trim()), lm.value, parseInt(ec.value) || 0);
         const { matches, cols } = await G.matchXRD.search();
         d3.select('#matchedData').html(renderMatches(matches, cols));
     });
-
-    // 4. Handle Clear All button
     document.getElementById('xrd-clear-peaks')?.addEventListener('click', function () {
         if (G.matchXRD) G.matchXRD.clear();
         d3.select('#matchedData').html('<p>Please click any peak.</p>');
     });
-
-    // 5. Handle Click on Result Row (Visualize Reference Peaks with Intensity)
+    document.getElementById('xrd-elements')?.addEventListener('click', function (e) { e.stopPropagation(); });
+    document.getElementById('xrd-elements')?.addEventListener('focus', function (e) { e.stopPropagation(); });
     d3.select('#matchedData').on('click', function (e) {
-        const target = e.target.closest('.matchedrow');
-        if (target && target.dataset.peaks) {
+        const t = e.target.closest('.matchedrow');
+        if (t && t.dataset.peaks) {
             d3.selectAll('.matchedrow').style('background', '');
-            target.style.background = '#f0f8ff';
-
-            const peaks = JSON.parse(target.dataset.peaks);
-            const intensities = target.dataset.intensities ? JSON.parse(target.dataset.intensities) : [];
-            G.matchXRD.showReferencePeaks(peaks, intensities);
+            t.style.background = '#f0f8ff';
+            G.matchXRD.showRef(JSON.parse(t.dataset.peaks), t.dataset.ints ? JSON.parse(t.dataset.ints) : []);
         }
     });
-
 })(window.GraphPlotter);
 (function (G) {
     "use strict";
@@ -1159,14 +1115,12 @@ window.GraphPlotter = window.GraphPlotter || {
         hnmrmatch: { buf: { range: 0.2, single: 0.5 }, cols: ['Chemical Shift (ppm)', 'Type', 'Assignment', 'Description'] },
         cnmrmatch: { buf: { range: 10, single: 20 }, cols: ['Chemical Shift (ppm)', 'Type', 'Assignment', 'Description'] }
     };
-
     async function fetchData(id) {
         if (cache[id]) return cache[id];
         const folder = id.replace('match', '');
         const res = await fetch(`${CDN_BASE}${folder}/match.json`);
         return cache[id] = await res.json();
     }
-
     G.matchStandard = {
         isStandard: (id) => !!config[id],
         search: async (id, xVal) => {
@@ -1178,242 +1132,136 @@ window.GraphPlotter = window.GraphPlotter || {
                     ? (xVal >= p[0] - buf.range && xVal <= p[1] + buf.range)
                     : Math.abs(xVal - p[0]) <= buf.single;
             });
-            return {
-                matches: matches.map(row => ({ row })),
-                cols
-            };
+            return { matches: matches.map(row => ({ row })), cols };
         }
     };
-})(window.G = window.G || {});
+})(window.GraphPlotter);
 (function (G) {
     "use strict";
     const XRD_BASE = 'https://cdn.jsdelivr.net/gh/instanano/graph_static@latest/match/xrd/';
     const BIN_WIDTH = 0.5;
     const PRECISION = 100;
     const TOLERANCE = 0.4;
-
     let selectedPeaks = [];
     let compositions = null;
     let elementFilter = { elements: [], mode: 'and', count: 0 };
-
-    const PERIODIC_TABLE = {
-        'H': 1, 'He': 2, 'Li': 3, 'Be': 4, 'B': 5, 'C': 6, 'N': 7, 'O': 8, 'F': 9, 'Ne': 10,
-        'Na': 11, 'Mg': 12, 'Al': 13, 'Si': 14, 'P': 15, 'S': 16, 'Cl': 17, 'Ar': 18, 'K': 19, 'Ca': 20,
-        'Sc': 21, 'Ti': 22, 'V': 23, 'Cr': 24, 'Mn': 25, 'Fe': 26, 'Co': 27, 'Ni': 28, 'Cu': 29, 'Zn': 30,
-        'Ga': 31, 'Ge': 32, 'As': 33, 'Se': 34, 'Br': 35, 'Kr': 36, 'Rb': 37, 'Sr': 38, 'Y': 39, 'Zr': 40,
-        'Nb': 41, 'Mo': 42, 'Tc': 43, 'Ru': 44, 'Rh': 45, 'Pd': 46, 'Ag': 47, 'Cd': 48, 'In': 49, 'Sn': 50,
-        'Sb': 51, 'Te': 52, 'I': 53, 'Xe': 54, 'Cs': 55, 'Ba': 56, 'La': 57, 'Ce': 58, 'Pr': 59, 'Nd': 60,
-        'Pm': 61, 'Sm': 62, 'Eu': 63, 'Gd': 64, 'Tb': 65, 'Dy': 66, 'Ho': 67, 'Er': 68, 'Tm': 69, 'Yb': 70,
-        'Lu': 71, 'Hf': 72, 'Ta': 73, 'W': 74, 'Re': 75, 'Os': 76, 'Ir': 77, 'Pt': 78, 'Au': 79, 'Hg': 80,
-        'Tl': 81, 'Pb': 82, 'Bi': 83, 'Po': 84, 'At': 85, 'Rn': 86, 'Fr': 87, 'Ra': 88, 'Ac': 89, 'Th': 90,
-        'Pa': 91, 'U': 92, 'Np': 93, 'Pu': 94, 'Am': 95, 'Cm': 96, 'Bk': 97, 'Cf': 98, 'Es': 99, 'Fm': 100,
-        'Md': 101, 'No': 102, 'Lr': 103, 'Rf': 104, 'Db': 105, 'Sg': 106, 'Bh': 107, 'Hs': 108, 'Mt': 109,
-        'Ds': 110, 'Rg': 111, 'Cn': 112, 'Nh': 113, 'Fl': 114, 'Mc': 115, 'Lv': 116, 'Ts': 117, 'Og': 118
-    };
-
-    const updateLabel = (text) => {
-        const lbl = document.getElementById('xrd-match-label');
-        if (lbl) lbl.textContent = text;
-    };
-
-    const passesElementFilter = (compId) => {
+    const PERIODIC_TABLE = { 'H': 1, 'He': 2, 'Li': 3, 'Be': 4, 'B': 5, 'C': 6, 'N': 7, 'O': 8, 'F': 9, 'Ne': 10, 'Na': 11, 'Mg': 12, 'Al': 13, 'Si': 14, 'P': 15, 'S': 16, 'Cl': 17, 'Ar': 18, 'K': 19, 'Ca': 20, 'Sc': 21, 'Ti': 22, 'V': 23, 'Cr': 24, 'Mn': 25, 'Fe': 26, 'Co': 27, 'Ni': 28, 'Cu': 29, 'Zn': 30, 'Ga': 31, 'Ge': 32, 'As': 33, 'Se': 34, 'Br': 35, 'Kr': 36, 'Rb': 37, 'Sr': 38, 'Y': 39, 'Zr': 40, 'Nb': 41, 'Mo': 42, 'Tc': 43, 'Ru': 44, 'Rh': 45, 'Pd': 46, 'Ag': 47, 'Cd': 48, 'In': 49, 'Sn': 50, 'Sb': 51, 'Te': 52, 'I': 53, 'Xe': 54, 'Cs': 55, 'Ba': 56, 'La': 57, 'Ce': 58, 'Pr': 59, 'Nd': 60, 'Pm': 61, 'Sm': 62, 'Eu': 63, 'Gd': 64, 'Tb': 65, 'Dy': 66, 'Ho': 67, 'Er': 68, 'Tm': 69, 'Yb': 70, 'Lu': 71, 'Hf': 72, 'Ta': 73, 'W': 74, 'Re': 75, 'Os': 76, 'Ir': 77, 'Pt': 78, 'Au': 79, 'Hg': 80, 'Tl': 81, 'Pb': 82, 'Bi': 83, 'Po': 84, 'At': 85, 'Rn': 86, 'Fr': 87, 'Ra': 88, 'Ac': 89, 'Th': 90, 'Pa': 91, 'U': 92, 'Np': 93, 'Pu': 94, 'Am': 95, 'Cm': 96, 'Bk': 97, 'Cf': 98, 'Es': 99, 'Fm': 100, 'Md': 101, 'No': 102, 'Lr': 103, 'Rf': 104, 'Db': 105, 'Sg': 106, 'Bh': 107, 'Hs': 108, 'Mt': 109, 'Ds': 110, 'Rg': 111, 'Cn': 112, 'Nh': 113, 'Fl': 114, 'Mc': 115, 'Lv': 116, 'Ts': 117, 'Og': 118 };
+    const updateLabel = (t) => { const l = document.getElementById('xrd-match-label'); if (l) l.textContent = t; };
+    const passesFilter = (cid) => {
         if (!compositions) return true;
-        const compAtoms = compositions[compId];
-        if (!compAtoms) return true;
-
+        const ca = compositions[cid];
+        if (!ca) return true;
         const { elements, mode, count } = elementFilter;
-        if (count > 0 && compAtoms.length !== count) return false;
-        if (elements.length === 0) return true;
-
-        const compSet = new Set(compAtoms);
-
-        if (mode === 'and') {
-            for (const el of elements) {
-                if (!compSet.has(el)) return false;
-            }
-            return true;
-        } else if (mode === 'or') {
-            for (const el of elements) {
-                if (compSet.has(el)) return true;
-            }
-            return false;
-        } else if (mode === 'only') {
-            if (compAtoms.length !== elements.length) return false;
-            for (const el of elements) {
-                if (!compSet.has(el)) return false;
-            }
-            return true;
-        }
+        if (count > 0 && ca.length !== count) return false;
+        if (!elements.length) return true;
+        const cs = new Set(ca);
+        if (mode === 'and') { for (const e of elements) if (!cs.has(e)) return false; return true; }
+        if (mode === 'or') { for (const e of elements) if (cs.has(e)) return true; return false; }
+        if (mode === 'only') { if (ca.length !== elements.length) return false; for (const e of elements) if (!cs.has(e)) return false; return true; }
         return true;
     };
-
     G.matchXRD = {
-        addPeak: (x) => {
-            selectedPeaks.push(x);
-            G.matchXRD.renderUserMarkers();
-            updateLabel("Search Database");
-        },
-
-        renderUserMarkers: () => {
+        addPeak: (x) => { selectedPeaks.push(x); G.matchXRD.render(); updateLabel("Search Database"); },
+        render: () => {
             const svg = d3.select('#chart svg');
             svg.selectAll('.xrd-user-peak').remove();
             selectedPeaks.forEach((x, i) => {
-                const xPos = G.state.lastXScale(x);
-                svg.append('line')
-                    .attr('class', 'xrd-user-peak')
-                    .attr('x1', xPos).attr('x2', xPos)
+                const xp = G.state.lastXScale(x);
+                svg.append('line').attr('class', 'xrd-user-peak')
+                    .attr('x1', xp).attr('x2', xp)
                     .attr('y1', G.config.DIM.H - G.config.DIM.MB)
                     .attr('y2', G.config.DIM.H - G.config.DIM.MB - 15)
                     .attr('stroke', 'red').attr('stroke-width', 3)
                     .style('cursor', 'pointer')
-                    .on('click', (e) => {
-                        e.stopPropagation();
-                        selectedPeaks.splice(i, 1);
-                        if (selectedPeaks.length === 0) updateLabel("Select Peak");
-                        G.matchXRD.renderUserMarkers();
-                    });
+                    .on('click', (e) => { e.stopPropagation(); selectedPeaks.splice(i, 1); if (!selectedPeaks.length) updateLabel("Select Peak"); G.matchXRD.render(); });
             });
         },
-
-        showReferencePeaks: (peaks, intensities) => {
+        showRef: (peaks, ints) => {
             const svg = d3.select('#chart svg');
             svg.selectAll('.xrd-ref-peak').remove();
-
-            peaks.forEach((x, idx) => {
-                const xPos = G.state.lastXScale(x);
-                if (xPos < G.config.DIM.ML || xPos > G.config.DIM.W - G.config.DIM.MR) return;
-
-                const intensity = intensities?.[idx] ?? 100;
-                const lineHeight = 15 + (intensity / 100) * 25;
-
-                svg.append('line')
-                    .attr('class', 'xrd-ref-peak')
-                    .attr('x1', xPos).attr('x2', xPos)
+            peaks.forEach((x, i) => {
+                const xp = G.state.lastXScale(x);
+                if (xp < G.config.DIM.ML || xp > G.config.DIM.W - G.config.DIM.MR) return;
+                const h = 15 + ((ints?.[i] ?? 100) / 100) * 25;
+                svg.append('line').attr('class', 'xrd-ref-peak')
+                    .attr('x1', xp).attr('x2', xp)
                     .attr('y1', G.config.DIM.H - G.config.DIM.MB)
-                    .attr('y2', G.config.DIM.H - G.config.DIM.MB - lineHeight)
-                    .attr('stroke', 'blue')
-                    .attr('stroke-width', 2)
-                    .attr('stroke-dasharray', '4,2')
-                    .style('pointer-events', 'none');
+                    .attr('y2', G.config.DIM.H - G.config.DIM.MB - h)
+                    .attr('stroke', 'blue').attr('stroke-width', 2)
+                    .attr('stroke-dasharray', '4,2').style('pointer-events', 'none');
             });
         },
-
-        clear: () => {
-            selectedPeaks = [];
-            d3.selectAll('.xrd-user-peak').remove();
-            d3.selectAll('.xrd-ref-peak').remove();
-            updateLabel("XRD Data Match");
+        clear: () => { selectedPeaks = []; d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); updateLabel("Select Peak"); },
+        setFilter: (els, mode, count) => {
+            const nums = [];
+            for (const e of els) { const t = e.trim(); if (PERIODIC_TABLE[t]) nums.push(PERIODIC_TABLE[t]); }
+            elementFilter = { elements: nums, mode: mode || 'and', count: count || 0 };
         },
-
-        setElementFilter: (elements, mode, count) => {
-            const atomicNums = [];
-            for (const el of elements) {
-                const trimmed = el.trim();
-                if (PERIODIC_TABLE[trimmed]) {
-                    atomicNums.push(PERIODIC_TABLE[trimmed]);
-                }
-            }
-            elementFilter = { elements: atomicNums, mode: mode || 'and', count: count || 0 };
-        },
-
-        clearElementFilter: () => {
-            elementFilter = { elements: [], mode: 'and', count: 0 };
-        },
-
+        clearFilter: () => { elementFilter = { elements: [], mode: 'and', count: 0 }; },
         search: async () => {
-            if (selectedPeaks.length === 0) {
-                updateLabel('Select Peak');
-                return { matches: [], cols: [] };
-            }
-
-            d3.select('#matchedData').html('<p>Searching records...</p>');
-
+            if (!selectedPeaks.length) { updateLabel('Select Peak'); return { matches: [], cols: [] }; }
+            d3.select('#matchedData').html('<p>Searching...</p>');
             if (!compositions) {
-                try {
-                    const resp = await fetch(`${XRD_BASE}meta/compositions.json`);
-                    compositions = await resp.json();
-                } catch {
-                    d3.select('#matchedData').html('<p>Error loading data.</p>');
-                    return { matches: [], cols: [] };
+                try { compositions = await (await fetch(`${XRD_BASE}meta/compositions.json`)).json(); }
+                catch { d3.select('#matchedData').html('<p>Error loading.</p>'); return { matches: [], cols: [] }; }
+            }
+            const candidates = new Map();
+            const binSet = new Set();
+            for (const up of selectedPeaks) binSet.add(Math.floor(up / BIN_WIDTH));
+            const binArr = [...binSet];
+            const fetches = await Promise.all(binArr.map(b => fetch(`${XRD_BASE}index/${b}.json`).then(r => r.ok ? r.json() : null).catch(() => null)));
+            const binData = {};
+            binArr.forEach((b, i) => { if (fetches[i]) binData[b] = fetches[i]; });
+            for (const up of selectedPeaks) {
+                const bid = Math.floor(up / BIN_WIDTH);
+                const idx = binData[bid];
+                if (!idx) continue;
+                for (let j = 0; j < idx.d.length; j++) {
+                    const p = idx.d[j], cid = idx.c[j];
+                    if (!passesFilter(cid)) continue;
+                    const rid = p >> 8, off = p & 0xFF;
+                    const rp = (bid * BIN_WIDTH) + (off / PRECISION);
+                    const diff = Math.abs(up - rp);
+                    if (diff <= TOLERANCE) {
+                        if (!candidates.has(rid)) candidates.set(rid, new Set());
+                        candidates.get(rid).add(Math.round(rp * 100));
+                    }
                 }
             }
-
-            const results = new Map();
-
-            for (const userPeak of selectedPeaks) {
-                const binId = Math.floor(userPeak / BIN_WIDTH);
-                const matchesForThisPeak = new Map();
-
-                try {
-                    const res = await fetch(`${XRD_BASE}index/${binId}.json`);
-                    const index = await res.json();
-
-                    for (let j = 0; j < index.d.length; j++) {
-                        const packed = index.d[j];
-                        const compId = index.c[j];
-
-                        if (!passesElementFilter(compId)) continue;
-
-                        const refId = packed >> 8;
-                        const offset = packed & 0xFF;
-                        const refPeak = (binId * BIN_WIDTH) + (offset / PRECISION);
-                        const diff = Math.abs(userPeak - refPeak);
-
-                        if (diff <= TOLERANCE) {
-                            if (!matchesForThisPeak.has(refId) || diff < matchesForThisPeak.get(refId)) {
-                                matchesForThisPeak.set(refId, diff);
-                            }
-                        }
+            const sorted = [...candidates.entries()].sort((a, b) => b[1].size - a[1].size).slice(0, 50);
+            if (!sorted.length) { updateLabel('No matches'); return { matches: [], cols: [] }; }
+            const chunks = {};
+            const cids = [...new Set(sorted.map(([r]) => Math.floor(r / 1000)))];
+            await Promise.all(cids.map(async c => { try { chunks[c] = await (await fetch(`${XRD_BASE}data/${c}.json`)).json(); } catch { } }));
+            const final = [];
+            for (const [rid, matchedSet] of sorted) {
+                const c = chunks[Math.floor(rid / 1000)];
+                const d = c?.[rid % 1000];
+                if (!d) continue;
+                const refPeaks = d[2].map(p => p / PRECISION);
+                const refInts = d[3] || [];
+                const totalRefPeaks = refPeaks.length;
+                let matchCount = 0;
+                let intBonus = 0;
+                for (let i = 0; i < refPeaks.length; i++) {
+                    const rp = refPeaks[i];
+                    let matched = false;
+                    for (const up of selectedPeaks) {
+                        if (Math.abs(up - rp) <= TOLERANCE) { matched = true; break; }
                     }
-                } catch (e) { /* Ignore missing bins */ }
-
-                matchesForThisPeak.forEach((diff, refId) => {
-                    const proximityFactor = 1 - (diff / TOLERANCE);
-                    const peakScore = 1 + proximityFactor;
-                    results.set(refId, (results.get(refId) || 0) + peakScore);
-                });
+                    if (matched) {
+                        matchCount++;
+                        intBonus += (refInts[i] || 50) / 100;
+                    }
+                }
+                const baseScore = (matchCount / totalRefPeaks) * 100;
+                const intWeight = (intBonus / totalRefPeaks) * 20;
+                const finalScore = Math.min(100, baseScore + intWeight);
+                final.push({ row: [d[0], d[1], finalScore.toFixed(1)], peaks: refPeaks, intensities: refInts, score: finalScore, matched: matchCount, total: totalRefPeaks });
             }
-
-            const maxPossibleScore = selectedPeaks.length * 2;
-            const sorted = [...results.entries()]
-                .map(([refId, rawScore]) => [refId, (rawScore / maxPossibleScore) * 100])
-                .sort((a, b) => b[1] - a[1])
-                .slice(0, 50);
-
-            if (!sorted.length) {
-                updateLabel('No matches');
-                return { matches: [], cols: [] };
-            }
-
-            const finalMatches = [];
-            const chunkGroups = d3.group(sorted, d => Math.floor(d[0] / 1000));
-
-            for (const [chunkId, items] of chunkGroups) {
-                try {
-                    const res = await fetch(`${XRD_BASE}data/${chunkId}.json`);
-                    const chunkData = await res.json();
-                    items.forEach(([refId, finalScore]) => {
-                        const localIdx = refId % 1000;
-                        const d = chunkData[localIdx];
-                        // d = [RefCode, Formula, [Top5Peaks], [Top5Intensities]]
-                        const refPeaks = d[2].map(p => p / PRECISION);
-                        const refIntensities = d[3] || [];
-
-                        finalMatches.push({
-                            row: [d[0], d[1], finalScore.toFixed(1)],
-                            peaks: refPeaks,
-                            intensities: refIntensities,
-                            score: finalScore
-                        });
-                    });
-                } catch (e) { /* Ignore missing chunks */ }
-            }
-
-            updateLabel(`Found ${finalMatches.length}`);
-            return {
-                matches: finalMatches.sort((a, b) => b.score - a.score),
-                cols: ['Ref ID', 'Formula', 'Score (%)']
-            };
+            final.sort((a, b) => b.score - a.score);
+            updateLabel(`Found ${final.length}`);
+            return { matches: final, cols: ['Ref ID', 'Formula', 'Score (%)'] };
         }
     };
 })(window.GraphPlotter);
