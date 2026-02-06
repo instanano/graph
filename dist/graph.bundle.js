@@ -1141,7 +1141,7 @@ window.GraphPlotter = window.GraphPlotter || {
     const XRD_BASE = 'https://cdn.jsdelivr.net/gh/instanano/graph_static@latest/match/xrd/';
     const BIN_WIDTH = 0.5;
     const PRECISION = 100;
-    const TOLERANCE = 0.4;
+    const TOLERANCE = 0.5;
     let selectedPeaks = [];
     let compositions = null;
     let elementFilter = { elements: [], mode: 'and', count: 0 };
@@ -1223,45 +1223,50 @@ window.GraphPlotter = window.GraphPlotter || {
                     const rp = (bid * BIN_WIDTH) + (off / PRECISION);
                     const diff = Math.abs(up - rp);
                     if (diff <= TOLERANCE) {
-                        if (!candidates.has(rid)) candidates.set(rid, new Set());
-                        candidates.get(rid).add(Math.round(rp * 100));
+                        if (!candidates.has(rid)) candidates.set(rid, []);
+                        candidates.get(rid).push({ rp, diff });
                     }
                 }
             }
-            const sorted = [...candidates.entries()].sort((a, b) => b[1].size - a[1].size).slice(0, 50);
+            const sorted = [...candidates.entries()].sort((a, b) => b[1].length - a[1].length).slice(0, 50);
             if (!sorted.length) { updateLabel('No matches'); return { matches: [], cols: [] }; }
             const chunks = {};
             const cids = [...new Set(sorted.map(([r]) => Math.floor(r / 1000)))];
             await Promise.all(cids.map(async c => { try { chunks[c] = await (await fetch(`${XRD_BASE}data/${c}.json`)).json(); } catch { } }));
             const final = [];
-            for (const [rid, matchedSet] of sorted) {
+            for (const [rid, matchedPeaks] of sorted) {
                 const c = chunks[Math.floor(rid / 1000)];
                 const d = c?.[rid % 1000];
                 if (!d) continue;
                 const refPeaks = d[2].map(p => p / PRECISION);
                 const refInts = d[3] || [];
                 const totalRefPeaks = refPeaks.length;
+                let posPenalty = 0;
+                let intPenalty = 0;
                 let matchCount = 0;
-                let intBonus = 0;
-                for (let i = 0; i < refPeaks.length; i++) {
+                for (let i = 0; i < totalRefPeaks; i++) {
                     const rp = refPeaks[i];
-                    let matched = false;
+                    const ri = refInts[i] || 50;
+                    let bestDiff = TOLERANCE + 1;
                     for (const up of selectedPeaks) {
-                        if (Math.abs(up - rp) <= TOLERANCE) { matched = true; break; }
+                        const diff = Math.abs(up - rp);
+                        if (diff <= TOLERANCE && diff < bestDiff) bestDiff = diff;
                     }
-                    if (matched) {
+                    if (bestDiff <= TOLERANCE) {
                         matchCount++;
-                        intBonus += (refInts[i] || 50) / 100;
+                        posPenalty += (bestDiff / TOLERANCE) * 8;
+                        intPenalty += ((100 - ri) / 100) * 2;
+                    } else {
+                        posPenalty += 8;
+                        intPenalty += 2;
                     }
                 }
-                const baseScore = (matchCount / totalRefPeaks) * 100;
-                const intWeight = (intBonus / totalRefPeaks) * 20;
-                const finalScore = Math.min(100, baseScore + intWeight);
+                const finalScore = Math.max(0, 100 - posPenalty - intPenalty);
                 final.push({ row: [d[0], d[1], finalScore.toFixed(1)], peaks: refPeaks, intensities: refInts, score: finalScore, matched: matchCount, total: totalRefPeaks });
             }
             final.sort((a, b) => b.score - a.score);
             updateLabel(`Found ${final.length}`);
-            return { matches: final, cols: ['Ref ID', 'Formula', 'Score (%)'] };
+            return { matches: final, cols: ['Ref ID', 'Formula', 'Match (%)'] };
         }
     };
 })(window.GraphPlotter);
