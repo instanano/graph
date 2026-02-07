@@ -26,6 +26,6 @@
             G.state.overrideMultiY[0]=y;
             document.getElementById('scalemin').value=x[0].toFixed(2);
             document.getElementById('scalemax').value=x[1].toFixed(2);
-            G.renderChart();G.matchXRD?.render();}));});
+            G.renderChart();}));});
     d3.select("#chart").on("dblclick",()=>{G.axis.resetScales(true);G.renderChart()});
 })(window.GraphPlotter);
