@@ -59,7 +59,7 @@
                     .attr('x1', xp).attr('x2', xp)
                     .attr('y1', G.config.DIM.H - G.config.DIM.MB)
                     .attr('y2', G.config.DIM.H - G.config.DIM.MB - h)
-                    .attr('stroke', 'blue').attr('stroke-width', 2)
+                    .attr('stroke', 'blue').attr('stroke-width', 1)
                     .attr('stroke-dasharray', '4,2').style('pointer-events', 'none');
             });
         },
