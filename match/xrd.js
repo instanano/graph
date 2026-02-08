@@ -78,10 +78,10 @@
         clearFilter: () => { elementFilter = { elements: [], mode: 'and', count: 0 }; },
         search: async () => {
             if (!selectedPeaks.length) { updateLabel('Select Peak'); return { matches: [], cols: [] }; }
-            d3.select('#matchedData').html('<p>Searching and matching from ~1 million references...</p>');
+            d3.select('#xrd-matchedData').html('<p>Searching and matching from ~1 million references...</p>');
             if (!compositions) {
                 try { compositions = await (await fetch(`${XRD_BASE}meta/compositions.json`)).json(); }
-                catch { d3.select('#matchedData').html('<p>Error loading.</p>'); return { matches: [], cols: [] }; }
+                catch { d3.select('#xrd-matchedData').html('<p>Error loading.</p>'); return { matches: [], cols: [] }; }
             }
             const candidates = new Map();
             const binSet = new Set();
