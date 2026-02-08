@@ -1264,17 +1264,22 @@ window.GraphPlotter = window.GraphPlotter || {
                 let posPenalty = 0;
                 let intPenalty = 0;
                 let matchCount = 0;
+                const usedUserPeaks = new Set();
                 for (let i = 0; i < totalRefPeaks; i++) {
                     const rp = refPeaks[i];
                     const ri = refInts[i] || 50;
                     let bestMatch = null;
-                    for (const up of selectedPeaks) {
-                        const diff = Math.abs(up.x - rp);
+                    let bestIdx = -1;
+                    for (let j = 0; j < selectedPeaks.length; j++) {
+                        if (usedUserPeaks.has(j)) continue;
+                        const diff = Math.abs(selectedPeaks[j].x - rp);
                         if (diff <= TOLERANCE && (!bestMatch || diff < bestMatch.diff)) {
-                            bestMatch = { diff, userInt: up.normInt };
+                            bestMatch = { diff, userInt: selectedPeaks[j].normInt };
+                            bestIdx = j;
                         }
                     }
-                    if (bestMatch) {
+                    if (bestMatch && bestIdx >= 0) {
+                        usedUserPeaks.add(bestIdx);
                         matchCount++;
                         posPenalty += (bestMatch.diff / TOLERANCE) * 8;
                         const intDiff = Math.abs(bestMatch.userInt - ri);
