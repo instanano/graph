@@ -1048,11 +1048,7 @@ window.GraphPlotter = window.GraphPlotter || {
     }
     document.querySelectorAll('input[name="matchinstrument"]').forEach(inp => {
         inp.addEventListener('change', function () {
-            if (G.matchXRD) { G.matchXRD.clear(); G.matchXRD.clearFilter(); }
-            d3.select('#matchedData').html('<p>Please click any peak.</p>');
-            const fs = document.getElementById('xrd-filter-section');
-            if (fs) fs.style.display = this.id === 'xrdmatch' ? 'block' : 'none';
-            if (this.id === 'xrdmatch') document.getElementById('xrd-match-label').textContent = "Select Peak";
+            d3.select('#standard-matchedData').html('<p>Please click any peak.</p>');
         });
     });
     ['icon1', 'icon2', 'icon3', 'icon4'].forEach(id => document.getElementById(id)?.addEventListener('change', () => { if (G.matchXRD) G.matchXRD.clear(); }));
@@ -1066,30 +1062,22 @@ window.GraphPlotter = window.GraphPlotter || {
         ei.title = v.valid ? '' : 'Invalid: ' + v.invalid.join(', ');
     });
     d3.select('#chart').on('click.match', async function (e) {
-        if (!document.getElementById('icon5').checked) return;
+        const isXRD = document.getElementById('icon5').checked;
+        const isOther = document.getElementById('icon6').checked;
+        if (!isXRD && !isOther) return;
         const svg = d3.select('#chart svg').node();
         const [mx, my] = d3.pointer(e, svg);
         if (mx < G.config.DIM.ML || mx > G.config.DIM.W - G.config.DIM.MR || my < G.config.DIM.MT || my > G.config.DIM.H - G.config.DIM.MB) return;
         const x = G.state.lastXScale.invert(mx);
-        const sel = document.querySelector('input[name="matchinstrument"]:checked').id;
-        if (sel === 'xrdmatch') {
+        if (isXRD) {
             let intensity = G.state.lastYScale.invert(my);
             if (intensity < 0) intensity = 0;
             G.matchXRD.addPeak(x, intensity);
-        } else if (G.matchStandard && G.matchStandard.isStandard(sel)) {
+        } else if (isOther) {
+            const sel = document.querySelector('input[name="matchinstrument"]:checked')?.id;
+            if (!sel || !G.matchStandard?.isStandard(sel)) return;
             const { matches, cols } = await G.matchStandard.search(sel, x);
-            d3.select('#matchedData').html(renderMatches(matches, cols));
-        }
-    });
-    document.getElementById('xrd-match-label')?.addEventListener('click', async function () {
-        const r = document.getElementById('xrdmatch');
-        if (r?.checked && this.textContent === "Search Database") {
-            const ei = document.getElementById('xrd-elements');
-            const lm = document.getElementById('xrd-logic-mode');
-            const ec = document.getElementById('xrd-element-count');
-            if (ei && lm && ec && G.matchXRD) G.matchXRD.setFilter(ei.value.split(',').filter(e => e.trim()), lm.value, parseInt(ec.value) || 0);
-            const { matches, cols } = await G.matchXRD.search();
-            d3.select('#matchedData').html(renderMatches(matches, cols));
+            d3.select('#standard-matchedData').html(renderMatches(matches, cols));
         }
     });
     document.getElementById('xrd-search-btn')?.addEventListener('click', async function () {
@@ -1101,13 +1089,13 @@ window.GraphPlotter = window.GraphPlotter || {
         if (!v.valid) { el.style.outline = '2px solid red'; el.title = 'Invalid: ' + v.invalid.join(', '); return; }
         G.matchXRD.setFilter((el?.value || '').split(',').filter(e => e.trim()), lm?.value, parseInt(ec?.value) || 0);
         const { matches, cols } = await G.matchXRD.search();
-        d3.select('#matchedData').html(renderMatches(matches, cols));
+        d3.select('#xrd-matchedData').html(renderMatches(matches, cols));
     });
     document.getElementById('xrd-clear-peaks')?.addEventListener('click', function () {
         if (G.matchXRD) G.matchXRD.clear();
-        d3.select('#matchedData').html('<p>Please click any peak.</p>');
+        d3.select('#xrd-matchedData').html('<p>Please click any peak.</p>');
     });
-    d3.select('#matchedData').on('click', function (e) {
+    d3.select('#xrd-matchedData').on('click', function (e) {
         const t = e.target.closest('.matchedrow');
         if (t && t.dataset.peaks) {
             d3.selectAll('.matchedrow').style('background', '');
@@ -1229,10 +1217,10 @@ window.GraphPlotter = window.GraphPlotter || {
         clearFilter: () => { elementFilter = { elements: [], mode: 'and', count: 0 }; },
         search: async () => {
             if (!selectedPeaks.length) { updateLabel('Select Peak'); return { matches: [], cols: [] }; }
-            d3.select('#matchedData').html('<p>Searching and matching from ~1 million references...</p>');
+            d3.select('#xrd-matchedData').html('<p>Searching and matching from ~1 million references...</p>');
             if (!compositions) {
                 try { compositions = await (await fetch(`${XRD_BASE}meta/compositions.json`)).json(); }
-                catch { d3.select('#matchedData').html('<p>Error loading.</p>'); return { matches: [], cols: [] }; }
+                catch { d3.select('#xrd-matchedData').html('<p>Error loading.</p>'); return { matches: [], cols: [] }; }
             }
             const candidates = new Map();
             const binSet = new Set();
