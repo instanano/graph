@@ -1051,7 +1051,7 @@ window.GraphPlotter = window.GraphPlotter || {
         return m.map(i => {
             const r = i.row || i;
             const pa = i.peaks ? ` data-peaks='${JSON.stringify(i.peaks)}' data-ints='${JSON.stringify(i.intensities || [])}'` : '';
-            return `<div class="matchedrow"${pa} style="cursor:pointer;font-size:12px;">` + r.map((v, j) => `<div><b>${c[j]}:</b> ${v}</div>`).join('') + `</div>`;
+            return `<div class="matchedrow"${pa}>` + r.map((v, j) => `<div><b>${c[j]}:</b> ${v}</div>`).join('') + `</div>`;
         }).join('');
     }
     document.querySelectorAll('input[name="matchinstrument"]').forEach(inp => inp.addEventListener('change', () => $std.html(STD_MSG)));
