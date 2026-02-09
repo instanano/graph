@@ -1,5 +1,13 @@
 (function(G) {
     "use strict";
+    G.utils.escapeHTML = function(value) {
+        return String(value == null ? "" : value).replace(/[&<>"']/g, ch => (
+            ch === "&" ? "&amp;" :
+            ch === "<" ? "&lt;" :
+            ch === ">" ? "&gt;" :
+            ch === '"' ? "&quot;" : "&#39;"
+        ));
+    };
     G.utils.clearActive = function() { 
         const S = G.state;
         if (S.activeGroup) { S.activeGroup.select(".outline").attr("visibility", "hidden"); S.activeGroup = null;}
@@ -45,9 +53,25 @@
         const pad = 2; const fo = container.append("foreignObject").attr("x", x).attr("y", y)
         .attr("transform", rotation ? `rotate(${rotation},${x},${y})` : null).attr("overflow", "visible");
         const div = fo.append("xhtml:div").attr("contenteditable", false).style("display", "inline-block").style("white-space", "nowrap")
-        .style("padding", `${pad}px`).style("cursor", "move").style("font-size", "12px").html(text); const w = div.node().scrollWidth;
+        .style("padding", `${pad}px`).style("cursor", "move").style("font-size", "12px").text(String(text == null ? "" : text)); const w = div.node().scrollWidth;
         const h = div.node().scrollHeight; fo.attr("width",  w + pad).attr("height", h + pad); div.on("input", () => {
         const nw = div.node().scrollWidth; const nh = div.node().scrollHeight; fo.attr("width",  nw + pad).attr("height", nh + pad);})
+        .on("paste", function(e) {
+            e.preventDefault();
+            const plain = (e.clipboardData || window.clipboardData).getData("text/plain");
+            const usedExec = typeof document.execCommand === "function" && document.execCommand("insertText", false, plain);
+            if (usedExec) return;
+            const sel = window.getSelection();
+            if (!sel || !sel.rangeCount) { this.textContent += plain; return; }
+            sel.deleteFromDocument();
+            const tn = document.createTextNode(plain);
+            const range = sel.getRangeAt(0);
+            range.insertNode(tn);
+            range.setStartAfter(tn);
+            range.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(range);
+        })
         .on("keydown", function(e) { if (e.key === "Enter") { e.preventDefault(); this.blur();}}).on("blur", () => {
         d3.select(div.node()).style("cursor", "move");}); return { fo, div, pad };
     };
