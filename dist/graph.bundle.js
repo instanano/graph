@@ -460,104 +460,84 @@ window.GraphPlotter = window.GraphPlotter || {
         .attr("stroke", s.gridcolor || "#ccc").attr("stroke-width", s.gridwidth || 1).attr("stroke-dasharray", "2,2");}));
     };
 })(window.GraphPlotter);
-(function (G) {
+(function(G) {
     "use strict";
-    G.axis.tickEditing = function (svg) {
-        svg.selectAll("g.tick,path.domain,text.tick-label,line.minor-tick,g.tick line").style("cursor", "pointer").on("click", event => {
-            event.stopPropagation(); G.utils.clearActive();
-            if (!(document.querySelector('input[name="charttype"]:checked').id === 'bar' && d3.select(event.currentTarget).classed('tick-x'))) {
-                ['scalemin', 'scalemax', 'tickcount', 'scaleformat', 'customticks', 'useCustomTicks', 'showMinorTicks'].forEach(id => document.getElementById(id).disabled = false);
-            }
-            const tgt = event.currentTarget; const axisGrp = tgt.tagName === "path" ? tgt.parentNode : tgt.tagName === "g" ? tgt : tgt.closest("g[data-xi],g[data-yi],g[data-ai],g[data-bi],g[data-ci]"); if (!axisGrp) return;
-            const xi = axisGrp.getAttribute("data-xi"), yi = axisGrp.getAttribute("data-yi"), ai = axisGrp.getAttribute("data-ai"), bi = axisGrp.getAttribute("data-bi"), ci = axisGrp.getAttribute("data-ci"); let axisTicks, domain, axisName, key;
-            if (xi != null) { axisName = "X"; key = "X"; axisTicks = d3.select(axisGrp).selectAll("text.tick-x"); domain = G.state.lastXScale.domain(); }
-            else if (yi != null) { axisName = yi === "0" ? "Y" : `Y${+yi + 1}`; key = "Y" + (+yi); axisTicks = d3.select(axisGrp).selectAll("text.tick-y"); domain = (G.state.multiYScales?.[yi] || G.state.lastYScale).domain(); window.activeYi = +yi; }
-            else if (ai != null) { axisName = "A"; key = "A"; axisTicks = d3.select(axisGrp).selectAll("text.tick-a"); domain = G.state.axisScales.a.domain(); }
-            else if (bi != null) { axisName = "B"; key = "B"; axisTicks = d3.select(axisGrp).selectAll("text.tick-b"); domain = G.state.axisScales.b.domain(); }
-            else if (ci != null) { axisName = "C"; key = "C"; axisTicks = d3.select(axisGrp).selectAll("text.tick-c"); domain = G.state.axisScales.c.domain(); }
-            else return; window.selectedAxisName = axisName;
-            axisTicks.attr("contenteditable", true).style("outline", "1px solid #4A90E2").style("cursor", "pointer"); G.state.activeTicks = axisTicks;
-            const el = id => document.getElementById(id); const lbl = el("axis-label"); const minI = el("scalemin"); const maxI = el("scalemax");
-            const tc = el("tickcount"); const sf = el("scaleformat"); const chk = el("useCustomTicks"); const ctk = el("customticks");
-            lbl.textContent = "Axis Settings: " + axisName; minI.value = domain[0].toFixed(2); maxI.value = domain[1].toFixed(2);
-            const isABC = ["A", "B", "C"].includes(axisName); const isY = axisName.startsWith("Y");
-            const overrides = axisName === "X" ? G.state.overrideCustomTicksX : isABC ? G.state.overrideCustomTicksTernary?.[axisName.toLowerCase()] : G.state.overrideCustomTicksY?.[window.activeYi]; ctk.value = overrides?.join(",") || "";
-            tc.value = (axisName === "X" ? G.state.overrideXTicks : isABC ? G.state.overrideTernaryTicks?.[axisName.toLowerCase()] : G.state.overrideYTicks?.[window.activeYi]) || axisTicks.size();
-            sf.value = axisName === "X" ? (G.state.overrideScaleformatX ?? 0) : axisName.startsWith("Y") ? (G.state.overrideScaleformatY?.[window.activeYi] ?? 0) : (G.state.overrideScaleformatTernary?.[axisName.toLowerCase()] ?? 0); document.querySelector('label[for="scaleformat"]').textContent = ["Format: 00", "Format: K", "Format: e"][+sf.value];
-            const okA = axisName === "X" || isY || isABC; chk.disabled = !okA; chk.checked = !!(G.state.useCustomTicksOn && G.state.useCustomTicksOn[key]); sf.disabled = isABC;
-            tc.disabled = chk.checked; ctk.disabled = !chk.checked; const smt = document.getElementById('showMinorTicks'); smt.disabled = false; smt.checked = G.state.minorTickOn[key] !== false;
-        });
+    function getSelectedAxisName() {
+        return typeof window.selectedAxisName === "string" ? window.selectedAxisName : "";
+    }
+    G.axis.tickEditing = function(svg) {
+        svg.selectAll("g.tick,path.domain,text.tick-label,line.minor-tick,g.tick line").style("cursor","pointer").on("click",event=>{
+        event.stopPropagation(); G.utils.clearActive();
+        if (!(document.querySelector('input[name="charttype"]:checked').id === 'bar' && d3.select(event.currentTarget).classed('tick-x'))) {
+        ['scalemin','scalemax','tickcount','scaleformat','customticks','useCustomTicks','showMinorTicks'].forEach(id => document.getElementById(id).disabled = false);}
+        const tgt=event.currentTarget; const axisGrp=tgt.tagName==="path"?tgt.parentNode:tgt.tagName==="g"?tgt:tgt.closest("g[data-xi],g[data-yi],g[data-ai],g[data-bi],g[data-ci]"); if(!axisGrp) return; 
+        const xi=axisGrp.getAttribute("data-xi"), yi=axisGrp.getAttribute("data-yi"), ai=axisGrp.getAttribute("data-ai"), bi=axisGrp.getAttribute("data-bi"), ci=axisGrp.getAttribute("data-ci"); let axisTicks,domain,axisName,key; 
+        if(xi!=null){ axisName="X"; key="X"; axisTicks=d3.select(axisGrp).selectAll("text.tick-x"); domain=G.state.lastXScale.domain();}
+        else if(yi!=null){ axisName=yi==="0"?"Y":`Y${+yi+1}`; key="Y"+(+yi); axisTicks=d3.select(axisGrp).selectAll("text.tick-y"); domain=(G.state.multiYScales?.[yi]||G.state.lastYScale).domain(); window.activeYi=+yi;}
+        else if(ai!=null){ axisName="A"; key="A"; axisTicks=d3.select(axisGrp).selectAll("text.tick-a"); domain=G.state.axisScales.a.domain();}
+        else if(bi!=null){ axisName="B"; key="B"; axisTicks=d3.select(axisGrp).selectAll("text.tick-b"); domain=G.state.axisScales.b.domain();}
+        else if(ci!=null){ axisName="C"; key="C"; axisTicks=d3.select(axisGrp).selectAll("text.tick-c"); domain=G.state.axisScales.c.domain();}
+        else return; window.selectedAxisName=axisName;
+        axisTicks.attr("contenteditable",true).style("outline","1px solid #4A90E2").style("cursor","pointer"); G.state.activeTicks=axisTicks;
+        const el=id=>document.getElementById(id); const lbl=el("axis-label"); const minI=el("scalemin"); const maxI=el("scalemax");
+        const tc=el("tickcount"); const sf=el("scaleformat"); const chk=el("useCustomTicks"); const ctk=el("customticks");
+        lbl.textContent="Axis Settings: "+axisName; minI.value=domain[0].toFixed(2); maxI.value=domain[1].toFixed(2);
+        const isABC=["A","B","C"].includes(axisName); const isY=axisName.startsWith("Y");
+        const overrides=axisName==="X"?G.state.overrideCustomTicksX:isABC?G.state.overrideCustomTicksTernary?.[axisName.toLowerCase()]:G.state.overrideCustomTicksY?.[window.activeYi]; ctk.value=overrides?.join(",")||"";
+        tc.value=(axisName==="X"?G.state.overrideXTicks:isABC?G.state.overrideTernaryTicks?.[axisName.toLowerCase()]:G.state.overrideYTicks?.[window.activeYi])||axisTicks.size(); 
+        sf.value = axisName === "X" ? (G.state.overrideScaleformatX ?? 0) : axisName.startsWith("Y") ? (G.state.overrideScaleformatY?.[window.activeYi] ?? 0) : (G.state.overrideScaleformatTernary?.[axisName.toLowerCase()] ?? 0); document.querySelector('label[for="scaleformat"]').textContent = ["Format: 00","Format: K","Format: e"][+sf.value];
+        const okA=axisName==="X"||isY||isABC; chk.disabled=!okA; chk.checked=!!(G.state.useCustomTicksOn&&G.state.useCustomTicksOn[key]); sf.disabled = isABC;
+        tc.disabled=chk.checked;ctk.disabled=!chk.checked; const smt = document.getElementById('showMinorTicks'); smt.disabled = false; smt.checked = G.state.minorTickOn[key] !== false; });
     };
     function bindScaleInput(id, isMin) {
-        document.getElementById(id).addEventListener("input", e => {
-            if (!window.selectedAxisName) return;
-            const me = parseFloat(e.target.value),
-                other = parseFloat(document.getElementById(id === "scalemin" ? "scalemax" : "scalemin").value);
-            if (isNaN(me) || isNaN(other)) return; if (window.selectedAxisName === "X") { G.state.overrideX = isMin ? [me, other] : [other, me]; }
-            else if (window.selectedAxisName.startsWith("Y")) {
-                const yi = window.activeYi || 0; G.state.overrideMultiY = G.state.overrideMultiY || {};
-                G.state.overrideMultiY[yi] = isMin ? [me, other] : [other, me];
-            } else if (["A", "B", "C"].includes(window.selectedAxisName)) { const letter = window.selectedAxisName.toLowerCase(); G.state.overrideTernary = G.state.overrideTernary || {}; G.state.overrideTernary[letter] = isMin ? [me, other] : [other, me]; } G.renderChart();
-        });
+        document.getElementById(id).addEventListener("input", e => { const me = parseFloat(e.target.value),
+        other = parseFloat( document.getElementById(id === "scalemin" ? "scalemax" : "scalemin").value);
+        const axisName = getSelectedAxisName();
+        if (isNaN(me) || isNaN(other) || !axisName) return; if (axisName === "X") { G.state.overrideX = isMin ? [me, other] : [other, me];}
+        else if (axisName.startsWith("Y")) { const yi = window.activeYi || 0; G.state.overrideMultiY = G.state.overrideMultiY || {};
+        G.state.overrideMultiY[yi] = isMin ? [me, other] : [other, me];} else if (["A","B","C"].includes(axisName)) { const letter = axisName.toLowerCase(); G.state.overrideTernary = G.state.overrideTernary || {}; G.state.overrideTernary[letter] = isMin ? [me, other] : [other, me];} G.renderChart();});
     } bindScaleInput("scalemin", true); bindScaleInput("scalemax", false);
-    document.getElementById('tickcount').addEventListener('input', function () {
-        if (!window.selectedAxisName) return;
-        const n = +this.value; if (window.selectedAxisName === "X") { G.state.overrideXTicks = n; }
-        else if (window.selectedAxisName === "Y" || window.selectedAxisName.startsWith("Y")) {
-            const yi = window.activeYi; G.state.overrideYTicks = G.state.overrideYTicks || {}; G.state.overrideYTicks[yi] = n;
-        }
-        else if (["A", "B", "C"].includes(window.selectedAxisName)) {
-            G.state.overrideTernaryTicks = G.state.overrideTernaryTicks || {};
-            G.state.overrideTernaryTicks[window.selectedAxisName.toLowerCase()] = n;
-        } G.renderChart();
-    });
-    document.getElementById('scaleformat').addEventListener('input', function () {
-        if (!window.selectedAxisName) return;
-        const v = +this.value; document.querySelector('label[for="scaleformat"]').textContent = ["Format: 00", "Format: K", "Format: e"][v];
-        if (window.selectedAxisName === "X") { G.state.overrideScaleformatX = v; }
-        else if (window.selectedAxisName.startsWith("Y")) {
-            const yi = window.activeYi || 0;
-            G.state.overrideScaleformatY = G.state.overrideScaleformatY || {};
-            G.state.overrideScaleformatY[yi] = v;
-        } G.renderChart();
-    });
-    document.getElementById('customticks').addEventListener('input', function () {
-        if (!window.selectedAxisName) return;
+    document.getElementById('tickcount').addEventListener('input', function(){
+        const axisName = getSelectedAxisName();
+        if (!axisName) return;
+        const n = +this.value; if (axisName === "X") { G.state.overrideXTicks = n;}
+        else if (axisName === "Y" || axisName.startsWith("Y")) {
+        const yi = window.activeYi; G.state.overrideYTicks = G.state.overrideYTicks||{}; G.state.overrideYTicks[yi] = n;}
+        else if (["A","B","C"].includes(axisName)) { G.state.overrideTernaryTicks = G.state.overrideTernaryTicks||{};
+        G.state.overrideTernaryTicks[ axisName.toLowerCase() ] = n;} G.renderChart();});
+    document.getElementById('scaleformat').addEventListener('input', function() {
+        const v = +this.value; document.querySelector('label[for="scaleformat"]').textContent = ["Format: 00","Format: K","Format: e"][v]; 
+        const axisName = getSelectedAxisName();
+        if (!axisName) return;
+        if (axisName === "X") { G.state.overrideScaleformatX = v;}
+        else if (axisName.startsWith("Y")) { const yi = window.activeYi || 0;
+        G.state.overrideScaleformatY = G.state.overrideScaleformatY || {};
+        G.state.overrideScaleformatY[yi] = v;} G.renderChart();});
+    document.getElementById('customticks').addEventListener('input', function() {
+        const axisName = getSelectedAxisName();
+        if (!axisName) return;
         const txt = this.value.trim(); const vals = txt ? txt.split(',').map(s => parseFloat(s.trim())).filter(v => !isNaN(v)) : null;
-        if (window.selectedAxisName === "X") { G.state.overrideCustomTicksX = vals; } else if (window.selectedAxisName.startsWith("Y")) {
-            const yi = window.activeYi || 0; G.state.overrideCustomTicksY = G.state.overrideCustomTicksY || {};
-            if (vals) G.state.overrideCustomTicksY[yi] = vals; else delete G.state.overrideCustomTicksY[yi];
-        }
-        else {
-            const cls = Array.from(G.state.activeTicks.nodes()[0].classList).find(c => c.startsWith('tick-')
-                && !['tick-label', 'tick-x', 'tick-y'].includes(c)); if (cls) {
-                    const letter = cls.split('-')[1];
-                    G.state.overrideCustomTicksTernary = G.state.overrideCustomTicksTernary || {};
-                    if (vals) G.state.overrideCustomTicksTernary[letter] = vals; else delete G.state.overrideCustomTicksTernary[letter];
-                }
-        } G.renderChart();
-    });
-    document.getElementById('useCustomTicks').addEventListener('change', function () {
-        if (!window.selectedAxisName) return;
-        const use = this.checked, ct = document.getElementById('customticks'), tc = document.getElementById('tickcount'); ct.disabled = !use; tc.disabled = use;
-        const key = window.selectedAxisName === 'X' ? 'X' : window.selectedAxisName.startsWith('Y') ? ('Y' + (window.activeYi || 0)) : window.selectedAxisName;
-        G.state.useCustomTicksOn = G.state.useCustomTicksOn || {}; G.state.useCustomTicksOn[key] = use;
-        const parse = s => s.trim() ? s.split(',').map(v => +v.trim()).filter(Number.isFinite) : [];
-        if (use) {
-            const vals = parse(ct.value); if (key === 'X') { G.state.overrideCustomTicksX = vals; }
-            else if (key.startsWith('Y')) {
-                const yi = window.activeYi || 0; G.state.overrideCustomTicksY = G.state.overrideCustomTicksY || {};
-                G.state.overrideCustomTicksY[yi] = vals;
-            } else { const l = key.toLowerCase(); G.state.overrideCustomTicksTernary = G.state.overrideCustomTicksTernary || {}; G.state.overrideCustomTicksTernary[l] = vals; }
-        } else {
-            if (key === 'X') { G.state.overrideCustomTicksX = null; }
-            else if (key.startsWith('Y')) { const yi = window.activeYi || 0; G.state.overrideCustomTicksY && delete G.state.overrideCustomTicksY[yi]; }
-            else { const l = key.toLowerCase(); G.state.overrideCustomTicksTernary && delete G.state.overrideCustomTicksTernary[l]; }
-        } G.renderChart();
-    });
-    document.getElementById('showMinorTicks').addEventListener('change', function () {
-        if (!window.selectedAxisName) return; let key = window.selectedAxisName === 'X' ? 'X' : window.selectedAxisName.startsWith('Y') ? ('Y' + (window.activeYi || 0)) : window.selectedAxisName; G.state.minorTickOn[key] = this.checked; G.renderChart();
-    });
+        if (axisName === "X") { G.state.overrideCustomTicksX = vals;} else if (axisName.startsWith("Y")) 
+        { const yi = window.activeYi || 0; G.state.overrideCustomTicksY = G.state.overrideCustomTicksY || {};
+        if (vals) G.state.overrideCustomTicksY[yi] = vals; else delete G.state.overrideCustomTicksY[yi];} 
+        else { const cls = G.state.activeTicks ? Array.from(G.state.activeTicks.nodes()[0].classList).find(c => c.startsWith('tick-')
+        && !['tick-label','tick-x','tick-y'].includes(c) ) : null; if (cls) { const letter = cls.split('-')[1]; 
+        G.state.overrideCustomTicksTernary = G.state.overrideCustomTicksTernary || {};
+        if (vals) G.state.overrideCustomTicksTernary[letter] = vals; else delete G.state.overrideCustomTicksTernary[letter];}} G.renderChart();});
+    document.getElementById('useCustomTicks').addEventListener('change',function(){
+        const axisName = getSelectedAxisName();
+        if (!axisName) return;
+        const use=this.checked,ct=document.getElementById('customticks'),tc=document.getElementById('tickcount'); ct.disabled=!use;tc.disabled=use;
+        const key=axisName==='X'?'X':axisName.startsWith('Y')?('Y'+(window.activeYi||0)):axisName;
+        G.state.useCustomTicksOn=G.state.useCustomTicksOn||{};G.state.useCustomTicksOn[key]=use;
+        const parse=s=>s.trim()?s.split(',').map(v=>+v.trim()).filter(Number.isFinite):[];
+        if(use){ const vals=parse(ct.value); if(key==='X'){G.state.overrideCustomTicksX=vals;}
+        else if(key.startsWith('Y')){const yi=window.activeYi||0;G.state.overrideCustomTicksY=G.state.overrideCustomTicksY||{};
+        G.state.overrideCustomTicksY[yi]=vals;} else{const l=key.toLowerCase(); G.state.overrideCustomTicksTernary=G.state.overrideCustomTicksTernary||{};G.state.overrideCustomTicksTernary[l]=vals;} }else{ if(key==='X'){G.state.overrideCustomTicksX=null;}
+        else if(key.startsWith('Y')){const yi=window.activeYi||0;G.state.overrideCustomTicksY&&delete G.state.overrideCustomTicksY[yi];}
+        else{const l=key.toLowerCase();G.state.overrideCustomTicksTernary&&delete G.state.overrideCustomTicksTernary[l];}} G.renderChart();});
+    document.getElementById('showMinorTicks').addEventListener('change', function(){
+        if (!window.selectedAxisName) return; let key = window.selectedAxisName==='X' ? 'X' : window.selectedAxisName.startsWith('Y') ? ('Y'+(window.activeYi||0)) : window.selectedAxisName; G.state.minorTickOn[key] = this.checked; G.renderChart();});
 })(window.GraphPlotter);
 (function(G) {
     "use strict";
@@ -1404,83 +1384,65 @@ window.GraphPlotter = window.GraphPlotter || {
         d3.selectAll('foreignObject.user-text,g.legend-group,g.axis-title').call(G.utils.applyDrag); G.axis.tickEditing(d3.select('#chart svg'));
     }
 })(window.GraphPlotter);
-(function (G) {
+(function(G) {
     "use strict";
     function getSeries() {
         const s = G.getSettings(), data = G.state.hot.getData(), header = data[0], rows = data.slice(3), enabled = G.state.colEnabled, series = [];
         if (s.type === "ternary" || s.type === "ternaryline" || s.type === "ternaryarea") {
-            const header = G.state.hot.getData()[0]; const rows = G.state.hot.getData().slice(3);
-            const xIdx = header.indexOf("X-axis"); const yIdx = header.indexOf("Y-axis"); const zIdx = header.indexOf("Z-axis");
-            return [{ rawX: rows.map(r => +r[xIdx]), y: rows.map(r => +r[yIdx]), z: rows.map(r => +r[zIdx]), color: G.state.hot.getData()[1][yIdx] }];
-        }
-        if (s.type === "histogram") {
-            header.forEach((h, i) => {
-                if (h === "Y-axis" && enabled[i]) {
-                    const rawY = rows.map(r => parseFloat(r[i])).filter(v => Number.isFinite(v));
-                    series.push({ y: rawY, color: data[1][i], label: data[2][i] });
-                }
-            }); return series;
-        }
-        const xCols = header.map((h, i) => h === "X-axis" && enabled[i] ? i : -1).filter(i => i >= 0);
-        xCols.forEach((xIdx, bi) => {
-            const nextX = xCols[bi + 1] != null ? xCols[bi + 1] : header.length;
-            for (let yIdx = xIdx + 1; yIdx < nextX; yIdx++) {
-                if (header[yIdx] === "Y-axis" && enabled[yIdx]) {
-                    const rawX = rows.map(r => s.type === "bar" ? r[xIdx] : parseFloat(r[xIdx])); const rawY = rows.map(r => parseFloat(r[yIdx]));
-                    const errIdx = header[yIdx + 1] === "Y-error" && enabled[yIdx + 1] ? yIdx + 1 : -1;
-                    const error = errIdx >= 0 ? rows.map(r => parseFloat(r[errIdx]) || NaN) : null;
-                    const errorColor = errIdx >= 0 ? data[1][errIdx] : null; series.push({
-                        rawX, x: rawX, y: rawY, color: data[1][yIdx], label: data[2][yIdx], error, errorColor
-                    });
-                }
-            }
-        }); return series;
+        const header = G.state.hot.getData()[0]; const rows = G.state.hot.getData().slice(3);
+        const xIdx = header.indexOf("X-axis"); const yIdx = header.indexOf("Y-axis"); const zIdx = header.indexOf("Z-axis");
+        return [{ rawX: rows.map(r => +r[xIdx]), y: rows.map(r => +r[yIdx]), z: rows.map(r => +r[zIdx]), color: G.state.hot.getData()[1][yIdx]}];}
+        if (s.type === "histogram") { header.forEach((h,i) => { if (h === "Y-axis" && enabled[i]) {
+        const rawY = rows.map(r => parseFloat(r[i])).filter(v => Number.isFinite(v));
+        series.push({ y: rawY, color: data[1][i], label: data[2][i] });}}); return series;}
+        const xCols = header.map((h,i) => h === "X-axis" && enabled[i] ? i : -1).filter(i => i >= 0);
+        xCols.forEach((xIdx, bi) => { const nextX = xCols[bi+1] != null ? xCols[bi+1] : header.length;
+        for (let yIdx = xIdx + 1; yIdx < nextX; yIdx++) { if (header[yIdx] === "Y-axis" && enabled[yIdx]) {
+        const rawX = rows.map(r => s.type === "bar" ? r[xIdx] : parseFloat(r[xIdx])); const rawY = rows.map(r => parseFloat(r[yIdx]));
+        const errIdx = header[yIdx+1] === "Y-error" && enabled[yIdx+1] ? yIdx+1 : -1;
+        const error = errIdx >= 0 ? rows.map(r => parseFloat(r[errIdx])||NaN) : null;
+        const errorColor = errIdx >= 0 ? data[1][errIdx] : null; series.push({ 
+        rawX, x: rawX, y: rawY, color: data[1][yIdx], label: data[2][yIdx], error, errorColor});}}}); return series;
     }
     function getSettings() {
         const ratio = document.querySelector('input[name="aspectratio"]:checked').value; const preset = G.config.ratioPresets[ratio];
-        const s = {
-            type: document.querySelector('input[name="charttype"]:checked').id, symbolsize: +document.getElementById("symbolsize").value,
-            xticks: preset.xticks, yticks: preset.yticks,
-            scaleformat: +document.getElementById("scaleformat").value,
-            bins: +document.getElementById("bins").value,
-            multiygap: +document.getElementById("multiygap").value,
-            scalewidth: +document.getElementById("scalewidth").value, linewidth: +document.getElementById("linewidth").value,
-            multiyaxis: +document.getElementById("multiyaxis").value, opacity: +document.getElementById("opacity").value,
-            mode: document.querySelector('input[name="axistitles"]:checked').value,
-            scaleFs: preset.scaleFs, axisTitleFs: preset.axisTitleFs, legendFs: preset.legendFs,
-            ratio: document.querySelector('input[name="aspectratio"]:checked').value,
-        };
+        const s = { type: document.querySelector('input[name="charttype"]:checked').id, symbolsize: +document.getElementById("symbolsize").value, 
+        xticks: preset.xticks, yticks: preset.yticks,
+        scaleformat: +document.getElementById("scaleformat").value, 
+        bins: +document.getElementById("bins").value, 
+        multiygap: +document.getElementById("multiygap").value,
+        scalewidth: +document.getElementById("scalewidth").value, linewidth: +document.getElementById("linewidth").value,
+        multiyaxis: +document.getElementById("multiyaxis").value, opacity: +document.getElementById("opacity").value, 
+        mode: document.querySelector('input[name="axistitles"]:checked').value, 
+        scaleFs: preset.scaleFs, axisTitleFs: preset.axisTitleFs, legendFs: preset.legendFs,
+        ratio: document.querySelector('input[name="aspectratio"]:checked').value,};
         const chartData = document.querySelector('input[name="charttype"]:checked').dataset; Object.entries(chartData).forEach(([key, val]) => {
-            if (/^-?\d+(\.\d+)?$/.test(val)) { s[key] = +val; } else if (val.includes(',')) { s[key] = val.split(',').map(v => v.trim()); }
-            else { s[key] = val; }
-        }); return s;
+        if (/^-?\d+(\.\d+)?$/.test(val)) { s[key] = +val;} else if (val.includes(',')) { s[key] = val.split(',').map(v => v.trim());}
+        else { s[key] = val;}}); return s;
     }
     function computeMultiYScales(scales, s, series) {
         if (s.multiyaxis !== 1 || series.length < 2) return; const multiYScales = series.map((sv, i) => {
-            const [minY, maxY] = d3.extent(sv.y); const padY = (maxY - minY) * 0.06;
-            const domain = (G.state.overrideMultiY?.[i]) ? G.state.overrideMultiY[i] : [minY - padY, maxY + padY];
-            return d3.scaleLinear().domain(domain).range([G.config.DIM.H - G.config.DIM.MB, G.config.DIM.MT]);
-        });
-        scales.y2 = multiYScales; scales.y = multiYScales[0]; G.state.multiYScales = multiYScales;
+        const [minY, maxY] = d3.extent(sv.y); const padY = (maxY - minY) * 0.06;
+        const domain = (G.state.overrideMultiY?.[i]) ? G.state.overrideMultiY[i] : [minY - padY, maxY + padY];
+        return d3.scaleLinear().domain(domain).range([G.config.DIM.H - G.config.DIM.MB, G.config.DIM.MT]);});
+        scales.y2 = multiYScales; scales.y  = multiYScales[0]; G.state.multiYScales = multiYScales;
     }
     function initSvgCanvas(container, { W, H, ML, MR, MT, MB }, clipId = "clip", s = {}) {
-        const svg = container.append("svg").attr("viewBox", `0 0 ${W} ${H}`).on("click", event => { if (event.defaultPrevented || event.target !== svg.node()) return; G.utils.clearActive(); }); const cp = svg.append("defs").append("clipPath").attr("id", clipId);
-        if (s.type === "ternary" || s.type === "ternaryline" || s.type === "ternaryarea") {
-            const availW = W - ML - MR; const availH = H - MT - MB; const side = Math.min(availW, 2 * availH / Math.sqrt(3)); const triH = side * Math.sqrt(3) / 2; const p1x = ML + (availW - side) / 2; const p1y = MT + (availH - triH) / 2 + triH; const p2x = p1x + side; const p3x = p1x + side / 2; const p3y = p1y - triH;
-            cp.append("polygon").attr("points", `${p1x},${p1y} ${p2x},${p1y} ${p3x},${p3y}`);
-        }
-        else { cp.append("rect").attr("x", ML).attr("y", MT).attr("width", W - ML - MR).attr("height", H - MT - MB); } return svg;
+        const svg = container.append("svg").attr("viewBox", `0 0 ${W} ${H}`).on("click", event => { if (event.defaultPrevented || event.target !== svg.node()) return; G.utils.clearActive();}); const cp = svg.append("defs").append("clipPath").attr("id", clipId); 
+        if (s.type === "ternary" || s.type === "ternaryline" || s.type === "ternaryarea") { const availW = W - ML - MR; const availH = H - MT - MB; const side = Math.min(availW, 2 * availH / Math.sqrt(3)); const triH = side * Math.sqrt(3) / 2; const p1x = ML + (availW - side) / 2; const p1y = MT + (availH - triH) / 2 + triH; const p2x = p1x + side; const p3x = p1x + side / 2; const p3y = p1y - triH; 
+        cp.append("polygon").attr("points", `${p1x},${p1y} ${p2x},${p1y} ${p3x},${p3y}`);} 
+        else { cp.append("rect").attr("x", ML).attr("y", MT).attr("width", W - ML - MR).attr("height", H - MT - MB);} return svg;
     }
     function renderChart() {
         const container = d3.select("#chart");
-        const preserved = container.select("svg").selectAll("g.axis-title, g.legend-group, g.shape-group, foreignObject.user-text").remove(); container.html("");
+        const preserved = container.select("svg").selectAll("g.axis-title, g.legend-group, g.shape-group, foreignObject.user-text").remove(); container.html(""); 
         const { s, series, xScale, yScale, W, H, MT, MB, ML, MR, titles } = G.axis.prepareChartContext();
         const svg = initSvgCanvas(container, { W, H, ML, MR, MT, MB }, "clip", s); G.ui.areacalculation();
-        preserved.each(function () { svg.node().appendChild(this); });
-        const scales = { x: xScale, y: yScale }; computeMultiYScales(scales, s, series); const seriesG = svg.append("g").attr("clip-path", "url(#clip)");
+        preserved.each(function() {svg.node().appendChild(this);});
+        const scales = { x: xScale, y: yScale }; computeMultiYScales(scales, s, series); const seriesG = svg.append("g").attr("clip-path","url(#clip)");
         const chartDef = G.ChartRegistry.get(s.type); chartDef.draw(seriesG, series, scales, s);
         G.axis.drawAxis(svg, scales, titles, s, series); G.ui.drawLegend(); G.ui.toolTip(svg, { xScale, yScale });
-        G.features.prepareShapeLayer();
+        G.features.prepareShapeLayer(); 
         G.axis.tickEditing(d3.select('#chart svg'));
     }
     function detectModeFromData() {
@@ -1494,178 +1456,136 @@ window.GraphPlotter = window.GraphPlotter || {
         if (minX >= 0 && minX <= 10 && maxX >= 80 && maxX <= 90) return 'xrd';
         return null;
     }
-    function applyGraphRatio(r) {
-        const c = G.config.ratioPresets[r] || G.config.ratioPresets['4:2.85'], [w, h] = r.split(':').map(Number),
-            m = G.state.multiYScales?.length > 1 ? (G.state.multiYScales.length - 2) * c.multiygap : 0; G.config.DIM.H = Math.round(G.config.DIM.W * h / w); G.config.DIM.MR = 80 + m;
-        d3.selectAll('#chart svg g.axis-title foreignObject div').style('font-size', c.axisTitleFs + 'px').each(function () { let w2 = this.scrollWidth + 5; d3.select(this.parentNode).attr('width', w2).attr('x', -w2 / 2) });
-        d3.selectAll('#chart svg g.legend-group foreignObject div').style('font-size', c.legendFs + 'px').each(function () { d3.select(this.parentNode).attr('width', this.scrollWidth + 5) });
+    function applyGraphRatio(r){
+        const c=G.config.ratioPresets[r]||G.config.ratioPresets['4:2.85'], [w,h]=r.split(':').map(Number),
+        m=G.state.multiYScales?.length>1?(G.state.multiYScales.length-2)*c.multiygap:0; G.config.DIM.H=Math.round(G.config.DIM.W*h/w); G.config.DIM.MR=80+m; 
+        d3.selectAll('#chart svg g.axis-title foreignObject div').style('font-size',c.axisTitleFs+'px').each(function(){let w2=this.scrollWidth+5;d3.select(this.parentNode).attr('width',w2).attr('x',-w2/2)});
+        d3.selectAll('#chart svg g.legend-group foreignObject div').style('font-size',c.legendFs+'px').each(function(){d3.select(this.parentNode).attr('width',this.scrollWidth+5)});
     }
-    function bindEvents() {
-        G.state.hot.addHook('afterPaste', () => {
-            setTimeout(() => {
-                G.state.colEnabled = {}; G.state.hot.getData()[0].forEach((_, c) => { G.state.colEnabled[c] = true; }); G.state.hot.render(); const mode = detectModeFromData(); if (mode) {
-                    const radio = document.querySelector(`input[name="axistitles"][value="${mode}"]`); if (radio) radio.checked = true;
-                } G.axis.resetScales(true);
-                const svg = d3.select("#chart svg"); if (!svg.empty()) { svg.selectAll(".shape-group").remove(); svg.selectAll("foreignObject.user-text").remove(); G.state.tickLabelStyles = { x: { fontSize: null, color: null }, y: { fontSize: null, color: null } }; } G.renderChart();
-            }, 0);
-        });
-        G.state.hot.addHook('afterChange', (changes, src) => {
-            if (!changes) return; let h = false, d = false; for (const [r, , o, n] of changes) {
-                if (r === 0 && o !== n) h = true; if (r >= 3 && o !== n) d = true;
-            } d ? G.axis.resetScales(true) : h && G.axis.resetScales(false); if (src !== 'paste') G.renderChart();
-        }); G.state.hot.addHook('beforeKeyDown', e => { const s = G.state.hot.getSelectedLast(); if (s && s[0] === 0) { e.stopImmediatePropagation(); e.preventDefault(); } }); document.addEventListener('input', e => {
-            document.addEventListener('input', e => { if (e.target.id !== 'enableAreaCalc' && e.target.name !== 'sidebar') G.ui.disableAreaCal(); }); const t = e.target; if (!t.matches('.control input')) return;
-            if (t.name === 'axistitles' || t.name === 'aspectratio') G.axis.resetScales(false); if (t.name === 'aspectratio') { applyGraphRatio(t.value); } G.renderChart();
-        });
+    function bindEvents(){
+        G.state.hot.addHook('afterPaste', () => { setTimeout(() => { G.state.colEnabled = {}; G.state.hot.getData()[0].forEach((_, c) => { G.state.colEnabled[c] = true; }); G.state.hot.render(); const mode = detectModeFromData(); if (mode) { 
+        const radio = document.querySelector(`input[name="axistitles"][value="${mode}"]`); if (radio) radio.checked = true;} G.axis.resetScales(true);
+        const svg = d3.select("#chart svg"); if (!svg.empty()) { svg.selectAll(".shape-group").remove(); svg.selectAll("foreignObject.user-text").remove(); G.state.tickLabelStyles={x:{fontSize:null,color:null},y:{fontSize:null,color:null}};} G.renderChart();}, 0);});
+        G.state.hot.addHook('afterChange', (changes, src)=>{ if(!changes) return; let h=false, d=false; for(const [r,,o,n] of changes){
+        if(r===0 && o!==n) h=true; if(r>=3 && o!==n) d=true;} d? G.axis.resetScales(true): h&& G.axis.resetScales(false); if(src!=='paste') G.renderChart(); 
+        }); G.state.hot.addHook('beforeKeyDown', e => {const s=G.state.hot.getSelectedLast();if (s && s[0] === 0) {e.stopImmediatePropagation(); e.preventDefault();}});
+        document.addEventListener('input', e => {
+        if (e.target.id !== 'enableAreaCalc' && e.target.name !== 'sidebar') G.ui.disableAreaCal();
+        const t=e.target; if(!t.matches('.control input')) return;
+        if(t.name==='axistitles'|| t.name==='aspectratio') G.axis.resetScales(false); if(t.name==='aspectratio'){applyGraphRatio(t.value);} G.renderChart();});
     }
-    const fileHandlers = { instanano: null, csv: G.parsers.parseText, txt: G.parsers.parseText, xls: G.parsers.parseXLSX, xlsx: G.parsers.parseXLSX, xrdml: G.parsers.parseXRDML };
-    const fileModes = { xrdml: 'xrd', raw: 'xrd', spc: 'uvvis' };
-    const fileinput = document.getElementById('fileinput');
-    fileinput.accept = Object.keys(fileHandlers).map(ext => '.' + ext).join(',');
-    const dropzone = document.getElementById('dropzone');
-    async function handleFileList(src) {
-        const items = src && src.items; const files = items && items.length ? await (async () => {
-            const out = [];
-            const readAll = r => new Promise(res => { const a = []; (function n() { r.readEntries(es => { if (!es.length) res(a); else { a.push(...es); n() } }) })() });
-            const walk = async (en, p = '') => en.isFile ? await new Promise(r => en.file(f => { f.relativePath = p + f.name; out.push(f); r() })) : await Promise.all((await readAll(en.createReader())).map(e => walk(e, p + en.name + '/')));
-            for (const it of items) { const en = it.webkitGetAsEntry && it.webkitGetAsEntry(); if (en) await walk(en) } return out
-        })() : [...(src?.files || src || [])]; if (!files.length) return; if (await G.parsers.parseNMR(files)) return;
-        const file = files[0]; const ext = file.name.split('.').pop().toLowerCase();
-        if (ext === 'instanano') { const text = await file.text(); G.importState(JSON.parse(text)); return; }
-        const parser = fileHandlers[ext]; if (!parser) return alert('Unsupported file type: .' + ext);
-        if (fileModes[ext]) {
-            const radio = document.querySelector(`input[name="axistitles"][value="${fileModes[ext]}"]`);
-            if (radio) radio.checked = true;
-        } let rows;
-        if (ext === 'xls' || ext === 'xlsx') {
-            const buffer = await file.arrayBuffer();
-            rows = parser(buffer);
-        } else { const text = await file.text(); rows = parser(text); }
-        const n = Math.max(...rows.map(r => r.length)), header = Array(n).fill().map((_, i) => i === 0 ? 'X-axis' : 'Y-axis'),
-            color = Array(n).fill().map((_, i) => G.config.COLORS[i % G.config.COLORS.length]), name = Array(n).fill('Sample');
-        G.state.hot.loadData([header, color, name, ...rows]); G.state.colEnabled = {}; G.state.hot.getData()[0].forEach((_, c) => { G.state.colEnabled[c] = true; });
-        G.state.hot.render(); const mode = detectModeFromData(); if (mode) { const radio = document.querySelector(`input[name="axistitles"][value="${mode}"]`); if (radio) radio.checked = true; }
+    const fileHandlers={ instanano:null, csv:G.parsers.parseText, txt:G.parsers.parseText, xls:G.parsers.parseXLSX, xlsx:G.parsers.parseXLSX, xrdml:G.parsers.parseXRDML};
+    const fileModes = {xrdml:'xrd',raw:'xrd',spc:'uvvis'};
+    const fileinput=document.getElementById('fileinput');
+    fileinput.accept=Object.keys(fileHandlers).map(ext=>'.'+ext).join(',');
+    const dropzone=document.getElementById('dropzone');
+    async function handleFileList(src){
+        const items = src && src.items; const files = items && items.length ? await (async()=>{const out=[];
+        const readAll=r=>new Promise(res=>{const a=[];(function n(){r.readEntries(es=>{if(!es.length)res(a);else{a.push(...es);n()}})})()});
+        const walk=async (en,p='')=>en.isFile ? await new Promise(r=>en.file(f=>{f.relativePath=p+f.name;out.push(f);r()})) : await Promise.all((await readAll(en.createReader())).map(e=>walk(e,p+en.name+'/')));
+        for (const it of items){const en=it.webkitGetAsEntry&&it.webkitGetAsEntry(); if(en) await walk(en)} return out})() : [...(src?.files||src||[])]; if(!files.length) return; if (await G.parsers.parseNMR(files)) return;
+        const file=files[0]; const ext=file.name.split('.').pop().toLowerCase();
+        if (ext === 'instanano') { const text = await file.text(); G.importState(JSON.parse(text)); return;}  
+        const parser=fileHandlers[ext]; if(!parser) return alert('Unsupported file type: .'+ext);
+        if (fileModes[ext]) { const radio = document.querySelector(`input[name="axistitles"][value="${fileModes[ext]}"]`); 
+        if (radio) radio.checked = true;} let rows; 
+        if(ext==='xls'||ext==='xlsx'){ const buffer=await file.arrayBuffer();
+        rows=parser(buffer);} else { const text=await file.text(); rows=parser(text);}
+        const n=Math.max(...rows.map(r=>r.length)), header=Array(n).fill().map((_,i)=>i===0?'X-axis':'Y-axis'),
+        color=Array(n).fill().map((_,i)=>G.config.COLORS[i%G.config.COLORS.length]), name=Array(n).fill('Sample');
+        G.state.hot.loadData([header,color,name,...rows]); G.state.colEnabled = {}; G.state.hot.getData()[0].forEach((_, c) => { G.state.colEnabled[c] = true; }); 
+        G.state.hot.render(); const mode = detectModeFromData(); if (mode) { const radio = document.querySelector(`input[name="axistitles"][value="${mode}"]`); if (radio) radio.checked = true;}
         d3.select('#chart').selectAll("g.axis-title, g.legend-group, g.shape-group, defs, foreignObject.user-text").remove();
-        G.ui.disableAreaCal(); G.state.tickLabelStyles = { x: { fontSize: null, color: null }, y: { fontSize: null, color: null } };
-        G.axis.resetScales(true); G.renderChart();
+        G.ui.disableAreaCal(); G.state.tickLabelStyles={x:{fontSize:null,color:null},y:{fontSize:null,color:null}};
+        G.axis.resetScales(true); G.renderChart(); 
     }
-    ['dragenter', 'dragover'].forEach(evt => dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.add('hover') }));
-    ['dragleave', 'drop'].forEach(evt => dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.remove('hover') }));
-    dropzone.addEventListener('drop', async e => { e.preventDefault(); dropzone.classList.remove('hover'); await handleFileList(e.dataTransfer); });
-    fileinput.addEventListener('change', async () => { await handleFileList(fileinput.files); });
-    dropzone.addEventListener('click', () => fileinput.click());
-    function bindControlEvents() {
-        const controls = document.querySelectorAll('input[id]'); const showEls = document.querySelectorAll('[data-show]');
-        const radios = document.querySelectorAll('input[name="charttype"]');
-        radios.forEach(radio => radio.addEventListener('change', () => {
-            controls.forEach(ctl => {
-                ctl.value = radio.dataset[ctl.id] ?? ctl.dataset.defaultValue ?? ctl.defaultValue; ctl.dispatchEvent(new Event('input'));
-            });
-            showEls.forEach(el => { el.style.display = el.dataset.show.split(/\s+/).includes(radio.id) ? '' : 'none'; });
-            const specs = radio.dataset.axis?.split(/\s*,\s*/).map(s => s.trim()); if (specs) {
-                const d = G.state.hot.getData();
-                while (d[0].length < specs.length) d.forEach((r, i) => r.push(i === 0 ? specs[r.length].replace('*', '') : i === 1
-                    ? G.config.COLORS[r.length % G.config.COLORS.length] : i === 2 ? "Sample" : "")); G.state.hot.loadData(d);
-            } if (specs) {
-                let p = specs.findIndex(s => s.endsWith('*'));
-                if (p < 0) p = specs.length; const patterns = specs.map(s => s.replace(/\*$/, '')); const wild = patterns.slice(p);
-                G.state.hot.getData()[0].forEach((orig, i) => {
-                    const lbl = i < p ? patterns[i] : (wild.length ? wild[(i - p) % wild.length] : orig);
-                    G.state.hot.setDataAtCell(0, i, lbl); G.state.colEnabled[i] = G.state.colEnabled[i] && patterns.includes(lbl);
-                }); G.state.hot.render();
-            }
-            G.axis.resetScales(false); G.renderChart();
-        })); document.querySelector('input[name="charttype"]:checked').dispatchEvent(new Event('change'));
-        ['smoothingslider', 'baselineslider', 'multiyaxis'].forEach(id => {
-            const input = document.getElementById(id);
-            function updateThumbColor() { input.classList.toggle('zero', input.value === '0'); }
-            input.addEventListener('input', updateThumbColor); updateThumbColor();
-        });
-    }
-
-    // ['dragenter','dragover']... lines are fine where they are, but let's keep bindControlEvents focused on the form controls.
-
+    ['dragenter','dragover'].forEach(evt=>dropzone.addEventListener(evt,e=>{e.preventDefault();dropzone.classList.add('hover')}));
+    ['dragleave','drop'].forEach(evt=>dropzone.addEventListener(evt,e=>{e.preventDefault();dropzone.classList.remove('hover')}));
+    dropzone.addEventListener('drop', async e=>{ e.preventDefault(); dropzone.classList.remove('hover'); await handleFileList(e.dataTransfer);});
+    fileinput.addEventListener('change', async ()=>{ await handleFileList(fileinput.files); });
+    dropzone.addEventListener('click',()=>fileinput.click()); 
+    const controls = document.querySelectorAll('input[id]'); const showEls  = document.querySelectorAll('[data-show]');
+    const radios   = document.querySelectorAll('input[name="charttype"]');
+    radios.forEach(radio => radio.addEventListener('change', () => { if (!G.state.hot || typeof G.renderChart !== "function") return; controls.forEach(ctl => {
+    ctl.value = radio.dataset[ctl.id]  ?? ctl.dataset.defaultValue  ?? ctl.defaultValue; ctl.dispatchEvent(new Event('input'));});
+    showEls.forEach(el => { el.style.display = el.dataset.show.split(/\s+/).includes(radio.id) ? '' : 'none'; });
+    const specs = radio.dataset.axis ?.split(/\s*,\s*/).map(s => s.trim()); if (specs) { const d = G.state.hot.getData(); 
+    while (d[0].length < specs.length) d.forEach((r, i) => r.push(i === 0 ? specs[r.length].replace('*', '') : i === 1 
+    ? G.config.COLORS[r.length % G.config.COLORS.length] : i === 2 ? "Sample" : "")); G.state.hot.loadData(d);} if (specs) { let p = specs.findIndex(s => s.endsWith('*'));
+    if (p < 0) p = specs.length; const patterns = specs.map(s => s.replace(/\*$/, '')); const wild     = patterns.slice(p);
+    G.state.hot.getData()[0].forEach((orig, i) => { const lbl = i < p ? patterns[i] : (wild.length ? wild[(i - p) % wild.length] : orig);
+    G.state.hot.setDataAtCell(0, i, lbl); G.state.colEnabled[i] = G.state.colEnabled[i] && patterns.includes(lbl); }); G.state.hot.render();} 
+    G.axis.resetScales(false); G.renderChart(); }));
+    ['smoothingslider','baselineslider','multiyaxis'].forEach(id => { const input = document.getElementById(id);
+    function updateThumbColor() { input.classList.toggle('zero', input.value === '0');}
+    input.addEventListener('input', updateThumbColor); updateThumbColor();});
     document.querySelectorAll('span[data-current-value]').forEach(span => {
-        const slider = document.getElementById(span.dataset.currentValue); if (!slider || slider.type !== 'range') return;
-        span.textContent = slider.value; slider.oninput = () => { span.textContent = slider.value; };
-    });
+    const slider = document.getElementById(span.dataset.currentValue); if (!slider || slider.type !== 'range') return;
+    span.textContent = slider.value; slider.oninput = () => { span.textContent = slider.value;};});
     const helpIcon = document.getElementById('help-icon');
     const helpOverlay = document.getElementById('help-prompt-overlay');
     const helpClose = document.getElementById('help-close');
-    helpIcon.addEventListener('click', () => { helpOverlay.style.display = 'flex'; });
-    helpClose.addEventListener('click', () => { helpOverlay.style.display = 'none'; });
+    helpIcon.addEventListener('click', () => { helpOverlay.style.display = 'flex';});
+    helpClose.addEventListener('click', () => { helpOverlay.style.display = 'none';});
     const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform); const modKey = isMac ? 'meta' : 'ctrl';
-    const keyBinder = (() => {
-        const map = new Map();
-        const normalize = combo => combo.toLowerCase().split('+').map(s => s.trim()).sort().join('+');
-        addEventListener('keydown', e => {
-            const parts = []; if (isMac ? e.metaKey : e.ctrlKey) parts.push(modKey);
-            parts.push(e.key.toLowerCase()); const combo = parts.sort().join('+'); if (map.has(combo)) {
-                e.preventDefault(); map.get(combo)(e);
-            }
-        }); return (combo, handler) => map.set(normalize(combo), handler);
-    })();
-    keyBinder(`${modKey}+s`, () => document.getElementById('save').click());
-    keyBinder(`${modKey}+d`, () => document.getElementById('download').click());
-    keyBinder(`${modKey}+z`, () => document.getElementById('zoomBtn').click());
+    const keyBinder = (() => { const map = new Map();
+    const normalize = combo => combo.toLowerCase().split('+').map(s=>s.trim()).sort().join('+');
+    addEventListener('keydown', e => { const parts = []; if (isMac ? e.metaKey : e.ctrlKey) parts.push(modKey);
+    parts.push(e.key.toLowerCase()); const combo = parts.sort().join('+'); if (map.has(combo)) {
+    e.preventDefault(); map.get(combo)(e);}}); return (combo, handler) => map.set(normalize(combo), handler);})();
+    keyBinder(`${modKey}+s`, ()=> document.getElementById('save').click());
+    keyBinder(`${modKey}+d`, ()=> document.getElementById('download').click());
+    keyBinder(`${modKey}+z`, ()=> document.getElementById('zoomBtn').click());
     keyBinder(`${modKey}+backspace`, () => document.getElementById('removebtn').click());
     keyBinder('delete', () => document.getElementById('removebtn').click());
-    keyBinder('escape', () => {
-        G.utils.clearActive(); document.getElementById('popup-prompt-overlay').style.display = 'none';
-        document.getElementById('help-prompt-overlay').style.display = 'none'; G.ui.disableAreaCal();
-    });
-    keyBinder(`${modKey}+f`, () => {
-        const c = document.querySelector('.container'); if (!document.fullscreenElement) {
-            c.requestFullscreen().then(() => c.style.background = '#f4eee2');
-        }
-        else { document.exitFullscreen().then(() => c.style.background = ''); }
-    });
-    keyBinder(`${modKey}+i`, () => document.getElementById('enableAreaCalc').click());
-    keyBinder(`${modKey}+.`, () => G.ui.applySupSub('sup'));
-    keyBinder(`${modKey}+,`, () => G.ui.applySupSub('sub'));
-    const gLink = 'https://instanano.com/online-graph-plotter/', mWP = document.getElementById('mWP'), mEM = document.getElementById('mEM'), mCP = document.getElementById('mCP');
-    mWP.href = 'https://wa.me/919467826266?text=' + encodeURIComponent('Link to open InstaNANO Graph Plotter on your laptop:\n' + gLink);
-    mEM.href = 'mailto:?subject=' + encodeURIComponent('InstaNANO Graph Plotter Link') + '&body=' + encodeURIComponent("Link to open InstaNANO Graph Plotter on your laptop:\n\n" + gLink);
-    mCP.onclick = e => (e.preventDefault(), navigator.clipboard.writeText(gLink).then(() => mCP.textContent = 'Copied'));
-    if (matchMedia('(max-width:600px)').matches) {
-        document.querySelectorAll('input[name=sidebar]').forEach(i => i.checked = false); document.querySelector('.icon-strip').addEventListener('click', e => {
-            let i = document.getElementById(e.target.closest('label')?.htmlFor); if (i?.checked) { e.preventDefault(); i.checked = false }
-        });
-    }
+    keyBinder('escape', () => { G.utils.clearActive(); document.getElementById('popup-prompt-overlay').style.display = 'none';
+    document.getElementById('help-prompt-overlay').style.display = 'none'; G.ui.disableAreaCal();});
+    keyBinder(`${modKey}+f`, () => { const c = document.querySelector('.container'); if (!document.fullscreenElement) {
+    c.requestFullscreen().then(() => c.style.background = '#f4eee2');} 
+    else { document.exitFullscreen().then(() => c.style.background = '');}});
+    keyBinder(`${modKey}+i`, ()=> document.getElementById('enableAreaCalc').click());
+    keyBinder(`${modKey}+.`,()=>G.ui.applySupSub('sup'));
+    keyBinder(`${modKey}+,`,()=>G.ui.applySupSub('sub'));
+    const gLink='https://instanano.com/online-graph-plotter/', mWP=document.getElementById('mWP'), mEM=document.getElementById('mEM'), mCP=document.getElementById('mCP');
+    mWP.href='https://wa.me/919467826266?text='+encodeURIComponent('Link to open InstaNANO Graph Plotter on your laptop:\n'+gLink);
+    mEM.href='mailto:?subject='+encodeURIComponent('InstaNANO Graph Plotter Link')+'&body='+encodeURIComponent("Link to open InstaNANO Graph Plotter on your laptop:\n\n"+gLink);
+    mCP.onclick=e=>(e.preventDefault(),navigator.clipboard.writeText(gLink).then(()=>mCP.textContent='Copied'));  
+    if (matchMedia('(max-width:600px)').matches){
+    document.querySelectorAll('input[name=sidebar]').forEach(i=>i.checked=false); document.querySelector('.icon-strip').addEventListener('click',e=>{
+    let i=document.getElementById(e.target.closest('label')?.htmlFor); if(i?.checked){e.preventDefault();i.checked=false}});}
     const GRAPH_UPSELL = {
-        xrd: { paid: "product/xrd-data-matching-online/", msg: ["Plotting XRD data? Get expert phase matching against verified reference databases.", "XRD peaks plotted! Need accurate compound identification for your materials?", "Beautiful XRD graph! Reviewers often ask for proper phase matching with reference cards.", "Need more than a plot? Get professional phase identification and peak assignment.", "XRD data ready! Our experts can match your peaks to thousands of known compounds."] },
-        ftir: { paid: "product/ftir-data-matching-online/", msg: ["FTIR spectrum looks great! Need automated compound identification?", "Plotting FTIR? Get your peaks matched against 10,000+ reference materials.", "Beautiful transmittance plot! Want to identify functional groups automatically?", "FTIR graph ready! Our experts can match your peaks to known compounds.", "Nice FTIR spectrum! Reviewers love seeing compound matches with similarity scores."] },
-        xps: { paid: "product/xps-analysis-online/", msg: ["Plotting XPS data? Get professional peak deconvolution and fitting.", "XPS spectrum ready! Need atomic percentages and oxidation state analysis?", "Great binding energy plot! Our experts can deconvolute overlapping peaks.", "XPS graph looks good! Want publication-ready peak assignments?", "Need more than a plot? Get full XPS analysis with chemical state identification."] },
-        raman: { paid: "product/raman-crystallite-size-calculator/", msg: ["Raman spectrum plotted! Need ID/IG ratio and crystallite size analysis?", "Working with carbon materials? Get expert D and G band deconvolution.", "Nice Raman plot! Reviewers often ask for proper peak fitting.", "Raman data ready! Our experts can calculate defect density and crystallite size.", "Beautiful Raman spectrum! Want Tuinstra-Koenig analysis for your publication?"] },
-        uvvis: { paid: "product/band-gap-calculation-from-tauc-plot/", msg: ["UV-Vis spectrum ready! Need accurate band gap from Tauc plot?", "Plotting absorbance data? Get publication-ready Tauc plot analysis.", "Nice UV-Vis spectrum! Reviewers expect proper band gap determination.", "UV-Vis data plotted! Our experts can calculate direct/indirect band gaps.", "Absorbance graph looks good! Want professional Tauc plot fitting?"] },
-        tauc: { paid: "product/band-gap-calculation-from-tauc-plot/", msg: ["Generating Tauc plot? Let our experts ensure accurate band gap values.", "Tauc analysis started! Get professionally fitted linear region extraction.", "Band gap calculation in progress! Reviewers appreciate expert Tauc analysis.", "Need reviewer-ready band gap values? Our experts ensure proper fitting.", "Tauc plot ready! Get verified band gap calculation for your publication."] },
-        nmr: { paid: "product/nmr-data-analysis/", msg: ["Plotting NMR spectrum? Get full structural elucidation from your data.", "NMR data loaded! Need peak assignments and purity assessment?", "Nice NMR plot! Our experts can provide complete spectral interpretation.", "Chemical shifts visible! Want professional structure confirmation?", "NMR spectrum ready! Get publication-quality peak assignments."] },
-        pl: { paid: "product/custom-analysis/", msg: ["Plotting PL data? Need quantum yield or peak fitting analysis?", "Photoluminescence spectrum ready! Get expert emission peak analysis.", "Nice PL plot! Our analysis team can extract valuable optical properties.", "PL data loaded! Want professional peak deconvolution?", "Beautiful emission spectrum! Get expert analysis for your publication."] },
-        dsc: { paid: "product/dsc-percent-crystallinity-calculation-by-our-expert-team/", msg: ["DSC thermogram plotted! Need accurate crystallinity calculation?", "Plotting DSC data? Get professional enthalpy of fusion analysis.", "DSC curve ready! Our experts can calculate percent crystallinity.", "Nice thermal data! Reviewers expect proper baseline integration.", "DSC plot looks good! Get publication-ready crystallinity values."] },
-        tga: { paid: "product/custom-analysis/", msg: ["Plotting TGA data? Need thermal stability analysis?", "TGA curve ready! Our experts can analyze decomposition profiles.", "Nice weight loss curve! Get detailed thermal analysis.", "TGA data loaded! Want professional derivative thermogravimetric analysis?", "Thermal data plotted! Get expert interpretation for your manuscript."] },
-        bet: { paid: "product/bet-analsysis-online/", msg: ["Plotting BET isotherm? Get surface area and pore analysis.", "BET data loaded! Our experts calculate surface area and pore distribution.", "Nice adsorption plot! Want complete BET analysis with pore shape?", "BET curve ready! Get publication-ready surface area values.", "Isotherm plotted! Need BJH pore size distribution analysis."] },
-        saxs: { paid: "product/custom-analysis/", msg: ["Plotting SAXS data? Need particle size distribution analysis?", "SAXS pattern ready! Our experts can extract structural parameters.", "Nice scattering plot! Want professional data fitting?"] },
-        tensile: { paid: "product/custom-analysis/", msg: ["Plotting stress-strain curve? Need mechanical property calculations?", "Tensile data ready! Our experts can analyze modulus and yield strength."] },
-        default: { paid: "product/scientific-graph-plotting/", msg: ["Great graph! Need publication-quality formatting for journals?", "Nice plot! Our experts create journal-ready 2D/3D scientific figures.", "Data plotted! Want professionally formatted graphs for your paper?", "Graph looks good! We also offer complete data analysis services.", "Beautiful visualization! Need more analysis? Check our expert services."] }
-    };
+    xrd: {paid: "product/xrd-data-matching-online/", msg: ["Plotting XRD data? Get expert phase matching against verified reference databases.", "XRD peaks plotted! Need accurate compound identification for your materials?", "Beautiful XRD graph! Reviewers often ask for proper phase matching with reference cards.", "Need more than a plot? Get professional phase identification and peak assignment.", "XRD data ready! Our experts can match your peaks to thousands of known compounds."]},
+    ftir: {paid: "product/ftir-data-matching-online/", msg: ["FTIR spectrum looks great! Need automated compound identification?", "Plotting FTIR? Get your peaks matched against 10,000+ reference materials.", "Beautiful transmittance plot! Want to identify functional groups automatically?", "FTIR graph ready! Our experts can match your peaks to known compounds.", "Nice FTIR spectrum! Reviewers love seeing compound matches with similarity scores."]},
+    xps: {paid: "product/xps-analysis-online/", msg: ["Plotting XPS data? Get professional peak deconvolution and fitting.", "XPS spectrum ready! Need atomic percentages and oxidation state analysis?", "Great binding energy plot! Our experts can deconvolute overlapping peaks.", "XPS graph looks good! Want publication-ready peak assignments?", "Need more than a plot? Get full XPS analysis with chemical state identification."]},
+    raman: {paid: "product/raman-crystallite-size-calculator/", msg: ["Raman spectrum plotted! Need ID/IG ratio and crystallite size analysis?", "Working with carbon materials? Get expert D and G band deconvolution.", "Nice Raman plot! Reviewers often ask for proper peak fitting.", "Raman data ready! Our experts can calculate defect density and crystallite size.", "Beautiful Raman spectrum! Want Tuinstra-Koenig analysis for your publication?"]},
+    uvvis: {paid: "product/band-gap-calculation-from-tauc-plot/", msg: ["UV-Vis spectrum ready! Need accurate band gap from Tauc plot?", "Plotting absorbance data? Get publication-ready Tauc plot analysis.", "Nice UV-Vis spectrum! Reviewers expect proper band gap determination.", "UV-Vis data plotted! Our experts can calculate direct/indirect band gaps.", "Absorbance graph looks good! Want professional Tauc plot fitting?"]},
+    tauc: {paid: "product/band-gap-calculation-from-tauc-plot/", msg: ["Generating Tauc plot? Let our experts ensure accurate band gap values.", "Tauc analysis started! Get professionally fitted linear region extraction.", "Band gap calculation in progress! Reviewers appreciate expert Tauc analysis.", "Need reviewer-ready band gap values? Our experts ensure proper fitting.", "Tauc plot ready! Get verified band gap calculation for your publication."]},
+    nmr: {paid: "product/nmr-data-analysis/", msg: ["Plotting NMR spectrum? Get full structural elucidation from your data.", "NMR data loaded! Need peak assignments and purity assessment?", "Nice NMR plot! Our experts can provide complete spectral interpretation.", "Chemical shifts visible! Want professional structure confirmation?", "NMR spectrum ready! Get publication-quality peak assignments."]},
+    pl: {paid: "product/custom-analysis/", msg: ["Plotting PL data? Need quantum yield or peak fitting analysis?", "Photoluminescence spectrum ready! Get expert emission peak analysis.", "Nice PL plot! Our analysis team can extract valuable optical properties.", "PL data loaded! Want professional peak deconvolution?", "Beautiful emission spectrum! Get expert analysis for your publication."]},
+    dsc: {paid: "product/dsc-percent-crystallinity-calculation-by-our-expert-team/", msg: ["DSC thermogram plotted! Need accurate crystallinity calculation?", "Plotting DSC data? Get professional enthalpy of fusion analysis.", "DSC curve ready! Our experts can calculate percent crystallinity.", "Nice thermal data! Reviewers expect proper baseline integration.", "DSC plot looks good! Get publication-ready crystallinity values."]},
+    tga: {paid: "product/custom-analysis/", msg: ["Plotting TGA data? Need thermal stability analysis?", "TGA curve ready! Our experts can analyze decomposition profiles.", "Nice weight loss curve! Get detailed thermal analysis.", "TGA data loaded! Want professional derivative thermogravimetric analysis?", "Thermal data plotted! Get expert interpretation for your manuscript."]},
+    bet: {paid: "product/bet-analsysis-online/", msg: ["Plotting BET isotherm? Get surface area and pore analysis.", "BET data loaded! Our experts calculate surface area and pore distribution.", "Nice adsorption plot! Want complete BET analysis with pore shape?", "BET curve ready! Get publication-ready surface area values.", "Isotherm plotted! Need BJH pore size distribution analysis."]},
+    saxs: {paid: "product/custom-analysis/", msg: ["Plotting SAXS data? Need particle size distribution analysis?", "SAXS pattern ready! Our experts can extract structural parameters.", "Nice scattering plot! Want professional data fitting?"]},
+    tensile: {paid: "product/custom-analysis/", msg: ["Plotting stress-strain curve? Need mechanical property calculations?", "Tensile data ready! Our experts can analyze modulus and yield strength."]},
+    default: {paid: "product/scientific-graph-plotting/", msg: ["Great graph! Need publication-quality formatting for journals?", "Nice plot! Our experts create journal-ready 2D/3D scientific figures.", "Data plotted! Want professionally formatted graphs for your paper?", "Graph looks good! We also offer complete data analysis services.", "Beautiful visualization! Need more analysis? Check our expert services."]}};
     const GRAPH_UPSELL_STORAGE = "instanano_graph_upsell";
     function storeGraphUpsell() {
-        if (sessionStorage.getItem(GRAPH_UPSELL_STORAGE)) return; const axisRadio = document.querySelector('input[name="axistitles"]:checked');
-        const axisType = axisRadio ? axisRadio.value : "default"; const upsellData = GRAPH_UPSELL[axisType] || GRAPH_UPSELL.default;
-        const randomMsg = upsellData.msg[Math.floor(Math.random() * upsellData.msg.length)];
-        const payload = { axis: axisType, paid: upsellData.paid, message: randomMsg, timestamp: Date.now() };
-        sessionStorage.setItem(GRAPH_UPSELL_STORAGE, JSON.stringify(payload));
-    }
-    $('#download').click(storeGraphUpsell); $('#save').click(storeGraphUpsell);
+    if (sessionStorage.getItem(GRAPH_UPSELL_STORAGE)) return; const axisRadio = document.querySelector('input[name="axistitles"]:checked');
+    const axisType = axisRadio ? axisRadio.value : "default"; const upsellData = GRAPH_UPSELL[axisType] || GRAPH_UPSELL.default;
+    const randomMsg = upsellData.msg[Math.floor(Math.random() * upsellData.msg.length)];
+    const payload = { axis: axisType, paid: upsellData.paid, message: randomMsg, timestamp: Date.now() };
+    sessionStorage.setItem(GRAPH_UPSELL_STORAGE, JSON.stringify(payload));}
+    $('#download').click(storeGraphUpsell); $('#save').click(storeGraphUpsell);                         
     G.getSeries = getSeries;
     G.getSettings = getSettings;
     G.renderChart = renderChart;
-    G.init = function () {
-        G.initTable();
-        bindEvents();
-        bindControlEvents();
+    G.init = function() {
+        G.initTable(); 
+        bindEvents(); 
         G.axis.resetScales(true);
-        G.renderChart();
+        const selectedType = document.querySelector('input[name="charttype"]:checked');
+        if (selectedType) selectedType.dispatchEvent(new Event('change'));
+        else G.renderChart();
     };
     document.addEventListener('DOMContentLoaded', () => {
         window.GraphPlotter.init();
