@@ -3,12 +3,12 @@
     G.axis.getTitles = function(mode) {
         switch (mode) { case "uvvis":return { x: "Wavelength (nm)", y: "Absorbance (a.u.)" }; 
         case "tauc":return { x: "Energy (eV)", y: "Intensity (a.u.)" }; case "xrd":return { x: "2θ (°)", y: "Intensity (a.u.)" }; 
-        case "ftir":return { x: "Wavenumber (cm<sup>-1</sup>)", y: "Transmittance (%)" }; 
-        case "raman":return { x: "Raman Shift (cm<sup>-1</sup>)", y: "Intensity (a.u.)" }; 
+        case "ftir":return { x: "Wavenumber (cm⁻¹)", y: "Transmittance (%)" }; 
+        case "raman":return { x: "Raman Shift (cm⁻¹)", y: "Intensity (a.u.)" }; 
         case "pl":return { x: "Wavelength (nm)", y: "Intensity (a.u.)" }; case "xps":return { x: "Binding Energy (eV)", y: "Intensity (cps)" }; 
         case "tga":return { x: "Temperature (°C)", y: "Weight (%)" }; case "dsc":return { x: "Temperature (°C)", y: "Heat Flow (mW)" }; 
-        case "bet":return { x: "Relative Pressure (P/P<sub>0</sub>)", y: "Adsorbed Volume (cm<sup>3</sup>·g<sup>-1</sup>)" };
-        case "saxs":return { x: "Scattering Vector q (Å<sup>-1</sup>)", y: "Intensity (a.u.)" }; 
+        case "bet":return { x: "Relative Pressure (P/P₀)", y: "Adsorbed Volume (cm³·g⁻¹)" };
+        case "saxs":return { x: "Scattering Vector q (Å⁻¹)", y: "Intensity (a.u.)" }; 
         case "nmr":return { x: "δ (ppm)", y: "Intensity (a.u.)" }; case "ternary": return { a: "A-axis", b: "B-axis", c: "C-axis" }; 
         case "tensile": return { x: "Strain", y: "Stress" }; default:return { x: "x-axis", y: "y-axis" };}
     };
@@ -16,10 +16,10 @@
         const pad = 5; axes.forEach(axis => { let g = svg.select(`g.axis-title-${axis.key}`); if (g.empty()) { g = svg.append("g")
         .classed(`axis-title axis-title-${axis.key} user-text`, true).attr("data-axis-mode", modeKey)
         .attr("transform", `translate(${axis.pos[0]},${axis.pos[1]}) ${axis.rotation ? `rotate(${axis.rotation})` : ""}`.replace(/\s+/g, " "))
-        .call(G.utils.applyDrag); const obj = G.utils.editableText(g, { x: 0, y: 0, text: axis.label, rotation: 0 }); obj.div.html(axis.label); obj.fo
+        .call(G.utils.applyDrag); const obj = G.utils.editableText(g, { x: 0, y: 0, text: axis.label, rotation: 0 }); obj.div.text(axis.label); obj.fo
         .attr("width", obj.div.node().scrollWidth + pad).attr("x", -(obj.div.node().scrollWidth + pad) / 2).attr("y", 0);
         obj.div.style("text-align", axis.anchor || "middle"); } else if (g.attr("data-axis-mode") !== modeKey) {
-        const fo = g.select("foreignObject"); fo.select("div").html(axis.label); const w2 = fo.select("div").node().scrollWidth + pad;
+        const fo = g.select("foreignObject"); fo.select("div").text(axis.label); const w2 = fo.select("div").node().scrollWidth + pad;
         fo.attr("width", w2).attr("x", -w2 / 2).attr("y", 0); g.attr("data-axis-mode", modeKey);}
         g.attr("transform", `translate(${axis.pos[0]},${axis.pos[1]}) ${axis.rotation ? `rotate(${axis.rotation})` : ""}`.replace(/\s+/g, " "));});
     }
