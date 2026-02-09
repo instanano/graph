@@ -23,6 +23,14 @@ window.GraphPlotter = window.GraphPlotter || {
 })(window.GraphPlotter);
 (function(G) {
     "use strict";
+    G.utils.escapeHTML = function(value) {
+        return String(value == null ? "" : value).replace(/[&<>"']/g, ch => (
+            ch === "&" ? "&amp;" :
+            ch === "<" ? "&lt;" :
+            ch === ">" ? "&gt;" :
+            ch === '"' ? "&quot;" : "&#39;"
+        ));
+    };
     G.utils.clearActive = function() { 
         const S = G.state;
         if (S.activeGroup) { S.activeGroup.select(".outline").attr("visibility", "hidden"); S.activeGroup = null;}
@@ -68,9 +76,25 @@ window.GraphPlotter = window.GraphPlotter || {
         const pad = 2; const fo = container.append("foreignObject").attr("x", x).attr("y", y)
         .attr("transform", rotation ? `rotate(${rotation},${x},${y})` : null).attr("overflow", "visible");
         const div = fo.append("xhtml:div").attr("contenteditable", false).style("display", "inline-block").style("white-space", "nowrap")
-        .style("padding", `${pad}px`).style("cursor", "move").style("font-size", "12px").html(text); const w = div.node().scrollWidth;
+        .style("padding", `${pad}px`).style("cursor", "move").style("font-size", "12px").text(String(text == null ? "" : text)); const w = div.node().scrollWidth;
         const h = div.node().scrollHeight; fo.attr("width",  w + pad).attr("height", h + pad); div.on("input", () => {
         const nw = div.node().scrollWidth; const nh = div.node().scrollHeight; fo.attr("width",  nw + pad).attr("height", nh + pad);})
+        .on("paste", function(e) {
+            e.preventDefault();
+            const plain = (e.clipboardData || window.clipboardData).getData("text/plain");
+            const usedExec = typeof document.execCommand === "function" && document.execCommand("insertText", false, plain);
+            if (usedExec) return;
+            const sel = window.getSelection();
+            if (!sel || !sel.rangeCount) { this.textContent += plain; return; }
+            sel.deleteFromDocument();
+            const tn = document.createTextNode(plain);
+            const range = sel.getRangeAt(0);
+            range.insertNode(tn);
+            range.setStartAfter(tn);
+            range.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(range);
+        })
         .on("keydown", function(e) { if (e.key === "Enter") { e.preventDefault(); this.blur();}}).on("blur", () => {
         d3.select(div.node()).style("cursor", "move");}); return { fo, div, pad };
     };
@@ -116,7 +140,7 @@ window.GraphPlotter = window.GraphPlotter || {
                 .includes(inst.getDataAtCell(0, c))) { const inp = document.createElement("input"); inp.type = "color"; 
                 inp.value = val || G.config.COLORS[c % G.config.COLORS.length]; inp.oninput = e => inst.setDataAtCell(r, c, e.target.value); td.appendChild(inp);}};}
                 if (row === 2) { props.renderer = (inst, td, r, c, prop, val) => { 
-                td.innerHTML = ["X-axis", "Z-axis"].includes(inst.getDataAtCell(0, c)) ? "" : (val || "Sample");};}
+                td.textContent = ["X-axis", "Z-axis"].includes(inst.getDataAtCell(0, c)) ? "" : (val || "Sample");};}
                 const base = props.renderer || myTable.renderers.TextRenderer;
                 props.renderer = function(inst, td, r, c, prop, val) {
                     base.apply(this, arguments);
@@ -308,6 +332,20 @@ window.GraphPlotter = window.GraphPlotter || {
         [minX, maxX] = d3.extent(allX), [minY, maxY] = d3.extent(allY), padX = (maxX - minX) * 0.02, padY = (maxY - minY) * 0.06;
         return { minX: minX - padX, maxX: maxX + padX, minY: minY - padY, maxY: maxY + padY,};
     }
+    G.axis.applyGraphRatio = function(r) {
+        const c = G.config.ratioPresets[r] || G.config.ratioPresets['4:2.85'];
+        const [w, h] = r.split(':').map(Number);
+        const m = G.state.multiYScales?.length > 1 ? (G.state.multiYScales.length - 2) * c.multiygap : 0;
+        G.config.DIM.H = Math.round(G.config.DIM.W * h / w);
+        G.config.DIM.MR = 80 + m;
+        d3.selectAll('#chart svg g.axis-title foreignObject div').style('font-size', c.axisTitleFs + 'px').each(function() {
+            const w2 = this.scrollWidth + 5;
+            d3.select(this.parentNode).attr('width', w2).attr('x', -w2 / 2);
+        });
+        d3.selectAll('#chart svg g.legend-group foreignObject div').style('font-size', c.legendFs + 'px').each(function() {
+            d3.select(this.parentNode).attr('width', this.scrollWidth + 5);
+        });
+    };
     G.axis.resetScales = function(full = true) {
         const S = G.state;
         if(full){S.overrideX=null; S.overrideMultiY={};S.overrideXTicks=null; S.overrideYTicks={}; 
@@ -322,12 +360,12 @@ window.GraphPlotter = window.GraphPlotter || {
     G.axis.getTitles = function(mode) {
         switch (mode) { case "uvvis":return { x: "Wavelength (nm)", y: "Absorbance (a.u.)" }; 
         case "tauc":return { x: "Energy (eV)", y: "Intensity (a.u.)" }; case "xrd":return { x: "2θ (°)", y: "Intensity (a.u.)" }; 
-        case "ftir":return { x: "Wavenumber (cm<sup>-1</sup>)", y: "Transmittance (%)" }; 
-        case "raman":return { x: "Raman Shift (cm<sup>-1</sup>)", y: "Intensity (a.u.)" }; 
+        case "ftir":return { x: "Wavenumber (cm⁻¹)", y: "Transmittance (%)" }; 
+        case "raman":return { x: "Raman Shift (cm⁻¹)", y: "Intensity (a.u.)" }; 
         case "pl":return { x: "Wavelength (nm)", y: "Intensity (a.u.)" }; case "xps":return { x: "Binding Energy (eV)", y: "Intensity (cps)" }; 
         case "tga":return { x: "Temperature (°C)", y: "Weight (%)" }; case "dsc":return { x: "Temperature (°C)", y: "Heat Flow (mW)" }; 
-        case "bet":return { x: "Relative Pressure (P/P<sub>0</sub>)", y: "Adsorbed Volume (cm<sup>3</sup>·g<sup>-1</sup>)" };
-        case "saxs":return { x: "Scattering Vector q (Å<sup>-1</sup>)", y: "Intensity (a.u.)" }; 
+        case "bet":return { x: "Relative Pressure (P/P₀)", y: "Adsorbed Volume (cm³·g⁻¹)" };
+        case "saxs":return { x: "Scattering Vector q (Å⁻¹)", y: "Intensity (a.u.)" }; 
         case "nmr":return { x: "δ (ppm)", y: "Intensity (a.u.)" }; case "ternary": return { a: "A-axis", b: "B-axis", c: "C-axis" }; 
         case "tensile": return { x: "Strain", y: "Stress" }; default:return { x: "x-axis", y: "y-axis" };}
     };
@@ -335,10 +373,10 @@ window.GraphPlotter = window.GraphPlotter || {
         const pad = 5; axes.forEach(axis => { let g = svg.select(`g.axis-title-${axis.key}`); if (g.empty()) { g = svg.append("g")
         .classed(`axis-title axis-title-${axis.key} user-text`, true).attr("data-axis-mode", modeKey)
         .attr("transform", `translate(${axis.pos[0]},${axis.pos[1]}) ${axis.rotation ? `rotate(${axis.rotation})` : ""}`.replace(/\s+/g, " "))
-        .call(G.utils.applyDrag); const obj = G.utils.editableText(g, { x: 0, y: 0, text: axis.label, rotation: 0 }); obj.div.html(axis.label); obj.fo
+        .call(G.utils.applyDrag); const obj = G.utils.editableText(g, { x: 0, y: 0, text: axis.label, rotation: 0 }); obj.div.text(axis.label); obj.fo
         .attr("width", obj.div.node().scrollWidth + pad).attr("x", -(obj.div.node().scrollWidth + pad) / 2).attr("y", 0);
         obj.div.style("text-align", axis.anchor || "middle"); } else if (g.attr("data-axis-mode") !== modeKey) {
-        const fo = g.select("foreignObject"); fo.select("div").html(axis.label); const w2 = fo.select("div").node().scrollWidth + pad;
+        const fo = g.select("foreignObject"); fo.select("div").text(axis.label); const w2 = fo.select("div").node().scrollWidth + pad;
         fo.attr("width", w2).attr("x", -w2 / 2).attr("y", 0); g.attr("data-axis-mode", modeKey);}
         g.attr("transform", `translate(${axis.pos[0]},${axis.pos[1]}) ${axis.rotation ? `rotate(${axis.rotation})` : ""}`.replace(/\s+/g, " "));});
     }
@@ -577,32 +615,79 @@ window.GraphPlotter = window.GraphPlotter || {
 })(window.GraphPlotter);
 (function(G) {
     "use strict";
+    function setTooltipContent(node, xVal, yVal) {
+        if (!node) return;
+        const xb = document.createElement("b");
+        xb.textContent = ` ${xVal}`;
+        const yb = document.createElement("b");
+        yb.textContent = ` ${yVal}`;
+        node.replaceChildren(
+            document.createTextNode("X-Scale:"),
+            xb,
+            document.createElement("br"),
+            document.createTextNode("Y-Scale:"),
+            yb
+        );
+    }
+    function renderAreaResults(node, rows) {
+        if (!node) return;
+        if (!rows.length) {
+            const empty = document.createElement("em");
+            empty.textContent = "No data in selected range.";
+            node.replaceChildren(empty);
+            return;
+        }
+        const frag = document.createDocumentFragment();
+        rows.forEach(({ label, color, area }) => {
+            const line = document.createElement("div");
+            line.style.color = color;
+            const strong = document.createElement("b");
+            strong.textContent = area.toFixed(4);
+            line.append(document.createTextNode(`${label}: Area = `), strong);
+            frag.appendChild(line);
+        });
+        node.replaceChildren(frag);
+    }
     G.ui.toolTip = function(svg, opts) {
-        const tooltip = d3.select('#tooltip'); svg.on('mousemove', function(event) { const [mx, my] = d3.pointer(event, svg.node()); 
-        if ( mx < G.config.DIM.ML || mx > G.config.DIM.W - G.config.DIM.MR || my < G.config.DIM.MT || my > G.config.DIM.H - G.config.DIM.MB) return;
-        const xVal = opts.xScale.invert(mx).toFixed(4); const yVal = opts.yScale.invert(my).toFixed(4);
-        tooltip.html("X-Scale:<b> " + xVal + "</b><br>Y-Scale:<b> " + yVal + "</b>");});
+        const tooltipNode = d3.select('#tooltip').node();
+        let rafPending = false;
+        let lastPointer = null;
+        svg.on('mousemove', function(event) {
+            lastPointer = d3.pointer(event, svg.node());
+            if (rafPending) return;
+            rafPending = true;
+            requestAnimationFrame(() => {
+                rafPending = false;
+                if (!lastPointer) return;
+                const [mx, my] = lastPointer;
+                if (mx < G.config.DIM.ML || mx > G.config.DIM.W - G.config.DIM.MR || my < G.config.DIM.MT || my > G.config.DIM.H - G.config.DIM.MB) return;
+                const xVal = opts.xScale.invert(mx).toFixed(4);
+                const yVal = opts.yScale.invert(my).toFixed(4);
+                setTooltipContent(tooltipNode, xVal, yVal);
+            });
+        });
     }
     G.ui.areacalculation = function(){
         const svg = d3.select("#chart svg"); if(svg.empty()) return;
+        const areaResults = document.getElementById("areaResults");
         const brush = d3.brushX().extent([[G.config.DIM.ML,G.config.DIM.MT],[G.config.DIM.W-G.config.DIM.MR,G.config.DIM.H-G.config.DIM.MB]]).on("end", brushed),
         brushG = svg.append("g").attr("class","area-brush").style("display","none").call(brush);
         d3.select("#enableAreaCalc").on("change", function(){ if(this.checked) brushG.style("display", null);
         else { brushG.style("display","none").call(brush.move, null); svg.selectAll(".area-highlight").remove(); 
-        d3.select("#areaResults").html(""); }});
+        if (areaResults) areaResults.replaceChildren(); }});
         function brushed({selection}){ svg.selectAll(".area-highlight").remove();
-        if(!selection){ d3.select("#areaResults").html(""); return; } const [x0px,x1px] = selection,
+        if(!selection){ if (areaResults) areaResults.replaceChildren(); return; } const [x0px,x1px] = selection,
         v0 = G.state.lastXScale.invert(x0px), v1 = G.state.lastXScale.invert(x1px), xMin = Math.min(v0,v1), xMax = Math.max(v0,v1),
         mode = document.querySelector('input[name="axistitles"]:checked').value,
         baseVal = mode==="ftir"?100:(G.state.lastYScale.domain()[0]<=0&&0<=G.state.lastYScale.domain()[1]?0:G.state.lastYScale.domain()[0]),
-        y0px = G.state.lastYScale(baseVal); let html = ""; G.getSeries().forEach(sv => {
+        y0px = G.state.lastYScale(baseVal); const resultRows = []; G.getSeries().forEach(sv => {
         const pts = sv.x.map((x,i)=>({x,y:sv.y[i]})).filter(p=>p.x>=xMin&&p.x<=xMax); if(pts.length<2) return;
         let area = 0; for(let i=0; i<pts.length-1; i++){ const dx = pts[i+1].x - pts[i].x,
         avg = mode==="ftir" ? baseVal - (pts[i].y + pts[i+1].y)/2 : (pts[i].y + pts[i+1].y)/2; area += dx * avg;}
         svg.append("path").datum(pts).attr("class","area-highlight").attr("d", d3.area().x(d=>G.state.lastXScale(d.x)).y0(()=>y0px)
         .y1(d=>G.state.lastYScale(d.y))).attr("fill", sv.color).attr("fill-opacity", mode==="ftir"?0.1:0.2).lower();
-        html += `<div style="color:${sv.color};">${sv.label}: Area = <b>${area.toFixed(4)}</b></div>`;});
-        d3.select("#areaResults").html(html || "<em>No data in selected range.</em>");}
+        resultRows.push({ label: sv.label, color: sv.color, area });});
+        renderAreaResults(areaResults, resultRows);}
     }
     G.ui.disableAreaCal = function() {const cb = document.getElementById('enableAreaCalc'); if (cb.checked) {cb.checked = false; cb.dispatchEvent(new Event('change'));}};
 })(window.GraphPlotter);
@@ -672,6 +757,76 @@ window.GraphPlotter = window.GraphPlotter || {
     G.ui.refs.rmBtn.on("click", () => { if (G.state.activeGroup) { G.state.activeGroup.style("display", "none"); G.state.activeGroup = null;}
         else if (G.state.activeFo) { const parentG = G.state.activeFo.node().parentNode; if (parentG.classList.contains("legend-group")) { d3.select(parentG).style("display", "none"); } else { d3.select(G.state.activeFo.node()).style("display", "none");}} 
         G.state.activeFo = G.state.activeDiv = null; G.ui.refs.rmBtn.classed("disabled", true);}); 
+})(window.GraphPlotter);
+(function(G) {
+    "use strict";
+    let bound = false;
+    G.ui.bindShellEvents = function() {
+        if (bound) return;
+        bound = true;
+        const helpIcon = document.getElementById('help-icon');
+        const helpOverlay = document.getElementById('help-prompt-overlay');
+        const helpClose = document.getElementById('help-close');
+        helpIcon?.addEventListener('click', () => { helpOverlay.style.display = 'flex'; });
+        helpClose?.addEventListener('click', () => { helpOverlay.style.display = 'none'; });
+        const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+        const modKey = isMac ? 'meta' : 'ctrl';
+        const keyBinder = (() => {
+            const map = new Map();
+            const normalize = combo => combo.toLowerCase().split('+').map(s => s.trim()).sort().join('+');
+            addEventListener('keydown', e => {
+                const parts = [];
+                if (isMac ? e.metaKey : e.ctrlKey) parts.push(modKey);
+                parts.push(e.key.toLowerCase());
+                const combo = parts.sort().join('+');
+                if (map.has(combo)) {
+                    e.preventDefault();
+                    map.get(combo)(e);
+                }
+            });
+            return (combo, handler) => map.set(normalize(combo), handler);
+        })();
+        keyBinder(`${modKey}+s`, () => document.getElementById('save')?.click());
+        keyBinder(`${modKey}+d`, () => document.getElementById('download')?.click());
+        keyBinder(`${modKey}+z`, () => document.getElementById('zoomBtn')?.click());
+        keyBinder(`${modKey}+backspace`, () => document.getElementById('removebtn')?.click());
+        keyBinder('delete', () => document.getElementById('removebtn')?.click());
+        keyBinder('escape', () => {
+            G.utils.clearActive();
+            const popup = document.getElementById('popup-prompt-overlay');
+            const help = document.getElementById('help-prompt-overlay');
+            if (popup) popup.style.display = 'none';
+            if (help) help.style.display = 'none';
+            G.ui.disableAreaCal();
+        });
+        keyBinder(`${modKey}+f`, () => {
+            const c = document.querySelector('.container');
+            if (!c) return;
+            if (!document.fullscreenElement) c.requestFullscreen().then(() => { c.style.background = '#f4eee2'; });
+            else document.exitFullscreen().then(() => { c.style.background = ''; });
+        });
+        keyBinder(`${modKey}+i`, () => document.getElementById('enableAreaCalc')?.click());
+        keyBinder(`${modKey}+.`, () => G.ui.applySupSub('sup'));
+        keyBinder(`${modKey}+,`, () => G.ui.applySupSub('sub'));
+        const gLink = 'https://instanano.com/online-graph-plotter/';
+        const mWP = document.getElementById('mWP');
+        const mEM = document.getElementById('mEM');
+        const mCP = document.getElementById('mCP');
+        if (mWP) mWP.href = 'https://wa.me/919467826266?text=' + encodeURIComponent('Link to open InstaNANO Graph Plotter on your laptop:\n' + gLink);
+        if (mEM) mEM.href = 'mailto:?subject=' + encodeURIComponent('InstaNANO Graph Plotter Link') + '&body=' + encodeURIComponent("Link to open InstaNANO Graph Plotter on your laptop:\n\n" + gLink);
+        if (mCP) mCP.onclick = e => (e.preventDefault(), navigator.clipboard.writeText(gLink).then(() => { mCP.textContent = 'Copied'; }));
+        if (matchMedia('(max-width:600px)').matches) {
+            document.querySelectorAll('input[name=sidebar]').forEach(i => { i.checked = false; });
+            document.querySelector('.icon-strip')?.addEventListener('click', e => {
+                const label = e.target.closest('label');
+                const i = document.getElementById(label?.htmlFor);
+                if (i?.checked) {
+                    e.preventDefault();
+                    i.checked = false;
+                }
+            });
+        }
+    };
 })(window.GraphPlotter);
 (function(G) {
     "use strict";
@@ -934,19 +1089,19 @@ window.GraphPlotter = window.GraphPlotter || {
         const f = linearFit(subX, subY); if (!f) continue; const yh = rw.map(r => { const vX = parseFloat(r[xi]);
         return (Number.isFinite(vX) && vX >= minX && vX <= maxX) ? predictLinear(f.m, f.b, vX) : '';});
         hd.push('Y-axis'); cl.push(G.config.COLORS[cl.length % G.config.COLORS.length]); nm.push(lbl + ' (fit)'); rw.forEach((r, i) => r.push(yh[i]));
-        infos.push(`${lbl}: m=${f.m.toFixed(6)}, b=${f.b.toFixed(6)}, R<sup>2</sup>=${f.r2.toFixed(5)}`);} 
+        infos.push(`${lbl}: m=${f.m.toFixed(6)}, b=${f.b.toFixed(6)}, R²=${f.r2.toFixed(5)}`);} 
         else { if (subX.length < 3) continue; const f = quadraticFit(subX, subY);
         if (!f) continue; const yh = rw.map(r => { const vX = parseFloat(r[xi]);
         return (Number.isFinite(vX) && vX >= minX && vX <= maxX) ? predictQuadratic(f.a, f.b, f.c, vX) : '';});
         hd.push('Y-axis'); cl.push(G.config.COLORS[cl.length % G.config.COLORS.length]); nm.push(lbl + ' (fit)');
         rw.forEach((r, i) => r.push(yh[i]));
-        infos.push(`${lbl}: a=${f.a.toExponential(3)}, b=${f.b.toExponential(3)}, c=${f.c.toExponential(3)}, R<sup>2</sup>=${f.r2.toFixed(5)}`);}}
+        infos.push(`${lbl}: a=${f.a.toExponential(3)}, b=${f.b.toExponential(3)}, c=${f.c.toExponential(3)}, R²=${f.r2.toFixed(5)}`);}}
         G.state.hot.loadData([hd, cl, nm, ...rw]); for (let c = 0; c < hd.length; c++) if (G.state.colEnabled[c] === undefined) G.state.colEnabled[c] = true;
         G.state.hot.render(); G.axis.resetScales(false); G.renderChart();
         const bx = G.config.DIM.ML + 6, by = G.config.DIM.MT + 12; const newSvg = d3.select('#chart svg');
         const st = newSvg.selectAll('foreignObject.user-text').size(); infos.forEach((tx, i) => {
         const obj = G.utils.editableText(newSvg, { x: bx, y: by + (st + i) * 16, text: tx, rotation: 0 });
-        obj.div.html(tx); obj.fo.attr('width', obj.div.node().scrollWidth + obj.pad).attr('height', obj.div.node().scrollHeight + obj.pad);
+        obj.div.text(tx); obj.fo.attr('width', obj.div.node().scrollWidth + obj.pad).attr('height', obj.div.node().scrollHeight + obj.pad);
         obj.fo.classed('user-text', true).call(G.utils.applyDrag);});}));};
 })(window.GraphPlotter);
 (function(G) {
@@ -1002,20 +1157,33 @@ window.GraphPlotter = window.GraphPlotter || {
 })(window.GraphPlotter);
 (function(G) {
     "use strict";
-    G.parsers.parseText = function(text){return text.trim().split(/\r?\n/).map(line=>line.split(/,|\t/))}
+    G.parsers.parseText = function(text){
+        const rows = String(text || "")
+            .trim()
+            .split(/\r?\n/)
+            .filter(Boolean)
+            .map(line => line.split(/,|\t/));
+        return rows.length ? rows : [[""]];
+    }
     G.parsers.parseXLSX = function(buffer){const wb=XLSX.read(new Uint8Array(buffer),{type:'array'});return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1})}
     G.parsers.parseXRDML = function(text) {
         const xml = new DOMParser().parseFromString(text, "application/xml");
         const scan = xml.getElementsByTagName("scan")[0] || xml.getElementsByTagNameNS("*", "scan")[0];
+        if (!scan) return [];
         let pos = scan.getElementsByTagName("positions"); if (!pos.length) {
         const dp = scan.getElementsByTagName("dataPoints")[0]; pos = dp ? dp.getElementsByTagName("positions") : pos;}
         const twoTheta = Array.from(pos).find(p => (p.getAttribute("axis")||"").toLowerCase().includes("2theta"));
+        if (!twoTheta) return [];
         const start = parseFloat((twoTheta.getElementsByTagName("startPosition")[0] || twoTheta.getElementsByTagNameNS("*","startPosition")[0]).textContent);
         const end = parseFloat((twoTheta.getElementsByTagName("endPosition")[0] || twoTheta.getElementsByTagNameNS("*","endPosition")[0]).textContent);
         let intens = scan.getElementsByTagName("counts"); if (!intens.length) { intens = scan.getElementsByTagName("intensities");
         if (!intens.length) { const dp = scan.getElementsByTagName("dataPoints")[0];
         intens = dp ? dp.getElementsByTagName("intensities") : intens;}}
-        const arr = intens[0].textContent.trim().split(/\s+/).map(Number); const n = arr.length, step = (end - start) / (n - 1);
+        if (!intens.length || !intens[0] || !Number.isFinite(start) || !Number.isFinite(end)) return [];
+        const arr = intens[0].textContent.trim().split(/\s+/).map(Number).filter(Number.isFinite);
+        const n = arr.length;
+        if (n < 2) return [];
+        const step = (end - start) / (n - 1);
         return Array.from({ length: n }, (_, i) => [ start + step * i, arr[i] ]);
     }
 })(window.GraphPlotter);
@@ -1050,26 +1218,53 @@ window.GraphPlotter = window.GraphPlotter || {
 })(window.GraphPlotter);
 (function (G) {
     "use strict";
-    const XRD_MSG = '<p>Please click any peak to add.</p>';
-    const STD_MSG = '<p>Please click any peak.</p>';
+    const XRD_MSG = "Please click any peak to add.";
+    const STD_MSG = "Please click any peak.";
     const $xrd = d3.select('#xrd-matchedData');
     const $std = d3.select('#standard-matchedData');
     const icon5 = document.getElementById('icon5');
     const icon6 = document.getElementById('icon6');
     const fs = document.getElementById('xrd-filter-section');
     const ei = document.getElementById('xrd-elements');
-    function renderMatches(m, c) {
-        if (!m.length) return '<p>No matching peaks found.</p>';
-        return m.map(i => {
-            const r = i.row || i;
-            const pa = i.peaks ? ` data-peaks='${JSON.stringify(i.peaks)}' data-ints='${JSON.stringify(i.intensities || [])}'` : '';
-            return `<div class="matchedrow"${pa}>` + r.map((v, j) => `<div><b>${c[j]}:</b> ${v}</div>`).join('') + `</div>`;
-        }).join('');
+    function setPanelMessage(panel, message) {
+        const node = panel?.node();
+        if (!node) return;
+        const p = document.createElement("p");
+        p.textContent = message;
+        node.replaceChildren(p);
     }
-    document.querySelectorAll('input[name="matchinstrument"]').forEach(inp => inp.addEventListener('change', () => $std.html(STD_MSG)));
+    function renderMatches(panel, matches, cols) {
+        const node = panel?.node();
+        if (!node) return;
+        node.replaceChildren();
+        if (!matches.length) {
+            const p = document.createElement("p");
+            p.textContent = "No matching peaks found.";
+            node.appendChild(p);
+            return;
+        }
+        const frag = document.createDocumentFragment();
+        matches.forEach(item => {
+            const row = item.row || item;
+            const rowDiv = document.createElement("div");
+            rowDiv.className = "matchedrow";
+            if (item.peaks) rowDiv.dataset.peaks = JSON.stringify(item.peaks);
+            if (item.intensities) rowDiv.dataset.ints = JSON.stringify(item.intensities);
+            row.forEach((val, idx) => {
+                const cell = document.createElement("div");
+                const label = document.createElement("b");
+                label.textContent = `${cols[idx]}:`;
+                cell.append(label, document.createTextNode(` ${val}`));
+                rowDiv.appendChild(cell);
+            });
+            frag.appendChild(rowDiv);
+        });
+        node.appendChild(frag);
+    }
+    document.querySelectorAll('input[name="matchinstrument"]').forEach(inp => inp.addEventListener('change', () => setPanelMessage($std, STD_MSG)));
     ['icon1', 'icon2', 'icon3', 'icon4'].forEach(id => document.getElementById(id)?.addEventListener('change', () => G.matchXRD?.clear()));
-    icon5?.addEventListener('change', () => $xrd.html(XRD_MSG));
-    icon6?.addEventListener('change', () => { G.matchXRD?.clear(); $std.html(STD_MSG); });
+    icon5?.addEventListener('change', () => setPanelMessage($xrd, XRD_MSG));
+    icon6?.addEventListener('change', () => { G.matchXRD?.clear(); setPanelMessage($std, STD_MSG); });
     ['click', 'mousedown', 'pointerdown', 'focusin', 'input', 'keydown', 'keyup'].forEach(ev => fs?.addEventListener(ev, e => { e.stopPropagation(); setTimeout(() => G.matchXRD?.render(), 10); }));
     ei?.addEventListener('input', () => {
         if (!G.matchXRD) return;
@@ -1091,7 +1286,7 @@ window.GraphPlotter = window.GraphPlotter || {
             const sel = document.querySelector('input[name="matchinstrument"]:checked')?.id;
             if (!sel || !G.matchStandard?.isStandard(sel)) return;
             const { matches, cols } = await G.matchStandard.search(sel, x);
-            $std.html(renderMatches(matches, cols));
+            renderMatches($std, matches, cols);
         }
     });
     document.getElementById('xrd-search-btn')?.addEventListener('click', async function () {
@@ -1104,20 +1299,24 @@ window.GraphPlotter = window.GraphPlotter || {
         if (!v.valid) { el.style.outline = '2px solid red'; el.title = 'Invalid: ' + v.invalid.join(', '); return; }
         G.matchXRD.setFilter(val.split(',').filter(e => e.trim()), lm?.value, parseInt(ec?.value) || 0);
         const { matches, cols } = await G.matchXRD.search();
-        $xrd.html(renderMatches(matches, cols));
+        renderMatches($xrd, matches, cols);
     });
     document.getElementById('xrd-clear-peaks')?.addEventListener('click', function () {
         G.matchXRD?.clear();
-        $xrd.html(XRD_MSG);
+        setPanelMessage($xrd, XRD_MSG);
     });
     $xrd.on('click', function (e) {
         const t = e.target.closest('.matchedrow');
         if (t && t.dataset.peaks) {
             d3.selectAll('.matchedrow').style('background', '');
             t.style.background = '#f0f8ff';
-            G.matchXRD.showRef(JSON.parse(t.dataset.peaks), t.dataset.ints ? JSON.parse(t.dataset.ints) : []);
+            try {
+                G.matchXRD.showRef(JSON.parse(t.dataset.peaks), t.dataset.ints ? JSON.parse(t.dataset.ints) : []);
+            } catch (_) {}
         }
     });
+    setPanelMessage($xrd, XRD_MSG);
+    setPanelMessage($std, STD_MSG);
 })(window.GraphPlotter);
 (function (G) {
     "use strict";
@@ -1135,12 +1334,16 @@ window.GraphPlotter = window.GraphPlotter || {
         if (cache[id]) return cache[id];
         const folder = id.replace('match', '');
         const res = await fetch(`${CDN_BASE}${folder}/match.json`);
-        return cache[id] = await res.json();
+        if (!res.ok) throw new Error(`Failed to load ${id} match data`);
+        const parsed = await res.json();
+        cache[id] = Array.isArray(parsed) ? parsed : [];
+        return cache[id];
     }
     G.matchStandard = {
         isStandard: (id) => !!config[id],
         search: async (id, xVal) => {
-            const data = await fetchData(id);
+            let data;
+            try { data = await fetchData(id); } catch (_) { return { matches: [], cols: config[id]?.cols || [] }; }
             const { buf, cols } = config[id];
             const matches = data.filter(r => {
                 const p = r[0].split('-').map(Number);
@@ -1158,12 +1361,46 @@ window.GraphPlotter = window.GraphPlotter || {
     const BIN_WIDTH = 0.5;
     const PRECISION = 100;
     const TOLERANCE = 0.5;
+    const FETCH_CONCURRENCY = 8;
     let selectedPeaks = [];
     let compositions = null;
     let elementFilter = { elements: [], mode: 'and', count: 0 };
+    const metaCache = new Map();
+    const indexCache = new Map();
+    const chunkCache = new Map();
     const PERIODIC_TABLE = { 'H': 1, 'He': 2, 'Li': 3, 'Be': 4, 'B': 5, 'C': 6, 'N': 7, 'O': 8, 'F': 9, 'Ne': 10, 'Na': 11, 'Mg': 12, 'Al': 13, 'Si': 14, 'P': 15, 'S': 16, 'Cl': 17, 'Ar': 18, 'K': 19, 'Ca': 20, 'Sc': 21, 'Ti': 22, 'V': 23, 'Cr': 24, 'Mn': 25, 'Fe': 26, 'Co': 27, 'Ni': 28, 'Cu': 29, 'Zn': 30, 'Ga': 31, 'Ge': 32, 'As': 33, 'Se': 34, 'Br': 35, 'Kr': 36, 'Rb': 37, 'Sr': 38, 'Y': 39, 'Zr': 40, 'Nb': 41, 'Mo': 42, 'Tc': 43, 'Ru': 44, 'Rh': 45, 'Pd': 46, 'Ag': 47, 'Cd': 48, 'In': 49, 'Sn': 50, 'Sb': 51, 'Te': 52, 'I': 53, 'Xe': 54, 'Cs': 55, 'Ba': 56, 'La': 57, 'Ce': 58, 'Pr': 59, 'Nd': 60, 'Pm': 61, 'Sm': 62, 'Eu': 63, 'Gd': 64, 'Tb': 65, 'Dy': 66, 'Ho': 67, 'Er': 68, 'Tm': 69, 'Yb': 70, 'Lu': 71, 'Hf': 72, 'Ta': 73, 'W': 74, 'Re': 75, 'Os': 76, 'Ir': 77, 'Pt': 78, 'Au': 79, 'Hg': 80, 'Tl': 81, 'Pb': 82, 'Bi': 83, 'Po': 84, 'At': 85, 'Rn': 86, 'Fr': 87, 'Ra': 88, 'Ac': 89, 'Th': 90, 'Pa': 91, 'U': 92, 'Np': 93, 'Pu': 94, 'Am': 95, 'Cm': 96, 'Bk': 97, 'Cf': 98, 'Es': 99, 'Fm': 100, 'Md': 101, 'No': 102, 'Lr': 103, 'Rf': 104, 'Db': 105, 'Sg': 106, 'Bh': 107, 'Hs': 108, 'Mt': 109, 'Ds': 110, 'Rg': 111, 'Cn': 112, 'Nh': 113, 'Fl': 114, 'Mc': 115, 'Lv': 116, 'Ts': 117, 'Og': 118 };
     const updateLabel = (t) => { const l = document.getElementById('xrd-match-label'); if (l) l.textContent = t; };
     const setProgress = (p) => { const b = document.getElementById('xrd-search-btn'); if (!b) return; if (p === 'done') b.classList.add('progress-done'); else { b.classList.contains('progress-done') && (b.classList.add('no-anim'), void b.offsetHeight); b.classList.remove('progress-done', 'no-anim'); b.style.setProperty('--progress', p + '%'); } };
+    const setStatusMessage = (msg) => {
+        const box = document.getElementById('xrd-matchedData');
+        if (!box) return;
+        const p = document.createElement('p');
+        p.textContent = msg;
+        box.replaceChildren(p);
+    };
+    async function mapLimit(items, limit, worker) {
+        if (!items.length) return [];
+        const out = new Array(items.length);
+        let next = 0;
+        async function run() {
+            while (next < items.length) {
+                const idx = next++;
+                out[idx] = await worker(items[idx], idx);
+            }
+        }
+        const slots = Math.min(limit, items.length);
+        await Promise.all(Array.from({ length: slots }, run));
+        return out;
+    }
+    async function fetchJsonWithCache(cache, url) {
+        if (cache.has(url)) return cache.get(url);
+        const req = fetch(url).then(r => (r.ok ? r.json() : null)).catch(() => null).then(data => {
+            if (data == null) cache.delete(url);
+            return data;
+        });
+        cache.set(url, req);
+        return req;
+    }
     const passesFilter = (cid) => {
         if (!compositions) return true;
         const ca = compositions[cid];
@@ -1234,19 +1471,28 @@ window.GraphPlotter = window.GraphPlotter || {
         search: async () => {
             if (!selectedPeaks.length) { updateLabel('Select Peak'); return { matches: [], cols: [] }; }
             setProgress(0);
-            d3.select('#xrd-matchedData').html('<p>Searching and matching from ~1 million references...</p>');
+            setStatusMessage('Searching and matching from ~1 million references...');
             if (!compositions) {
-                try { compositions = await (await fetch(`${XRD_BASE}meta/compositions.json`)).json(); }
-                catch { setProgress(0); d3.select('#xrd-matchedData').html('<p>Error loading.</p>'); return { matches: [], cols: [] }; }
+                compositions = await fetchJsonWithCache(metaCache, `${XRD_BASE}meta/compositions.json`);
+                if (!compositions) {
+                    setProgress(0);
+                    setStatusMessage('Error loading.');
+                    return { matches: [], cols: [] };
+                }
             }
             setProgress(10);
             const candidates = new Map();
             const binSet = new Set();
             for (const p of selectedPeaks) binSet.add(Math.floor(p.x / BIN_WIDTH));
             const binArr = [...binSet];
-            const binTotal = binArr.length;
+            const binTotal = Math.max(1, binArr.length);
             let binDone = 0;
-            const fetches = await Promise.all(binArr.map(b => fetch(`${XRD_BASE}index/${b}.json`).then(r => { binDone++; setProgress(10 + (binDone / binTotal) * 40); return r.ok ? r.json() : null; }).catch(() => { binDone++; setProgress(10 + (binDone / binTotal) * 40); return null; })));
+            const fetches = await mapLimit(binArr, FETCH_CONCURRENCY, async b => {
+                const data = await fetchJsonWithCache(indexCache, `${XRD_BASE}index/${b}.json`);
+                binDone++;
+                setProgress(10 + (binDone / binTotal) * 40);
+                return data;
+            });
             const binData = {};
             binArr.forEach((b, i) => { if (fetches[i]) binData[b] = fetches[i]; });
             for (const up of selectedPeaks) {
@@ -1269,12 +1515,16 @@ window.GraphPlotter = window.GraphPlotter || {
             if (!sorted.length) { setProgress(0); updateLabel('No matches'); return { matches: [], cols: [] }; }
             const chunks = {};
             const cids = [...new Set(sorted.map(([r]) => Math.floor(r / 1000)))];
-            const chunkTotal = cids.length;
+            const chunkTotal = Math.max(1, cids.length);
             let chunkDone = 0;
-            await Promise.all(cids.map(async c => { try { chunks[c] = await (await fetch(`${XRD_BASE}data/${c}.json`)).json(); } catch { } chunkDone++; setProgress(50 + (chunkDone / chunkTotal) * 40); }));
+            await mapLimit(cids, FETCH_CONCURRENCY, async c => {
+                chunks[c] = await fetchJsonWithCache(chunkCache, `${XRD_BASE}data/${c}.json`);
+                chunkDone++;
+                setProgress(50 + (chunkDone / chunkTotal) * 40);
+            });
             setProgress(95);
             const final = [];
-            for (const [rid, matchedPeaks] of sorted) {
+            for (const [rid] of sorted) {
                 const c = chunks[Math.floor(rid / 1000)];
                 const d = c?.[rid % 1000];
                 if (!d) continue;
@@ -1321,12 +1571,62 @@ window.GraphPlotter = window.GraphPlotter || {
 })(window.GraphPlotter);
 (function(G) {
     "use strict";
+    const MAX_CHART_HTML_LENGTH = 2_000_000;
     async function htmlPrompt(message, defaultValue) {
         return new Promise(res => { $('#html-prompt-message').text(message); $('#html-prompt-input').val(defaultValue); 
         $('#popup-prompt-overlay').css('display','flex').fadeIn(150); $('#html-prompt-input').focus().off('keydown').on('keydown', e => {
         if (e.key === 'Enter')   $('#html-prompt-ok').click();});
         $('#html-prompt-ok').off('click').on('click', () => { $('#popup-prompt-overlay').fadeOut(150); res($('#html-prompt-input').val());});
         $('#html-prompt-cancel').off('click').on('click', () => { $('#popup-prompt-overlay').fadeOut(150); res(null);});});
+    }
+    function sanitizeChartHTML(raw) {
+        if (typeof raw !== "string") return "";
+        if (raw.length > MAX_CHART_HTML_LENGTH) return "";
+        const template = document.createElement("template");
+        template.innerHTML = raw;
+        const blockedTags = new Set(["SCRIPT", "IFRAME", "OBJECT", "EMBED", "META", "LINK", "STYLE"]);
+        const walker = document.createTreeWalker(template.content, NodeFilter.SHOW_ELEMENT);
+        const remove = [];
+        let node = walker.nextNode();
+        while (node) {
+            if (blockedTags.has(node.tagName)) {
+                remove.push(node);
+                node = walker.nextNode();
+                continue;
+            }
+            Array.from(node.attributes).forEach(attr => {
+                const name = attr.name.toLowerCase();
+                const value = String(attr.value || "").toLowerCase();
+                if (name.startsWith("on") || value.includes("javascript:")) node.removeAttribute(attr.name);
+            });
+            node = walker.nextNode();
+        }
+        remove.forEach(n => n.remove());
+        return template.innerHTML;
+    }
+    function normalizeImportState(raw) {
+        if (!raw || typeof raw !== "object") return null;
+        const table = raw.table;
+        if (!Array.isArray(table) || table.length < 3 || !Array.isArray(table[0]) || !Array.isArray(table[1]) || !Array.isArray(table[2])) return null;
+        return {
+            table,
+            col: raw.col && typeof raw.col === "object" ? raw.col : {},
+            settings: raw.settings && typeof raw.settings === "object" ? raw.settings : {},
+            html: sanitizeChartHTML(raw.html || ""),
+            overrideX: raw.overrideX || null,
+            overrideMultiY: raw.overrideMultiY && typeof raw.overrideMultiY === "object" ? raw.overrideMultiY : {},
+            overrideXTicks: raw.overrideXTicks ?? null,
+            overrideYTicks: raw.overrideYTicks && typeof raw.overrideYTicks === "object" ? raw.overrideYTicks : {},
+            overrideTernaryTicks: raw.overrideTernaryTicks && typeof raw.overrideTernaryTicks === "object" ? raw.overrideTernaryTicks : {},
+            overrideScaleformatX: raw.overrideScaleformatX ?? null,
+            overrideScaleformatY: raw.overrideScaleformatY && typeof raw.overrideScaleformatY === "object" ? raw.overrideScaleformatY : {},
+            overrideCustomTicksX: raw.overrideCustomTicksX ?? null,
+            overrideCustomTicksY: raw.overrideCustomTicksY && typeof raw.overrideCustomTicksY === "object" ? raw.overrideCustomTicksY : {},
+            overrideCustomTicksTernary: raw.overrideCustomTicksTernary && typeof raw.overrideCustomTicksTernary === "object" ? raw.overrideCustomTicksTernary : {},
+            overrideTernary: raw.overrideTernary && typeof raw.overrideTernary === "object" ? raw.overrideTernary : {},
+            minorTickOn: raw.minorTickOn && typeof raw.minorTickOn === "object" ? raw.minorTickOn : {},
+            useCustomTicksOn: raw.useCustomTicksOn && typeof raw.useCustomTicksOn === "object" ? raw.useCustomTicksOn : {}
+        };
     }
     $('#download').click(async function(e){
         e.preventDefault(); if (!myUserVars.isLoggedIn) { e.stopPropagation(); $('#ajax-login-modal').show(); return}     
@@ -1352,12 +1652,23 @@ window.GraphPlotter = window.GraphPlotter || {
             const ctx=c.getContext("2d");
             if (!transparent) { ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);}
             ctx.drawImage(img,0,0,c.width,c.height);
-            c.toBlob(b=>{const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download = `chart@${dpi}dpi${transparent ? '_transparent' : ''}.png`;a.click();},"image/png");}; img.src=data;})
+            c.toBlob(b=>{
+                if (!b) return;
+                const a=document.createElement("a");
+                const url = URL.createObjectURL(b);
+                a.href=url;
+                a.download = `chart@${dpi}dpi${transparent ? '_transparent' : ''}.png`;
+                a.click();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+            },"image/png");
+        };
+        img.src=data;
+    })
     $('#save').click(async function(e){  
         e.preventDefault(); if (!myUserVars.isLoggedIn) { e.stopPropagation(); $('#ajax-login-modal').show(); return} 
         $('#transparent-option').hide();
         G.utils.clearActive(); const d=new Date(), z=n=>('0'+n).slice(-2), ts=[z(d.getDate()), z(d.getMonth()+1), d.getFullYear()].join('-')+'_'+[z(d.getHours()),z(d.getMinutes()),z(d.getSeconds())].join('-'); 
-        const payload={v:'v1.0', ts, table:G.state.hot.getData(), settings:G.getSettings(), col:G.state.colEnabled, html:d3.select('#chart').html(),
+        const payload={v:'v1.0', ts, table:G.state.hot.getData(), settings:G.getSettings(), col:G.state.colEnabled, html:sanitizeChartHTML(d3.select('#chart').html()),
         overrideX:G.state.overrideX||null, overrideMultiY:G.state.overrideMultiY||{}, overrideXTicks:G.state.overrideXTicks||null,
         overrideYTicks:G.state.overrideYTicks||{}, overrideTernaryTicks:G.state.overrideTernaryTicks||{}, 
         overrideScaleformatX:G.state.overrideScaleformatX||null, overrideScaleformatY:G.state.overrideScaleformatY||{},
@@ -1366,20 +1677,30 @@ window.GraphPlotter = window.GraphPlotter || {
         minorTickOn: G.state.minorTickOn || {}, useCustomTicksOn:G.state.useCustomTicksOn||{}};
         const u=URL.createObjectURL(new Blob([JSON.stringify(payload)])), a=document.createElement('a'), name = await htmlPrompt( "Enter file name", `Project_${ts}`); if(!name) return; a.href=u; a.download=`${name}.instanano`; 
         document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(u);})
-    G.importState = function(s){ G.state.hot.loadData(s.table); G.state.colEnabled=s.col; G.state.overrideX = s.overrideX; G.state.overrideMultiY = s.overrideMultiY;
+    G.importState = function(raw){ 
+        const s = normalizeImportState(raw);
+        if (!s) { alert("Invalid .instanano file."); return; }
+        G.state.hot.loadData(s.table); G.state.colEnabled=s.col; G.state.overrideX = s.overrideX; G.state.overrideMultiY = s.overrideMultiY;
         G.state.overrideXTicks= s.overrideXTicks; G.state.overrideYTicks = s.overrideYTicks; G.state.overrideTernaryTicks = s.overrideTernaryTicks;
         G.state.overrideScaleformatX = s.overrideScaleformatX; G.state.overrideScaleformatY = s.overrideScaleformatY;
         G.state.overrideCustomTicksX = s.overrideCustomTicksX; G.state.overrideCustomTicksY = s.overrideCustomTicksY;
         G.state.overrideCustomTicksTernary = s.overrideCustomTicksTernary; G.state.overrideTernary = s.overrideTernary; 
         G.state.minorTickOn = s.minorTickOn || {}; G.state.useCustomTicksOn=s.useCustomTicksOn||{};
         d3.selectAll('input[type="checkbox"][data-col]').each(function(){this.checked=G.state.colEnabled[this.dataset.col]});
-        document.getElementById(s.settings.type).checked=true; 
+        const typeRadio = s.settings.type ? document.getElementById(s.settings.type) : null;
+        if (typeRadio) typeRadio.checked = true;
         if (s.settings.mode) { const axisRadio = document.querySelector(`input[name="axistitles"][value="${s.settings.mode}"]`); 
         if (axisRadio) axisRadio.checked = true;}
         G.state.hot.render(); G.axis.resetScales(false); G.renderChart();
-        document.querySelector(`[name="aspectratio"][value="${s.settings.ratio}"]`).checked=true;
-        document.querySelector(`[name="axistitles"][value="${s.settings.mode}"]`).checked=true;
-        Object.entries(s.settings).forEach(([k,v])=> !/^(type|ratio|mode)$/.test(k)&&(e=document.getElementById(k))&&v!=null&&(e.value=v));
+        const ratioRadio = s.settings.ratio ? document.querySelector(`[name="aspectratio"][value="${s.settings.ratio}"]`) : null;
+        if (ratioRadio) ratioRadio.checked = true;
+        const modeRadio = s.settings.mode ? document.querySelector(`[name="axistitles"][value="${s.settings.mode}"]`) : null;
+        if (modeRadio) modeRadio.checked = true;
+        Object.entries(s.settings).forEach(([k,v]) => {
+            if (/^(type|ratio|mode)$/.test(k) || v == null) return;
+            const input = document.getElementById(k);
+            if (input) input.value = v;
+        });
         d3.select('#chart').html(s.html); G.features.prepareShapeLayer(); d3.selectAll('.shape-group').each(function(){G.features.makeShapeInteractive(d3.select(this))});
         d3.selectAll('foreignObject.user-text,g.legend-group,g.axis-title').call(G.utils.applyDrag); G.axis.tickEditing(d3.select('#chart svg'));
     }
@@ -1456,23 +1777,26 @@ window.GraphPlotter = window.GraphPlotter || {
         if (minX >= 0 && minX <= 10 && maxX >= 80 && maxX <= 90) return 'xrd';
         return null;
     }
-    function applyGraphRatio(r){
-        const c=G.config.ratioPresets[r]||G.config.ratioPresets['4:2.85'], [w,h]=r.split(':').map(Number),
-        m=G.state.multiYScales?.length>1?(G.state.multiYScales.length-2)*c.multiygap:0; G.config.DIM.H=Math.round(G.config.DIM.W*h/w); G.config.DIM.MR=80+m; 
-        d3.selectAll('#chart svg g.axis-title foreignObject div').style('font-size',c.axisTitleFs+'px').each(function(){let w2=this.scrollWidth+5;d3.select(this.parentNode).attr('width',w2).attr('x',-w2/2)});
-        d3.selectAll('#chart svg g.legend-group foreignObject div').style('font-size',c.legendFs+'px').each(function(){d3.select(this.parentNode).attr('width',this.scrollWidth+5)});
+    let renderQueued = false;
+    function scheduleRender() {
+        if (renderQueued) return;
+        renderQueued = true;
+        requestAnimationFrame(() => {
+            renderQueued = false;
+            G.renderChart();
+        });
     }
     function bindEvents(){
         G.state.hot.addHook('afterPaste', () => { setTimeout(() => { G.state.colEnabled = {}; G.state.hot.getData()[0].forEach((_, c) => { G.state.colEnabled[c] = true; }); G.state.hot.render(); const mode = detectModeFromData(); if (mode) { 
         const radio = document.querySelector(`input[name="axistitles"][value="${mode}"]`); if (radio) radio.checked = true;} G.axis.resetScales(true);
         const svg = d3.select("#chart svg"); if (!svg.empty()) { svg.selectAll(".shape-group").remove(); svg.selectAll("foreignObject.user-text").remove(); G.state.tickLabelStyles={x:{fontSize:null,color:null},y:{fontSize:null,color:null}};} G.renderChart();}, 0);});
         G.state.hot.addHook('afterChange', (changes, src)=>{ if(!changes) return; let h=false, d=false; for(const [r,,o,n] of changes){
-        if(r===0 && o!==n) h=true; if(r>=3 && o!==n) d=true;} d? G.axis.resetScales(true): h&& G.axis.resetScales(false); if(src!=='paste') G.renderChart(); 
+        if(r===0 && o!==n) h=true; if(r>=3 && o!==n) d=true;} d? G.axis.resetScales(true): h&& G.axis.resetScales(false); if(src!=='paste') scheduleRender(); 
         }); G.state.hot.addHook('beforeKeyDown', e => {const s=G.state.hot.getSelectedLast();if (s && s[0] === 0) {e.stopImmediatePropagation(); e.preventDefault();}});
         document.addEventListener('input', e => {
         if (e.target.id !== 'enableAreaCalc' && e.target.name !== 'sidebar') G.ui.disableAreaCal();
         const t=e.target; if(!t.matches('.control input')) return;
-        if(t.name==='axistitles'|| t.name==='aspectratio') G.axis.resetScales(false); if(t.name==='aspectratio'){applyGraphRatio(t.value);} G.renderChart();});
+        if(t.name==='axistitles'|| t.name==='aspectratio') G.axis.resetScales(false); if(t.name==='aspectratio'){G.axis.applyGraphRatio(t.value);} scheduleRender();});
     }
     const fileHandlers={ instanano:null, csv:G.parsers.parseText, txt:G.parsers.parseText, xls:G.parsers.parseXLSX, xlsx:G.parsers.parseXLSX, xrdml:G.parsers.parseXRDML};
     const fileModes = {xrdml:'xrd',raw:'xrd',spc:'uvvis'};
@@ -1485,7 +1809,12 @@ window.GraphPlotter = window.GraphPlotter || {
         const walk=async (en,p='')=>en.isFile ? await new Promise(r=>en.file(f=>{f.relativePath=p+f.name;out.push(f);r()})) : await Promise.all((await readAll(en.createReader())).map(e=>walk(e,p+en.name+'/')));
         for (const it of items){const en=it.webkitGetAsEntry&&it.webkitGetAsEntry(); if(en) await walk(en)} return out})() : [...(src?.files||src||[])]; if(!files.length) return; if (await G.parsers.parseNMR(files)) return;
         const file=files[0]; const ext=file.name.split('.').pop().toLowerCase();
-        if (ext === 'instanano') { const text = await file.text(); G.importState(JSON.parse(text)); return;}  
+        if (ext === 'instanano') {
+            const text = await file.text();
+            try { G.importState(JSON.parse(text)); }
+            catch (_) { alert('Invalid .instanano file'); }
+            return;
+        }  
         const parser=fileHandlers[ext]; if(!parser) return alert('Unsupported file type: .'+ext);
         if (fileModes[ext]) { const radio = document.querySelector(`input[name="axistitles"][value="${fileModes[ext]}"]`); 
         if (radio) radio.checked = true;} let rows; 
@@ -1515,71 +1844,18 @@ window.GraphPlotter = window.GraphPlotter || {
     if (p < 0) p = specs.length; const patterns = specs.map(s => s.replace(/\*$/, '')); const wild     = patterns.slice(p);
     G.state.hot.getData()[0].forEach((orig, i) => { const lbl = i < p ? patterns[i] : (wild.length ? wild[(i - p) % wild.length] : orig);
     G.state.hot.setDataAtCell(0, i, lbl); G.state.colEnabled[i] = G.state.colEnabled[i] && patterns.includes(lbl); }); G.state.hot.render();} 
-    G.axis.resetScales(false); G.renderChart(); }));
+    G.axis.resetScales(false); scheduleRender(); }));
     ['smoothingslider','baselineslider','multiyaxis'].forEach(id => { const input = document.getElementById(id);
     function updateThumbColor() { input.classList.toggle('zero', input.value === '0');}
     input.addEventListener('input', updateThumbColor); updateThumbColor();});
     document.querySelectorAll('span[data-current-value]').forEach(span => {
     const slider = document.getElementById(span.dataset.currentValue); if (!slider || slider.type !== 'range') return;
     span.textContent = slider.value; slider.oninput = () => { span.textContent = slider.value;};});
-    const helpIcon = document.getElementById('help-icon');
-    const helpOverlay = document.getElementById('help-prompt-overlay');
-    const helpClose = document.getElementById('help-close');
-    helpIcon.addEventListener('click', () => { helpOverlay.style.display = 'flex';});
-    helpClose.addEventListener('click', () => { helpOverlay.style.display = 'none';});
-    const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform); const modKey = isMac ? 'meta' : 'ctrl';
-    const keyBinder = (() => { const map = new Map();
-    const normalize = combo => combo.toLowerCase().split('+').map(s=>s.trim()).sort().join('+');
-    addEventListener('keydown', e => { const parts = []; if (isMac ? e.metaKey : e.ctrlKey) parts.push(modKey);
-    parts.push(e.key.toLowerCase()); const combo = parts.sort().join('+'); if (map.has(combo)) {
-    e.preventDefault(); map.get(combo)(e);}}); return (combo, handler) => map.set(normalize(combo), handler);})();
-    keyBinder(`${modKey}+s`, ()=> document.getElementById('save').click());
-    keyBinder(`${modKey}+d`, ()=> document.getElementById('download').click());
-    keyBinder(`${modKey}+z`, ()=> document.getElementById('zoomBtn').click());
-    keyBinder(`${modKey}+backspace`, () => document.getElementById('removebtn').click());
-    keyBinder('delete', () => document.getElementById('removebtn').click());
-    keyBinder('escape', () => { G.utils.clearActive(); document.getElementById('popup-prompt-overlay').style.display = 'none';
-    document.getElementById('help-prompt-overlay').style.display = 'none'; G.ui.disableAreaCal();});
-    keyBinder(`${modKey}+f`, () => { const c = document.querySelector('.container'); if (!document.fullscreenElement) {
-    c.requestFullscreen().then(() => c.style.background = '#f4eee2');} 
-    else { document.exitFullscreen().then(() => c.style.background = '');}});
-    keyBinder(`${modKey}+i`, ()=> document.getElementById('enableAreaCalc').click());
-    keyBinder(`${modKey}+.`,()=>G.ui.applySupSub('sup'));
-    keyBinder(`${modKey}+,`,()=>G.ui.applySupSub('sub'));
-    const gLink='https://instanano.com/online-graph-plotter/', mWP=document.getElementById('mWP'), mEM=document.getElementById('mEM'), mCP=document.getElementById('mCP');
-    mWP.href='https://wa.me/919467826266?text='+encodeURIComponent('Link to open InstaNANO Graph Plotter on your laptop:\n'+gLink);
-    mEM.href='mailto:?subject='+encodeURIComponent('InstaNANO Graph Plotter Link')+'&body='+encodeURIComponent("Link to open InstaNANO Graph Plotter on your laptop:\n\n"+gLink);
-    mCP.onclick=e=>(e.preventDefault(),navigator.clipboard.writeText(gLink).then(()=>mCP.textContent='Copied'));  
-    if (matchMedia('(max-width:600px)').matches){
-    document.querySelectorAll('input[name=sidebar]').forEach(i=>i.checked=false); document.querySelector('.icon-strip').addEventListener('click',e=>{
-    let i=document.getElementById(e.target.closest('label')?.htmlFor); if(i?.checked){e.preventDefault();i.checked=false}});}
-    const GRAPH_UPSELL = {
-    xrd: {paid: "product/xrd-data-matching-online/", msg: ["Plotting XRD data? Get expert phase matching against verified reference databases.", "XRD peaks plotted! Need accurate compound identification for your materials?", "Beautiful XRD graph! Reviewers often ask for proper phase matching with reference cards.", "Need more than a plot? Get professional phase identification and peak assignment.", "XRD data ready! Our experts can match your peaks to thousands of known compounds."]},
-    ftir: {paid: "product/ftir-data-matching-online/", msg: ["FTIR spectrum looks great! Need automated compound identification?", "Plotting FTIR? Get your peaks matched against 10,000+ reference materials.", "Beautiful transmittance plot! Want to identify functional groups automatically?", "FTIR graph ready! Our experts can match your peaks to known compounds.", "Nice FTIR spectrum! Reviewers love seeing compound matches with similarity scores."]},
-    xps: {paid: "product/xps-analysis-online/", msg: ["Plotting XPS data? Get professional peak deconvolution and fitting.", "XPS spectrum ready! Need atomic percentages and oxidation state analysis?", "Great binding energy plot! Our experts can deconvolute overlapping peaks.", "XPS graph looks good! Want publication-ready peak assignments?", "Need more than a plot? Get full XPS analysis with chemical state identification."]},
-    raman: {paid: "product/raman-crystallite-size-calculator/", msg: ["Raman spectrum plotted! Need ID/IG ratio and crystallite size analysis?", "Working with carbon materials? Get expert D and G band deconvolution.", "Nice Raman plot! Reviewers often ask for proper peak fitting.", "Raman data ready! Our experts can calculate defect density and crystallite size.", "Beautiful Raman spectrum! Want Tuinstra-Koenig analysis for your publication?"]},
-    uvvis: {paid: "product/band-gap-calculation-from-tauc-plot/", msg: ["UV-Vis spectrum ready! Need accurate band gap from Tauc plot?", "Plotting absorbance data? Get publication-ready Tauc plot analysis.", "Nice UV-Vis spectrum! Reviewers expect proper band gap determination.", "UV-Vis data plotted! Our experts can calculate direct/indirect band gaps.", "Absorbance graph looks good! Want professional Tauc plot fitting?"]},
-    tauc: {paid: "product/band-gap-calculation-from-tauc-plot/", msg: ["Generating Tauc plot? Let our experts ensure accurate band gap values.", "Tauc analysis started! Get professionally fitted linear region extraction.", "Band gap calculation in progress! Reviewers appreciate expert Tauc analysis.", "Need reviewer-ready band gap values? Our experts ensure proper fitting.", "Tauc plot ready! Get verified band gap calculation for your publication."]},
-    nmr: {paid: "product/nmr-data-analysis/", msg: ["Plotting NMR spectrum? Get full structural elucidation from your data.", "NMR data loaded! Need peak assignments and purity assessment?", "Nice NMR plot! Our experts can provide complete spectral interpretation.", "Chemical shifts visible! Want professional structure confirmation?", "NMR spectrum ready! Get publication-quality peak assignments."]},
-    pl: {paid: "product/custom-analysis/", msg: ["Plotting PL data? Need quantum yield or peak fitting analysis?", "Photoluminescence spectrum ready! Get expert emission peak analysis.", "Nice PL plot! Our analysis team can extract valuable optical properties.", "PL data loaded! Want professional peak deconvolution?", "Beautiful emission spectrum! Get expert analysis for your publication."]},
-    dsc: {paid: "product/dsc-percent-crystallinity-calculation-by-our-expert-team/", msg: ["DSC thermogram plotted! Need accurate crystallinity calculation?", "Plotting DSC data? Get professional enthalpy of fusion analysis.", "DSC curve ready! Our experts can calculate percent crystallinity.", "Nice thermal data! Reviewers expect proper baseline integration.", "DSC plot looks good! Get publication-ready crystallinity values."]},
-    tga: {paid: "product/custom-analysis/", msg: ["Plotting TGA data? Need thermal stability analysis?", "TGA curve ready! Our experts can analyze decomposition profiles.", "Nice weight loss curve! Get detailed thermal analysis.", "TGA data loaded! Want professional derivative thermogravimetric analysis?", "Thermal data plotted! Get expert interpretation for your manuscript."]},
-    bet: {paid: "product/bet-analsysis-online/", msg: ["Plotting BET isotherm? Get surface area and pore analysis.", "BET data loaded! Our experts calculate surface area and pore distribution.", "Nice adsorption plot! Want complete BET analysis with pore shape?", "BET curve ready! Get publication-ready surface area values.", "Isotherm plotted! Need BJH pore size distribution analysis."]},
-    saxs: {paid: "product/custom-analysis/", msg: ["Plotting SAXS data? Need particle size distribution analysis?", "SAXS pattern ready! Our experts can extract structural parameters.", "Nice scattering plot! Want professional data fitting?"]},
-    tensile: {paid: "product/custom-analysis/", msg: ["Plotting stress-strain curve? Need mechanical property calculations?", "Tensile data ready! Our experts can analyze modulus and yield strength."]},
-    default: {paid: "product/scientific-graph-plotting/", msg: ["Great graph! Need publication-quality formatting for journals?", "Nice plot! Our experts create journal-ready 2D/3D scientific figures.", "Data plotted! Want professionally formatted graphs for your paper?", "Graph looks good! We also offer complete data analysis services.", "Beautiful visualization! Need more analysis? Check our expert services."]}};
-    const GRAPH_UPSELL_STORAGE = "instanano_graph_upsell";
-    function storeGraphUpsell() {
-    if (sessionStorage.getItem(GRAPH_UPSELL_STORAGE)) return; const axisRadio = document.querySelector('input[name="axistitles"]:checked');
-    const axisType = axisRadio ? axisRadio.value : "default"; const upsellData = GRAPH_UPSELL[axisType] || GRAPH_UPSELL.default;
-    const randomMsg = upsellData.msg[Math.floor(Math.random() * upsellData.msg.length)];
-    const payload = { axis: axisType, paid: upsellData.paid, message: randomMsg, timestamp: Date.now() };
-    sessionStorage.setItem(GRAPH_UPSELL_STORAGE, JSON.stringify(payload));}
-    $('#download').click(storeGraphUpsell); $('#save').click(storeGraphUpsell);                         
     G.getSeries = getSeries;
     G.getSettings = getSettings;
     G.renderChart = renderChart;
     G.init = function() {
+        G.ui.bindShellEvents?.();
         G.initTable(); 
         bindEvents(); 
         G.axis.resetScales(true);
