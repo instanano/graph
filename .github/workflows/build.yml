@@ -21,9 +21,6 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install terser for minification
-        run: npm install -g terser
-
       - name: Create dist folder
         run: mkdir -p dist
 
@@ -45,6 +42,7 @@ jobs:
             ui/legend.js \
             ui/tooltip.js \
             ui/inspector.js \
+            ui/shell.js \
             features/shapes.js \
             features/zoom.js \
             features/smoothing.js \
@@ -61,7 +59,7 @@ jobs:
             > dist/graph.bundle.js
 
       - name: Minify bundle
-        run: terser dist/graph.bundle.js -o dist/graph.bundle.min.js -c -m
+        run: npx --yes terser@5.39.0 dist/graph.bundle.js -o dist/graph.bundle.min.js -c -m
 
       - name: Show bundle sizes
         run: |
