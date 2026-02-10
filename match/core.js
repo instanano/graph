@@ -2,6 +2,7 @@
     "use strict";
     const XRD_MSG = "Please click any peak to add.";
     const STD_MSG = "Please click any peak.";
+    const PRICING_URL = 'https://instanano.com/xrd-data-match-pricing/';
     const $xrd = d3.select('#xrd-matchedData');
     const $std = d3.select('#standard-matchedData');
     const icon5 = document.getElementById('icon5');
@@ -11,12 +12,13 @@
     const unlockBtn = document.getElementById('xrd-unlock-btn');
     const creditBar = document.getElementById('xrd-credit-bar');
     const creditCount = document.getElementById('xrd-credit-count');
+    const matchLabel = document.getElementById('xrd-match-label');
+    let currentCredits = 0;
 
     function updateCreditDisplay(n) {
-        if (creditBar && creditCount) {
-            creditBar.style.display = n != null ? '' : 'none';
-            creditCount.textContent = n != null ? n : '—';
-        }
+        currentCredits = n != null ? n : 0;
+        if (creditBar) creditBar.style.display = '';
+        if (creditCount) creditCount.textContent = currentCredits;
     }
 
     function setPanelMessage(panel, message) {
@@ -42,8 +44,17 @@
             const row = item.row || item;
             const rowDiv = document.createElement("div");
             rowDiv.className = "matchedrow";
-            if (item.peaks) rowDiv.dataset.peaks = JSON.stringify(item.peaks);
-            if (item.intensities) rowDiv.dataset.ints = JSON.stringify(item.intensities);
+            const fd = item.fullData?.data;
+            if (fd?.Peaks) {
+                rowDiv.dataset.peaks = JSON.stringify(fd.Peaks.map(p => p.T));
+                rowDiv.dataset.ints = JSON.stringify(fd.Peaks.map(p => p.I));
+                rowDiv.dataset.fulldata = JSON.stringify(fd);
+            } else {
+                if (item.peaks) rowDiv.dataset.peaks = JSON.stringify(item.peaks);
+                if (item.intensities) rowDiv.dataset.ints = JSON.stringify(item.intensities);
+            }
+            if (item.fullData?.mineral) rowDiv.dataset.mineral = item.fullData.mineral;
+            if (item.fullData?.formula) rowDiv.dataset.formula = item.fullData.formula;
             row.forEach((val, idx) => {
                 const cell = document.createElement("div");
                 const label = document.createElement("b");
@@ -51,19 +62,11 @@
                 cell.append(label, document.createTextNode(` ${val}`));
                 rowDiv.appendChild(cell);
             });
-            if (item.fullData?.data) {
-                const d = item.fullData.data;
-                const detDiv = document.createElement("div");
-                detDiv.style.cssText = 'font-size:11px;color:#555;margin-top:4px;line-height:1.5';
-                const parts = [];
-                if (d.CS) parts.push(`CS: ${d.CS}`);
-                if (d.SG) parts.push(`SG: ${d.SG}`);
-                if (d.A) parts.push(`a=${d.A}`);
-                if (d.B) parts.push(`b=${d.B}`);
-                if (d.C) parts.push(`c=${d.C}`);
-                if (item.fullData.mineral) parts.push(`Min: ${item.fullData.mineral}`);
-                detDiv.textContent = parts.join(' | ');
-                rowDiv.appendChild(detDiv);
+            if (item.fullData?.mineral) {
+                const mn = document.createElement("div");
+                mn.style.cssText = 'font-size:11px;color:#555;margin-top:2px';
+                mn.textContent = `Mineral: ${item.fullData.mineral}`;
+                rowDiv.appendChild(mn);
             }
             frag.appendChild(rowDiv);
         });
@@ -74,9 +77,11 @@
     ['icon1', 'icon2', 'icon3', 'icon4'].forEach(id => document.getElementById(id)?.addEventListener('change', () => G.matchXRD?.clear()));
     icon5?.addEventListener('change', async () => {
         setPanelMessage($xrd, XRD_MSG);
-        if (G.matchXRD?.checkCredit) {
+        if (typeof instananoCredits !== 'undefined' && G.matchXRD?.checkCredit) {
             const cr = await G.matchXRD.checkCredit();
-            updateCreditDisplay(cr ? cr.remaining : null);
+            updateCreditDisplay(cr ? cr.remaining : 0);
+        } else {
+            updateCreditDisplay(0);
         }
     });
     icon6?.addEventListener('change', () => { G.matchXRD?.clear(); setPanelMessage($std, STD_MSG); });
@@ -113,16 +118,21 @@
         const v = G.matchXRD.validate(val);
         if (!v.valid) { el.style.outline = '2px solid red'; el.title = 'Invalid: ' + v.invalid.join(', '); return; }
         G.matchXRD.setFilter(val.split(',').filter(e => e.trim()), lm?.value, parseInt(ec?.value) || 0);
+        if (unlockBtn) unlockBtn.style.display = 'none';
         const { matches, cols, locked } = await G.matchXRD.search();
         renderMatches($xrd, matches, cols);
-        if (locked && matches.length && unlockBtn) {
+        if (!matches.length) return;
+        if (locked && unlockBtn) {
             unlockBtn.style.display = '';
             const n = G.matchXRD.getSampleCount();
             unlockBtn.textContent = `🔓 Unlock (${n} credit${n > 1 ? 's' : ''})`;
         }
     });
     unlockBtn?.addEventListener('click', async function () {
-        if (!G.matchXRD?.unlock) return;
+        if (currentCredits <= 0 || typeof instananoCredits === 'undefined') {
+            window.open(PRICING_URL, '_blank');
+            return;
+        }
         unlockBtn.textContent = '⏳ Unlocking...';
         unlockBtn.style.pointerEvents = 'none';
         const result = await G.matchXRD.unlock();
@@ -130,15 +140,11 @@
         if (result.ok) {
             unlockBtn.style.display = 'none';
             updateCreditDisplay(result.remaining);
-            if (result.already_done) {
-                updateLabel('Already analyzed — no credits deducted');
-            } else {
-                updateLabel(`Unlocked! ${result.remaining} credits left`);
-            }
+            if (matchLabel) matchLabel.textContent = result.already_done ? 'Already analyzed — no credit deducted' : `Unlocked! ${result.remaining} credits left`;
             renderMatches($xrd, result.matches, ['Ref ID', 'Formula', 'Match (%)']);
         } else {
             unlockBtn.textContent = '🔓 Unlock';
-            updateLabel(result.message || 'Unlock failed');
+            if (matchLabel) matchLabel.textContent = result.message || 'Unlock failed';
         }
     });
     document.getElementById('xrd-clear-peaks')?.addEventListener('click', function () {
@@ -148,13 +154,40 @@
     });
     $xrd.on('click', function (e) {
         const t = e.target.closest('.matchedrow');
-        if (t && t.dataset.peaks) {
-            d3.selectAll('.matchedrow').style('background', '');
-            t.style.background = '#f0f8ff';
-            try {
-                G.matchXRD.showRef(JSON.parse(t.dataset.peaks), t.dataset.ints ? JSON.parse(t.dataset.ints) : []);
-            } catch (_) { }
+        if (!t) return;
+        const box = $xrd.node();
+        box?.querySelectorAll('.matchedrow').forEach(r => { if (r !== t) { r.style.background = ''; const d = r.querySelector('.xrd-ref-detail'); if (d) d.remove(); } });
+        t.style.background = '#f0f8ff';
+        if (t.dataset.peaks) {
+            try { G.matchXRD.showRef(JSON.parse(t.dataset.peaks), t.dataset.ints ? JSON.parse(t.dataset.ints) : []); } catch (_) { }
         }
+        if (!t.dataset.fulldata) return;
+        let det = t.querySelector('.xrd-ref-detail');
+        if (det) { det.remove(); return; }
+        try {
+            const d = JSON.parse(t.dataset.fulldata);
+            det = document.createElement('div');
+            det.className = 'xrd-ref-detail';
+            det.style.cssText = 'font-size:11px;color:#444;margin-top:6px;border-top:1px solid #eee;padding-top:4px;max-height:200px;overflow-y:auto;line-height:1.5';
+            const info = [];
+            if (d.CS) info.push(`<b>Crystal:</b> ${d.CS}`);
+            if (d.SG) info.push(`<b>SG:</b> ${d.SG}`);
+            if (d.A) info.push(`<b>a=</b>${d.A}`);
+            if (d.B) info.push(`<b>b=</b>${d.B}`);
+            if (d.C) info.push(`<b>c=</b>${d.C}`);
+            if (d.Al) info.push(`<b>α=</b>${d.Al}°`);
+            if (d.Be) info.push(`<b>β=</b>${d.Be}°`);
+            if (d.Ga) info.push(`<b>γ=</b>${d.Ga}°`);
+            if (d.MW) info.push(`<b>MW:</b> ${d.MW}`);
+            let html = '<div style="word-break:break-word">' + info.join(' | ') + '</div>';
+            if (d.Peaks?.length) {
+                html += '<table style="width:100%;border-collapse:collapse;margin-top:4px;font-size:10px;text-align:center"><tr style="background:#f5f5f5;font-weight:600"><td>2θ</td><td>d(Å)</td><td>I</td><td>hkl</td></tr>';
+                d.Peaks.forEach(p => { html += `<tr style="border-bottom:1px solid #f0f0f0"><td>${p.T}</td><td>${p.D}</td><td>${p.I}</td><td>(${p.H},${p.K},${p.L})</td></tr>`; });
+                html += '</table>';
+            }
+            det.innerHTML = html;
+            t.appendChild(det);
+        } catch (_) { }
     });
     setPanelMessage($xrd, XRD_MSG);
     setPanelMessage($std, STD_MSG);
