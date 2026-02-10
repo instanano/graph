@@ -8,6 +8,7 @@
     let selectedPeaks = [];
     let compositions = null;
     let elementFilter = { elements: [], mode: 'and', count: 0 };
+    let lastSearchResults = null;
     const metaCache = new Map();
     const indexCache = new Map();
     const chunkCache = new Map();
@@ -62,6 +63,31 @@
         const maxInt = Math.max(...selectedPeaks.map(p => p.intensity));
         if (maxInt > 0) selectedPeaks.forEach(p => p.normInt = (p.intensity / maxInt) * 100);
     };
+
+    async function getTableSHA() {
+        const raw = JSON.stringify(G.state.hot.getData());
+        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
+        return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    function getSampleCount() {
+        const data = G.state.hot.getData();
+        return data[0].filter((h, i) => h === 'Y-axis' && G.state.colEnabled[i] !== false).length || 1;
+    }
+
+    async function ajaxPost(action, extra = {}) {
+        if (typeof instananoCredits === 'undefined') return null;
+        const fd = new FormData();
+        fd.append('action', action);
+        fd.append('nonce', instananoCredits.nonce);
+        for (const [k, v] of Object.entries(extra)) {
+            if (Array.isArray(v)) v.forEach(i => fd.append(k + '[]', i));
+            else fd.append(k, v);
+        }
+        const r = await fetch(instananoCredits.ajaxUrl, { method: 'POST', body: fd });
+        return r.json();
+    }
+
     G.matchXRD = {
         addPeak: (x, intensity) => {
             selectedPeaks.push({ x, intensity, normInt: 0 });
@@ -98,7 +124,7 @@
                     .attr('stroke-dasharray', '4,2').style('pointer-events', 'none');
             });
         },
-        clear: () => { selectedPeaks = []; d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); updateLabel("Select Peak"); },
+        clear: () => { selectedPeaks = []; lastSearchResults = null; d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); updateLabel("Select Peak"); },
         validate: (input) => {
             if (!input.trim()) return { valid: true, invalid: [] };
             const parts = input.split(',').map(e => e.trim()).filter(e => e);
@@ -203,12 +229,36 @@
                     }
                 }
                 const finalScore = Math.max(0, 100 - posPenalty - intPenalty);
-                final.push({ row: [d[0], d[1], finalScore.toFixed(1)], peaks: refPeaks, intensities: refInts, score: finalScore, matched: matchCount, total: totalRefPeaks });
+                final.push({ row: [d[0], d[1], finalScore.toFixed(1)], refId: d[0], peaks: refPeaks, intensities: refInts, score: finalScore, matched: matchCount, total: totalRefPeaks });
             }
             final.sort((a, b) => b.score - a.score);
             setProgress('done');
-            updateLabel(`Found ${final.length}`);
-            return { matches: final, cols: ['Ref ID', 'Formula', 'Match (%)'] };
+            lastSearchResults = final;
+            const n = getSampleCount();
+            updateLabel(`Found ${final.length} — 🔓 Unlock (${n} credit${n > 1 ? 's' : ''})`);
+            return { matches: final, cols: ['Ref ID', 'Formula', 'Match (%)'], locked: true };
+        },
+        getSampleCount,
+        getTableSHA,
+        checkCredit: async () => {
+            const r = await ajaxPost('instanano_check_credit');
+            return r?.success ? r.data : null;
+        },
+        unlock: async () => {
+            if (!lastSearchResults?.length) return { ok: false, message: 'Search first.' };
+            const sha = await getTableSHA();
+            const n = getSampleCount();
+            const r = await ajaxPost('instanano_use_credit', { sha_hash: sha, sample_count: n });
+            if (!r?.success) return { ok: false, message: r?.data?.message || 'Failed.', remaining: r?.data?.remaining };
+            const refIds = lastSearchResults.map(m => m.refId);
+            const refs = await ajaxPost('instanano_xrd_fetch_refs', { ref_ids: refIds });
+            if (refs?.success) {
+                lastSearchResults.forEach(m => {
+                    const rd = refs.data[m.refId];
+                    if (rd) m.fullData = rd;
+                });
+            }
+            return { ok: true, matches: lastSearchResults, remaining: r.data.remaining, already_done: r.data.already_done };
         }
     };
 })(window.GraphPlotter);
