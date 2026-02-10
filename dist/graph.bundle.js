@@ -1226,6 +1226,17 @@ window.GraphPlotter = window.GraphPlotter || {
     const icon6 = document.getElementById('icon6');
     const fs = document.getElementById('xrd-filter-section');
     const ei = document.getElementById('xrd-elements');
+    const unlockBtn = document.getElementById('xrd-unlock-btn');
+    const creditBar = document.getElementById('xrd-credit-bar');
+    const creditCount = document.getElementById('xrd-credit-count');
+
+    function updateCreditDisplay(n) {
+        if (creditBar && creditCount) {
+            creditBar.style.display = n != null ? '' : 'none';
+            creditCount.textContent = n != null ? n : '—';
+        }
+    }
+
     function setPanelMessage(panel, message) {
         const node = panel?.node();
         if (!node) return;
@@ -1233,6 +1244,7 @@ window.GraphPlotter = window.GraphPlotter || {
         p.textContent = message;
         node.replaceChildren(p);
     }
+
     function renderMatches(panel, matches, cols) {
         const node = panel?.node();
         if (!node) return;
@@ -1257,13 +1269,34 @@ window.GraphPlotter = window.GraphPlotter || {
                 cell.append(label, document.createTextNode(` ${val}`));
                 rowDiv.appendChild(cell);
             });
+            if (item.fullData?.data) {
+                const d = item.fullData.data;
+                const detDiv = document.createElement("div");
+                detDiv.style.cssText = 'font-size:11px;color:#555;margin-top:4px;line-height:1.5';
+                const parts = [];
+                if (d.CS) parts.push(`CS: ${d.CS}`);
+                if (d.SG) parts.push(`SG: ${d.SG}`);
+                if (d.A) parts.push(`a=${d.A}`);
+                if (d.B) parts.push(`b=${d.B}`);
+                if (d.C) parts.push(`c=${d.C}`);
+                if (item.fullData.mineral) parts.push(`Min: ${item.fullData.mineral}`);
+                detDiv.textContent = parts.join(' | ');
+                rowDiv.appendChild(detDiv);
+            }
             frag.appendChild(rowDiv);
         });
         node.appendChild(frag);
     }
+
     document.querySelectorAll('input[name="matchinstrument"]').forEach(inp => inp.addEventListener('change', () => setPanelMessage($std, STD_MSG)));
     ['icon1', 'icon2', 'icon3', 'icon4'].forEach(id => document.getElementById(id)?.addEventListener('change', () => G.matchXRD?.clear()));
-    icon5?.addEventListener('change', () => setPanelMessage($xrd, XRD_MSG));
+    icon5?.addEventListener('change', async () => {
+        setPanelMessage($xrd, XRD_MSG);
+        if (G.matchXRD?.checkCredit) {
+            const cr = await G.matchXRD.checkCredit();
+            updateCreditDisplay(cr ? cr.remaining : null);
+        }
+    });
     icon6?.addEventListener('change', () => { G.matchXRD?.clear(); setPanelMessage($std, STD_MSG); });
     ['click', 'mousedown', 'pointerdown', 'focusin', 'input', 'keydown', 'keyup'].forEach(ev => fs?.addEventListener(ev, e => { e.stopPropagation(); setTimeout(() => G.matchXRD?.render(), 10); }));
     ei?.addEventListener('input', () => {
@@ -1298,11 +1331,37 @@ window.GraphPlotter = window.GraphPlotter || {
         const v = G.matchXRD.validate(val);
         if (!v.valid) { el.style.outline = '2px solid red'; el.title = 'Invalid: ' + v.invalid.join(', '); return; }
         G.matchXRD.setFilter(val.split(',').filter(e => e.trim()), lm?.value, parseInt(ec?.value) || 0);
-        const { matches, cols } = await G.matchXRD.search();
+        const { matches, cols, locked } = await G.matchXRD.search();
         renderMatches($xrd, matches, cols);
+        if (locked && matches.length && unlockBtn) {
+            unlockBtn.style.display = '';
+            const n = G.matchXRD.getSampleCount();
+            unlockBtn.textContent = `🔓 Unlock (${n} credit${n > 1 ? 's' : ''})`;
+        }
+    });
+    unlockBtn?.addEventListener('click', async function () {
+        if (!G.matchXRD?.unlock) return;
+        unlockBtn.textContent = '⏳ Unlocking...';
+        unlockBtn.style.pointerEvents = 'none';
+        const result = await G.matchXRD.unlock();
+        unlockBtn.style.pointerEvents = '';
+        if (result.ok) {
+            unlockBtn.style.display = 'none';
+            updateCreditDisplay(result.remaining);
+            if (result.already_done) {
+                updateLabel('Already analyzed — no credits deducted');
+            } else {
+                updateLabel(`Unlocked! ${result.remaining} credits left`);
+            }
+            renderMatches($xrd, result.matches, ['Ref ID', 'Formula', 'Match (%)']);
+        } else {
+            unlockBtn.textContent = '🔓 Unlock';
+            updateLabel(result.message || 'Unlock failed');
+        }
     });
     document.getElementById('xrd-clear-peaks')?.addEventListener('click', function () {
         G.matchXRD?.clear();
+        if (unlockBtn) unlockBtn.style.display = 'none';
         setPanelMessage($xrd, XRD_MSG);
     });
     $xrd.on('click', function (e) {
@@ -1312,7 +1371,7 @@ window.GraphPlotter = window.GraphPlotter || {
             t.style.background = '#f0f8ff';
             try {
                 G.matchXRD.showRef(JSON.parse(t.dataset.peaks), t.dataset.ints ? JSON.parse(t.dataset.ints) : []);
-            } catch (_) {}
+            } catch (_) { }
         }
     });
     setPanelMessage($xrd, XRD_MSG);
@@ -1365,6 +1424,7 @@ window.GraphPlotter = window.GraphPlotter || {
     let selectedPeaks = [];
     let compositions = null;
     let elementFilter = { elements: [], mode: 'and', count: 0 };
+    let lastSearchResults = null;
     const metaCache = new Map();
     const indexCache = new Map();
     const chunkCache = new Map();
@@ -1419,6 +1479,31 @@ window.GraphPlotter = window.GraphPlotter || {
         const maxInt = Math.max(...selectedPeaks.map(p => p.intensity));
         if (maxInt > 0) selectedPeaks.forEach(p => p.normInt = (p.intensity / maxInt) * 100);
     };
+
+    async function getTableSHA() {
+        const raw = JSON.stringify(G.state.hot.getData());
+        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
+        return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    function getSampleCount() {
+        const data = G.state.hot.getData();
+        return data[0].filter((h, i) => h === 'Y-axis' && G.state.colEnabled[i] !== false).length || 1;
+    }
+
+    async function ajaxPost(action, extra = {}) {
+        if (typeof instananoCredits === 'undefined') return null;
+        const fd = new FormData();
+        fd.append('action', action);
+        fd.append('nonce', instananoCredits.nonce);
+        for (const [k, v] of Object.entries(extra)) {
+            if (Array.isArray(v)) v.forEach(i => fd.append(k + '[]', i));
+            else fd.append(k, v);
+        }
+        const r = await fetch(instananoCredits.ajaxUrl, { method: 'POST', body: fd });
+        return r.json();
+    }
+
     G.matchXRD = {
         addPeak: (x, intensity) => {
             selectedPeaks.push({ x, intensity, normInt: 0 });
@@ -1455,7 +1540,7 @@ window.GraphPlotter = window.GraphPlotter || {
                     .attr('stroke-dasharray', '4,2').style('pointer-events', 'none');
             });
         },
-        clear: () => { selectedPeaks = []; d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); updateLabel("Select Peak"); },
+        clear: () => { selectedPeaks = []; lastSearchResults = null; d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); updateLabel("Select Peak"); },
         validate: (input) => {
             if (!input.trim()) return { valid: true, invalid: [] };
             const parts = input.split(',').map(e => e.trim()).filter(e => e);
@@ -1560,12 +1645,36 @@ window.GraphPlotter = window.GraphPlotter || {
                     }
                 }
                 const finalScore = Math.max(0, 100 - posPenalty - intPenalty);
-                final.push({ row: [d[0], d[1], finalScore.toFixed(1)], peaks: refPeaks, intensities: refInts, score: finalScore, matched: matchCount, total: totalRefPeaks });
+                final.push({ row: [d[0], d[1], finalScore.toFixed(1)], refId: d[0], peaks: refPeaks, intensities: refInts, score: finalScore, matched: matchCount, total: totalRefPeaks });
             }
             final.sort((a, b) => b.score - a.score);
             setProgress('done');
-            updateLabel(`Found ${final.length}`);
-            return { matches: final, cols: ['Ref ID', 'Formula', 'Match (%)'] };
+            lastSearchResults = final;
+            const n = getSampleCount();
+            updateLabel(`Found ${final.length} — 🔓 Unlock (${n} credit${n > 1 ? 's' : ''})`);
+            return { matches: final, cols: ['Ref ID', 'Formula', 'Match (%)'], locked: true };
+        },
+        getSampleCount,
+        getTableSHA,
+        checkCredit: async () => {
+            const r = await ajaxPost('instanano_check_credit');
+            return r?.success ? r.data : null;
+        },
+        unlock: async () => {
+            if (!lastSearchResults?.length) return { ok: false, message: 'Search first.' };
+            const sha = await getTableSHA();
+            const n = getSampleCount();
+            const r = await ajaxPost('instanano_use_credit', { sha_hash: sha, sample_count: n });
+            if (!r?.success) return { ok: false, message: r?.data?.message || 'Failed.', remaining: r?.data?.remaining };
+            const refIds = lastSearchResults.map(m => m.refId);
+            const refs = await ajaxPost('instanano_xrd_fetch_refs', { ref_ids: refIds });
+            if (refs?.success) {
+                lastSearchResults.forEach(m => {
+                    const rd = refs.data[m.refId];
+                    if (rd) m.fullData = rd;
+                });
+            }
+            return { ok: true, matches: lastSearchResults, remaining: r.data.remaining, already_done: r.data.already_done };
         }
     };
 })(window.GraphPlotter);
