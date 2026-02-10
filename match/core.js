@@ -8,6 +8,17 @@
     const icon6 = document.getElementById('icon6');
     const fs = document.getElementById('xrd-filter-section');
     const ei = document.getElementById('xrd-elements');
+    const unlockBtn = document.getElementById('xrd-unlock-btn');
+    const creditBar = document.getElementById('xrd-credit-bar');
+    const creditCount = document.getElementById('xrd-credit-count');
+
+    function updateCreditDisplay(n) {
+        if (creditBar && creditCount) {
+            creditBar.style.display = n != null ? '' : 'none';
+            creditCount.textContent = n != null ? n : '—';
+        }
+    }
+
     function setPanelMessage(panel, message) {
         const node = panel?.node();
         if (!node) return;
@@ -15,6 +26,7 @@
         p.textContent = message;
         node.replaceChildren(p);
     }
+
     function renderMatches(panel, matches, cols) {
         const node = panel?.node();
         if (!node) return;
@@ -39,13 +51,34 @@
                 cell.append(label, document.createTextNode(` ${val}`));
                 rowDiv.appendChild(cell);
             });
+            if (item.fullData?.data) {
+                const d = item.fullData.data;
+                const detDiv = document.createElement("div");
+                detDiv.style.cssText = 'font-size:11px;color:#555;margin-top:4px;line-height:1.5';
+                const parts = [];
+                if (d.CS) parts.push(`CS: ${d.CS}`);
+                if (d.SG) parts.push(`SG: ${d.SG}`);
+                if (d.A) parts.push(`a=${d.A}`);
+                if (d.B) parts.push(`b=${d.B}`);
+                if (d.C) parts.push(`c=${d.C}`);
+                if (item.fullData.mineral) parts.push(`Min: ${item.fullData.mineral}`);
+                detDiv.textContent = parts.join(' | ');
+                rowDiv.appendChild(detDiv);
+            }
             frag.appendChild(rowDiv);
         });
         node.appendChild(frag);
     }
+
     document.querySelectorAll('input[name="matchinstrument"]').forEach(inp => inp.addEventListener('change', () => setPanelMessage($std, STD_MSG)));
     ['icon1', 'icon2', 'icon3', 'icon4'].forEach(id => document.getElementById(id)?.addEventListener('change', () => G.matchXRD?.clear()));
-    icon5?.addEventListener('change', () => setPanelMessage($xrd, XRD_MSG));
+    icon5?.addEventListener('change', async () => {
+        setPanelMessage($xrd, XRD_MSG);
+        if (G.matchXRD?.checkCredit) {
+            const cr = await G.matchXRD.checkCredit();
+            updateCreditDisplay(cr ? cr.remaining : null);
+        }
+    });
     icon6?.addEventListener('change', () => { G.matchXRD?.clear(); setPanelMessage($std, STD_MSG); });
     ['click', 'mousedown', 'pointerdown', 'focusin', 'input', 'keydown', 'keyup'].forEach(ev => fs?.addEventListener(ev, e => { e.stopPropagation(); setTimeout(() => G.matchXRD?.render(), 10); }));
     ei?.addEventListener('input', () => {
@@ -80,11 +113,37 @@
         const v = G.matchXRD.validate(val);
         if (!v.valid) { el.style.outline = '2px solid red'; el.title = 'Invalid: ' + v.invalid.join(', '); return; }
         G.matchXRD.setFilter(val.split(',').filter(e => e.trim()), lm?.value, parseInt(ec?.value) || 0);
-        const { matches, cols } = await G.matchXRD.search();
+        const { matches, cols, locked } = await G.matchXRD.search();
         renderMatches($xrd, matches, cols);
+        if (locked && matches.length && unlockBtn) {
+            unlockBtn.style.display = '';
+            const n = G.matchXRD.getSampleCount();
+            unlockBtn.textContent = `🔓 Unlock (${n} credit${n > 1 ? 's' : ''})`;
+        }
+    });
+    unlockBtn?.addEventListener('click', async function () {
+        if (!G.matchXRD?.unlock) return;
+        unlockBtn.textContent = '⏳ Unlocking...';
+        unlockBtn.style.pointerEvents = 'none';
+        const result = await G.matchXRD.unlock();
+        unlockBtn.style.pointerEvents = '';
+        if (result.ok) {
+            unlockBtn.style.display = 'none';
+            updateCreditDisplay(result.remaining);
+            if (result.already_done) {
+                updateLabel('Already analyzed — no credits deducted');
+            } else {
+                updateLabel(`Unlocked! ${result.remaining} credits left`);
+            }
+            renderMatches($xrd, result.matches, ['Ref ID', 'Formula', 'Match (%)']);
+        } else {
+            unlockBtn.textContent = '🔓 Unlock';
+            updateLabel(result.message || 'Unlock failed');
+        }
     });
     document.getElementById('xrd-clear-peaks')?.addEventListener('click', function () {
         G.matchXRD?.clear();
+        if (unlockBtn) unlockBtn.style.display = 'none';
         setPanelMessage($xrd, XRD_MSG);
     });
     $xrd.on('click', function (e) {
@@ -94,7 +153,7 @@
             t.style.background = '#f0f8ff';
             try {
                 G.matchXRD.showRef(JSON.parse(t.dataset.peaks), t.dataset.ints ? JSON.parse(t.dataset.ints) : []);
-            } catch (_) {}
+            } catch (_) { }
         }
     });
     setPanelMessage($xrd, XRD_MSG);
