@@ -1457,7 +1457,6 @@ window.GraphPlotter = window.GraphPlotter || {
     let selectedPeaks = [];
     let compositions = null;
     let elementFilter = { elements: [], mode: 'and', count: 0 };
-    let lastSearchResults = null;
     const metaCache = new Map();
     const indexCache = new Map();
     const chunkCache = new Map();
@@ -1475,22 +1474,13 @@ window.GraphPlotter = window.GraphPlotter || {
         if (!items.length) return [];
         const out = new Array(items.length);
         let next = 0;
-        async function run() {
-            while (next < items.length) {
-                const idx = next++;
-                out[idx] = await worker(items[idx], idx);
-            }
-        }
-        const slots = Math.min(limit, items.length);
-        await Promise.all(Array.from({ length: slots }, run));
+        async function run() { while (next < items.length) { const idx = next++; out[idx] = await worker(items[idx], idx); } }
+        await Promise.all(Array.from({ length: Math.min(limit, items.length) }, run));
         return out;
     }
     async function fetchJsonWithCache(cache, url) {
         if (cache.has(url)) return cache.get(url);
-        const req = fetch(url).then(r => (r.ok ? r.json() : null)).catch(() => null).then(data => {
-            if (data == null) cache.delete(url);
-            return data;
-        });
+        const req = fetch(url).then(r => (r.ok ? r.json() : null)).catch(() => null).then(data => { if (data == null) cache.delete(url); return data; });
         cache.set(url, req);
         return req;
     }
@@ -1512,18 +1502,15 @@ window.GraphPlotter = window.GraphPlotter || {
         const maxInt = Math.max(...selectedPeaks.map(p => p.intensity));
         if (maxInt > 0) selectedPeaks.forEach(p => p.normInt = (p.intensity / maxInt) * 100);
     };
-
     async function getTableSHA() {
         const raw = JSON.stringify(G.state.hot.getData());
         const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
         return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
     }
-
     function getSampleCount() {
         const data = G.state.hot.getData();
         return data[0].filter((h, i) => h === 'Y-axis' && G.state.colEnabled[i] !== false).length || 1;
     }
-
     async function ajaxPost(action, extra = {}) {
         if (typeof instananoCredits === 'undefined') return null;
         const fd = new FormData();
@@ -1537,24 +1524,8 @@ window.GraphPlotter = window.GraphPlotter || {
         return r.json();
     }
 
-    async function fetchFullRefs(matches) {
-        const refIds = matches.map(m => m.refId);
-        const refs = await ajaxPost('instanano_xrd_fetch_refs', { ref_ids: refIds });
-        if (refs?.success) {
-            matches.forEach(m => {
-                const rd = refs.data[m.refId];
-                if (rd) m.fullData = rd;
-            });
-        }
-    }
-
     G.matchXRD = {
-        addPeak: (x, intensity) => {
-            selectedPeaks.push({ x, intensity, normInt: 0 });
-            normalizeIntensity();
-            G.matchXRD.render();
-            updateLabel("Search Database");
-        },
+        addPeak: (x, intensity) => { selectedPeaks.push({ x, intensity, normInt: 0 }); normalizeIntensity(); G.matchXRD.render(); updateLabel("Search Database"); },
         render: () => {
             const svg = d3.select('#chart svg');
             svg.selectAll('.xrd-user-peak').remove();
@@ -1584,7 +1555,7 @@ window.GraphPlotter = window.GraphPlotter || {
                     .attr('stroke-dasharray', '4,2').style('pointer-events', 'none');
             });
         },
-        clear: () => { selectedPeaks = []; lastSearchResults = null; d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); updateLabel("Select Peak"); },
+        clear: () => { selectedPeaks = []; d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); updateLabel("Select Peak"); },
         validate: (input) => {
             if (!input.trim()) return { valid: true, invalid: [] };
             const parts = input.split(',').map(e => e.trim()).filter(e => e);
@@ -1603,23 +1574,18 @@ window.GraphPlotter = window.GraphPlotter || {
             setStatusMessage('Searching and matching from ~1 million references...');
             if (!compositions) {
                 compositions = await fetchJsonWithCache(metaCache, `${XRD_BASE}meta/compositions.json`);
-                if (!compositions) {
-                    setProgress(0);
-                    setStatusMessage('Error loading.');
-                    return { matches: [], cols: [] };
-                }
+                if (!compositions) { setProgress(0); setStatusMessage('Error loading.'); return { matches: [], cols: [] }; }
             }
             setProgress(10);
             const candidates = new Map();
             const binSet = new Set();
             for (const p of selectedPeaks) binSet.add(Math.floor(p.x / BIN_WIDTH));
             const binArr = [...binSet];
-            const binTotal = Math.max(1, binArr.length);
             let binDone = 0;
             const fetches = await mapLimit(binArr, FETCH_CONCURRENCY, async b => {
                 const data = await fetchJsonWithCache(indexCache, `${XRD_BASE}index/${b}.json`);
                 binDone++;
-                setProgress(10 + (binDone / binTotal) * 40);
+                setProgress(10 + (binDone / Math.max(1, binArr.length)) * 40);
                 return data;
             });
             const binData = {};
@@ -1640,16 +1606,15 @@ window.GraphPlotter = window.GraphPlotter || {
                     }
                 }
             }
-            const sorted = [...candidates.entries()].sort((a, b) => b[1].length - a[1].length).slice(0, 50);
+            const sorted = [...candidates.entries()].sort((a, b) => b[1].length - a[1].length).slice(0, 25);
             if (!sorted.length) { setProgress(0); updateLabel('No matches'); return { matches: [], cols: [] }; }
             const chunks = {};
             const cids = [...new Set(sorted.map(([r]) => Math.floor(r / 1000)))];
-            const chunkTotal = Math.max(1, cids.length);
             let chunkDone = 0;
             await mapLimit(cids, FETCH_CONCURRENCY, async c => {
                 chunks[c] = await fetchJsonWithCache(chunkCache, `${XRD_BASE}data/${c}.json`);
                 chunkDone++;
-                setProgress(50 + (chunkDone / chunkTotal) * 40);
+                setProgress(50 + (chunkDone / Math.max(1, cids.length)) * 40);
             });
             setProgress(95);
             const final = [];
@@ -1660,68 +1625,51 @@ window.GraphPlotter = window.GraphPlotter || {
                 const refPeaks = d[2].map(p => p / PRECISION);
                 const refInts = d[3] || [];
                 const totalRefPeaks = refPeaks.length;
-                let posPenalty = 0;
-                let intPenalty = 0;
-                let matchCount = 0;
+                let posPenalty = 0, intPenalty = 0, matchCount = 0;
                 const usedUserPeaks = new Set();
                 for (let i = 0; i < totalRefPeaks; i++) {
-                    const rp = refPeaks[i];
-                    const ri = refInts[i] || 50;
-                    let bestMatch = null;
-                    let bestIdx = -1;
+                    const rp = refPeaks[i], ri = refInts[i] || 50;
+                    let bestMatch = null, bestIdx = -1;
                     for (let j = 0; j < selectedPeaks.length; j++) {
                         if (usedUserPeaks.has(j)) continue;
                         const diff = Math.abs(selectedPeaks[j].x - rp);
-                        if (diff <= TOLERANCE && (!bestMatch || diff < bestMatch.diff)) {
-                            bestMatch = { diff, userInt: selectedPeaks[j].normInt };
-                            bestIdx = j;
-                        }
+                        if (diff <= TOLERANCE && (!bestMatch || diff < bestMatch.diff)) { bestMatch = { diff, userInt: selectedPeaks[j].normInt }; bestIdx = j; }
                     }
                     if (bestMatch && bestIdx >= 0) {
-                        usedUserPeaks.add(bestIdx);
-                        matchCount++;
+                        usedUserPeaks.add(bestIdx); matchCount++;
                         posPenalty += (bestMatch.diff / TOLERANCE) * 8;
-                        const intDiff = Math.abs(bestMatch.userInt - ri);
-                        intPenalty += (intDiff / 100) * 2;
-                    } else {
-                        posPenalty += 8;
-                        intPenalty += 2;
-                    }
+                        intPenalty += (Math.abs(bestMatch.userInt - ri) / 100) * 2;
+                    } else { posPenalty += 8; intPenalty += 2; }
                 }
-                const finalScore = Math.max(0, 100 - posPenalty - intPenalty);
-                final.push({ row: [d[0], d[1], finalScore.toFixed(1)], refId: d[0], peaks: refPeaks, intensities: refInts, score: finalScore, matched: matchCount, total: totalRefPeaks });
+                final.push({ row: [d[0], d[1], Math.max(0, 100 - posPenalty - intPenalty).toFixed(1)], refId: d[0], peaks: refPeaks, intensities: refInts, score: Math.max(0, 100 - posPenalty - intPenalty) });
             }
             final.sort((a, b) => b.score - a.score);
             setProgress('done');
-            lastSearchResults = final;
 
             if (typeof instananoCredits !== 'undefined') {
                 const sha = await getTableSHA();
                 const v = await ajaxPost('instanano_verify_sha', { sha_hash: sha });
                 if (v?.success && v.data.exists) {
-                    await fetchFullRefs(final);
                     updateLabel(`Found ${final.length} (already unlocked)`);
                     return { matches: final, cols: ['Ref ID', 'Formula', 'Match (%)'], locked: false };
                 }
             }
-
             updateLabel(`Found ${final.length}`);
             return { matches: final, cols: ['Ref ID', 'Formula', 'Match (%)'], locked: true };
         },
         getSampleCount,
         getTableSHA,
-        checkCredit: async () => {
-            const r = await ajaxPost('instanano_check_credit');
-            return r?.success ? r.data : null;
-        },
+        checkCredit: async () => { const r = await ajaxPost('instanano_check_credit'); return r?.success ? r.data : null; },
         unlock: async () => {
-            if (!lastSearchResults?.length) return { ok: false, message: 'Search first.' };
             const sha = await getTableSHA();
             const n = getSampleCount();
             const r = await ajaxPost('instanano_use_credit', { sha_hash: sha, sample_count: n });
             if (!r?.success) return { ok: false, message: r?.data?.message || 'Failed.', remaining: r?.data?.remaining };
-            await fetchFullRefs(lastSearchResults);
-            return { ok: true, matches: lastSearchResults, remaining: r.data.remaining, already_done: r.data.already_done };
+            return { ok: true, remaining: r.data.remaining, already_done: r.data.already_done };
+        },
+        fetchRef: async (refId) => {
+            const r = await ajaxPost('instanano_xrd_fetch_refs', { ref_ids: [refId] });
+            return r?.success ? r.data[refId] : null;
         }
     };
 })(window.GraphPlotter);
