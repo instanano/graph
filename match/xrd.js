@@ -88,6 +88,17 @@
         return r.json();
     }
 
+    async function fetchFullRefs(matches) {
+        const refIds = matches.map(m => m.refId);
+        const refs = await ajaxPost('instanano_xrd_fetch_refs', { ref_ids: refIds });
+        if (refs?.success) {
+            matches.forEach(m => {
+                const rd = refs.data[m.refId];
+                if (rd) m.fullData = rd;
+            });
+        }
+    }
+
     G.matchXRD = {
         addPeak: (x, intensity) => {
             selectedPeaks.push({ x, intensity, normInt: 0 });
@@ -234,8 +245,18 @@
             final.sort((a, b) => b.score - a.score);
             setProgress('done');
             lastSearchResults = final;
-            const n = getSampleCount();
-            updateLabel(`Found ${final.length} — 🔓 Unlock (${n} credit${n > 1 ? 's' : ''})`);
+
+            if (typeof instananoCredits !== 'undefined') {
+                const sha = await getTableSHA();
+                const v = await ajaxPost('instanano_verify_sha', { sha_hash: sha });
+                if (v?.success && v.data.exists) {
+                    await fetchFullRefs(final);
+                    updateLabel(`Found ${final.length} (already unlocked)`);
+                    return { matches: final, cols: ['Ref ID', 'Formula', 'Match (%)'], locked: false };
+                }
+            }
+
+            updateLabel(`Found ${final.length}`);
             return { matches: final, cols: ['Ref ID', 'Formula', 'Match (%)'], locked: true };
         },
         getSampleCount,
@@ -250,14 +271,7 @@
             const n = getSampleCount();
             const r = await ajaxPost('instanano_use_credit', { sha_hash: sha, sample_count: n });
             if (!r?.success) return { ok: false, message: r?.data?.message || 'Failed.', remaining: r?.data?.remaining };
-            const refIds = lastSearchResults.map(m => m.refId);
-            const refs = await ajaxPost('instanano_xrd_fetch_refs', { ref_ids: refIds });
-            if (refs?.success) {
-                lastSearchResults.forEach(m => {
-                    const rd = refs.data[m.refId];
-                    if (rd) m.fullData = rd;
-                });
-            }
+            await fetchFullRefs(lastSearchResults);
             return { ok: true, matches: lastSearchResults, remaining: r.data.remaining, already_done: r.data.already_done };
         }
     };
