@@ -44,6 +44,7 @@
             const row = item.row || item;
             const rowDiv = document.createElement("div");
             rowDiv.className = "matchedrow";
+            if (item.refId) rowDiv.dataset.refid = item.refId;
             const fd = item.fullData?.data;
             if (fd?.Peaks) {
                 rowDiv.dataset.peaks = JSON.stringify(fd.Peaks.map(p => p.T));
@@ -73,16 +74,22 @@
         node.appendChild(frag);
     }
 
-    document.querySelectorAll('input[name="matchinstrument"]').forEach(inp => inp.addEventListener('change', () => setPanelMessage($std, STD_MSG)));
-    ['icon1', 'icon2', 'icon3', 'icon4'].forEach(id => document.getElementById(id)?.addEventListener('change', () => G.matchXRD?.clear()));
-    icon5?.addEventListener('change', async () => {
-        setPanelMessage($xrd, XRD_MSG);
+    async function refreshCredits() {
         if (typeof instananoCredits !== 'undefined' && G.matchXRD?.checkCredit) {
             const cr = await G.matchXRD.checkCredit();
             updateCreditDisplay(cr ? cr.remaining : 0);
         } else {
             updateCreditDisplay(0);
         }
+    }
+
+    window.addEventListener('focus', refreshCredits);
+
+    document.querySelectorAll('input[name="matchinstrument"]').forEach(inp => inp.addEventListener('change', () => setPanelMessage($std, STD_MSG)));
+    ['icon1', 'icon2', 'icon3', 'icon4'].forEach(id => document.getElementById(id)?.addEventListener('change', () => G.matchXRD?.clear()));
+    icon5?.addEventListener('change', async () => {
+        setPanelMessage($xrd, XRD_MSG);
+        refreshCredits();
     });
     icon6?.addEventListener('change', () => { G.matchXRD?.clear(); setPanelMessage($std, STD_MSG); });
     ['click', 'mousedown', 'pointerdown', 'focusin', 'input', 'keydown', 'keyup'].forEach(ev => fs?.addEventListener(ev, e => { e.stopPropagation(); setTimeout(() => G.matchXRD?.render(), 10); }));
@@ -141,7 +148,7 @@
             unlockBtn.style.display = 'none';
             updateCreditDisplay(result.remaining);
             if (matchLabel) matchLabel.textContent = result.already_done ? 'Already analyzed — no credit deducted' : `Unlocked! ${result.remaining} credits left`;
-            renderMatches($xrd, result.matches, ['Ref ID', 'Formula', 'Match (%)']);
+            renderMatches($xrd, result.matches, result.matches.length > 0 && result.matches[0].fullData ? ['Ref ID', 'Formula', 'Match (%)'] : ['Ref ID', 'Formula', 'Match (%)']);
         } else {
             unlockBtn.textContent = '🔓 Unlock';
             if (matchLabel) matchLabel.textContent = result.message || 'Unlock failed';
@@ -152,24 +159,46 @@
         if (unlockBtn) unlockBtn.style.display = 'none';
         setPanelMessage($xrd, XRD_MSG);
     });
-    $xrd.on('click', function (e) {
+    $xrd.on('click', async function (e) {
         const t = e.target.closest('.matchedrow');
         if (!t) return;
         const box = $xrd.node();
         box?.querySelectorAll('.matchedrow').forEach(r => { if (r !== t) { r.style.background = ''; const d = r.querySelector('.xrd-ref-detail'); if (d) d.remove(); } });
         t.style.background = '#f0f8ff';
-        if (t.dataset.peaks) {
-            try { G.matchXRD.showRef(JSON.parse(t.dataset.peaks), t.dataset.ints ? JSON.parse(t.dataset.ints) : []); } catch (_) { }
+
+        let peaks = t.dataset.peaks ? JSON.parse(t.dataset.peaks) : [];
+        let ints = t.dataset.ints ? JSON.parse(t.dataset.ints) : [];
+        let fulldata = t.dataset.fulldata ? JSON.parse(t.dataset.fulldata) : null;
+
+        if (!fulldata && !G.matchXRD.isLocked() && t.dataset.refid) {
+            // Lazy load ONLY if unlocked
+            try {
+                const rd = await G.matchXRD.fetchRef(t.dataset.refid);
+                if (rd) {
+                    fulldata = rd.data; // The JSON blob from DB
+                    t.dataset.fulldata = JSON.stringify(fulldata);
+                    if (fulldata.mineral) t.dataset.mineral = fulldata.mineral;
+                    if (fulldata.Peaks) {
+                        peaks = fulldata.Peaks.map(p => p.T);
+                        ints = fulldata.Peaks.map(p => p.I);
+                        t.dataset.peaks = JSON.stringify(peaks);
+                        t.dataset.ints = JSON.stringify(ints);
+                    }
+                }
+            } catch (err) { console.error('Ref fetch failed', err); }
         }
-        if (!t.dataset.fulldata) return;
+
+        try { G.matchXRD.showRef(peaks, ints); } catch (_) { }
+        if (!fulldata) return;
+
         let det = t.querySelector('.xrd-ref-detail');
         if (det) { det.remove(); return; }
         try {
-            const d = JSON.parse(t.dataset.fulldata);
             det = document.createElement('div');
             det.className = 'xrd-ref-detail';
             det.style.cssText = 'font-size:11px;color:#444;margin-top:6px;border-top:1px solid #eee;padding-top:4px;max-height:200px;overflow-y:auto;line-height:1.5';
             const info = [];
+            const d = fulldata;
             if (d.CS) info.push(`<b>Crystal:</b> ${d.CS}`);
             if (d.SG) info.push(`<b>SG:</b> ${d.SG}`);
             if (d.A) info.push(`<b>a=</b>${d.A}`);
