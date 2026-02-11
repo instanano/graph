@@ -212,10 +212,12 @@
             isLocked = true;
             if (typeof instananoCredits !== 'undefined') {
                 const sha = await getTableSHA();
-                const v = await ajaxPost('instanano_verify_sha', { sha_hash: sha });
+                const v = await ajaxPost('instanano_verify_sha', { sha_hash: sha, transaction_id: currentTransactionId });
                 if (v?.success && v.data.exists) {
                     isLocked = false;
                     currentTransactionId = v.data.transaction_id || 0;
+                } else {
+                    currentTransactionId = 0;
                 }
             }
             if (isLocked) {
