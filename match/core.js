@@ -166,7 +166,7 @@
             try {
                 const rd = await G.matchXRD.fetchRef(t.dataset.refid);
                 if (rd) {
-                    fulldata = rd.data; // The JSON blob from DB
+                    fulldata = rd.data;
                     t.dataset.fulldata = JSON.stringify(fulldata);
                     if (fulldata.mineral) t.dataset.mineral = fulldata.mineral;
                     if (fulldata.Peaks) {
