@@ -14,13 +14,11 @@
     const creditCount = document.getElementById('xrd-credit-count');
     const matchLabel = document.getElementById('xrd-match-label');
     let currentCredits = 0;
-
     function updateCreditDisplay(n) {
         currentCredits = n != null ? n : 0;
         if (creditBar) creditBar.style.display = '';
         if (creditCount) creditCount.textContent = currentCredits;
     }
-
     function setPanelMessage(panel, message) {
         const node = panel?.node();
         if (!node) return;
@@ -28,7 +26,6 @@
         p.textContent = message;
         node.replaceChildren(p);
     }
-
     function renderMatches(panel, matches, cols) {
         const node = panel?.node();
         if (!node) return;
@@ -73,7 +70,6 @@
         });
         node.appendChild(frag);
     }
-
     async function refreshCredits() {
         if (typeof instananoCredits !== 'undefined' && G.matchXRD?.checkCredit) {
             const cr = await G.matchXRD.checkCredit();
@@ -82,9 +78,7 @@
             updateCreditDisplay(0);
         }
     }
-
     window.addEventListener('focus', refreshCredits);
-
     document.querySelectorAll('input[name="matchinstrument"]').forEach(inp => inp.addEventListener('change', () => setPanelMessage($std, STD_MSG)));
     ['icon1', 'icon2', 'icon3', 'icon4'].forEach(id => document.getElementById(id)?.addEventListener('change', () => G.matchXRD?.clear()));
     icon5?.addEventListener('change', async () => {
@@ -165,13 +159,10 @@
         const box = $xrd.node();
         box?.querySelectorAll('.matchedrow').forEach(r => { if (r !== t) { r.style.background = ''; const d = r.querySelector('.xrd-ref-detail'); if (d) d.remove(); } });
         t.style.background = '#f0f8ff';
-
         let peaks = t.dataset.peaks ? JSON.parse(t.dataset.peaks) : [];
         let ints = t.dataset.ints ? JSON.parse(t.dataset.ints) : [];
         let fulldata = t.dataset.fulldata ? JSON.parse(t.dataset.fulldata) : null;
-
         if (!fulldata && !G.matchXRD.isLocked() && t.dataset.refid) {
-            // Lazy load ONLY if unlocked
             try {
                 const rd = await G.matchXRD.fetchRef(t.dataset.refid);
                 if (rd) {
@@ -187,10 +178,8 @@
                 }
             } catch (err) { console.error('Ref fetch failed', err); }
         }
-
         try { G.matchXRD.showRef(peaks, ints); } catch (_) { }
         if (!fulldata) return;
-
         let det = t.querySelector('.xrd-ref-detail');
         if (det) { det.remove(); return; }
         try {
