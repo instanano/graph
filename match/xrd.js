@@ -8,6 +8,8 @@
     let selectedPeaks = [];
     let compositions = null;
     let elementFilter = { elements: [], mode: 'and', count: 0 };
+    let lastSearchResults = null;
+    let isLocked = true;
     const metaCache = new Map();
     const indexCache = new Map();
     const chunkCache = new Map();
@@ -106,7 +108,7 @@
                     .attr('stroke-dasharray', '4,2').style('pointer-events', 'none');
             });
         },
-        clear: () => { selectedPeaks = []; d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); updateLabel("Select Peak"); },
+        clear: () => { selectedPeaks = []; lastSearchResults = null; d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); updateLabel("Select Peak"); },
         validate: (input) => {
             if (!input.trim()) return { valid: true, invalid: [] };
             const parts = input.split(',').map(e => e.trim()).filter(e => e);
@@ -196,17 +198,27 @@
             }
             final.sort((a, b) => b.score - a.score);
             setProgress('done');
+            lastSearchResults = final;
 
+            isLocked = true;
             if (typeof instananoCredits !== 'undefined') {
                 const sha = await getTableSHA();
                 const v = await ajaxPost('instanano_verify_sha', { sha_hash: sha });
-                if (v?.success && v.data.exists) {
-                    updateLabel(`Found ${final.length} (already unlocked)`);
-                    return { matches: final, cols: ['Ref ID', 'Formula', 'Match (%)'], locked: false };
-                }
+                if (v?.success && v.data.exists) isLocked = false;
             }
-            updateLabel(`Found ${final.length}`);
-            return { matches: final, cols: ['Ref ID', 'Formula', 'Match (%)'], locked: true };
+
+            if (isLocked) {
+                updateLabel(`Found ${final.length}`);
+                const preview = final.slice(0, 5).map(m => ({
+                    ...m,
+                    peaks: m.peaks.slice(0, 3),
+                    intensities: m.intensities.slice(0, 3)
+                }));
+                return { matches: preview, cols: ['Ref ID', 'Formula', 'Match (%)'], locked: true };
+            }
+
+            updateLabel(`Found ${final.length} (already unlocked)`);
+            return { matches: final, cols: ['Ref ID', 'Formula', 'Match (%)'], locked: false };
         },
         getSampleCount,
         getTableSHA,
@@ -216,11 +228,13 @@
             const n = getSampleCount();
             const r = await ajaxPost('instanano_use_credit', { sha_hash: sha, sample_count: n });
             if (!r?.success) return { ok: false, message: r?.data?.message || 'Failed.', remaining: r?.data?.remaining };
-            return { ok: true, remaining: r.data.remaining, already_done: r.data.already_done };
+            isLocked = false;
+            return { ok: true, matches: lastSearchResults, remaining: r.data.remaining, already_done: r.data.already_done };
         },
         fetchRef: async (refId) => {
             const r = await ajaxPost('instanano_xrd_fetch_refs', { ref_ids: [refId] });
             return r?.success ? r.data[refId] : null;
-        }
+        },
+        isLocked: () => isLocked
     };
 })(window.GraphPlotter);
