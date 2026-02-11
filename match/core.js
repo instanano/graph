@@ -14,6 +14,9 @@
     const creditCount = document.getElementById('xrd-credit-count');
     const matchLabel = document.getElementById('xrd-match-label');
     let currentCredits = 0;
+    const style = document.createElement('style');
+    style.innerHTML = '.hidden-peak { display: none !important; }';
+    document.head.appendChild(style);
     function updateCreditDisplay(n) {
         currentCredits = n != null ? n : 0;
         if (creditBar) creditBar.style.display = '';
@@ -84,6 +87,12 @@
     icon5?.addEventListener('change', async () => {
         setPanelMessage($xrd, XRD_MSG);
         refreshCredits();
+        d3.selectAll('.xrd-user-peak, .xrd-ref-peak').classed('hidden-peak', false);
+    });
+    ['icon1', 'icon2', 'icon3', 'icon4', 'icon6'].forEach(id => {
+        document.getElementById(id)?.addEventListener('change', () => {
+            d3.selectAll('.xrd-user-peak, .xrd-ref-peak').classed('hidden-peak', true);
+        });
     });
     icon6?.addEventListener('change', () => { G.matchXRD?.clear(); setPanelMessage($std, STD_MSG); });
     ['click', 'mousedown', 'pointerdown', 'focusin', 'input', 'keydown', 'keyup'].forEach(ev => fs?.addEventListener(ev, e => { e.stopPropagation(); setTimeout(() => G.matchXRD?.render(), 10); }));
