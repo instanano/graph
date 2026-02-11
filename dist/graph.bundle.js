@@ -1232,14 +1232,13 @@ window.GraphPlotter = window.GraphPlotter || {
     const creditCount = document.getElementById('xrd-credit-count');
     const matchLabel = document.getElementById('xrd-match-label');
     let currentCredits = 0;
-    const style = document.createElement('style');
-    style.innerHTML = '.hidden-peak { display: none !important; }';
-    document.head.appendChild(style);
+
     function updateCreditDisplay(n) {
         currentCredits = n != null ? n : 0;
         if (creditBar) creditBar.style.display = '';
         if (creditCount) creditCount.textContent = currentCredits;
     }
+
     function setPanelMessage(panel, message) {
         const node = panel?.node();
         if (!node) return;
@@ -1247,6 +1246,7 @@ window.GraphPlotter = window.GraphPlotter || {
         p.textContent = message;
         node.replaceChildren(p);
     }
+
     function renderMatches(panel, matches, cols) {
         const node = panel?.node();
         if (!node) return;
@@ -1291,6 +1291,7 @@ window.GraphPlotter = window.GraphPlotter || {
         });
         node.appendChild(frag);
     }
+
     async function refreshCredits() {
         if (typeof instananoCredits !== 'undefined' && G.matchXRD?.checkCredit) {
             const cr = await G.matchXRD.checkCredit();
@@ -1299,18 +1300,14 @@ window.GraphPlotter = window.GraphPlotter || {
             updateCreditDisplay(0);
         }
     }
+
     window.addEventListener('focus', refreshCredits);
+
     document.querySelectorAll('input[name="matchinstrument"]').forEach(inp => inp.addEventListener('change', () => setPanelMessage($std, STD_MSG)));
     ['icon1', 'icon2', 'icon3', 'icon4'].forEach(id => document.getElementById(id)?.addEventListener('change', () => G.matchXRD?.clear()));
     icon5?.addEventListener('change', async () => {
         setPanelMessage($xrd, XRD_MSG);
         refreshCredits();
-        d3.selectAll('.xrd-user-peak, .xrd-ref-peak').classed('hidden-peak', false);
-    });
-    ['icon1', 'icon2', 'icon3', 'icon4', 'icon6'].forEach(id => {
-        document.getElementById(id)?.addEventListener('change', () => {
-            d3.selectAll('.xrd-user-peak, .xrd-ref-peak').classed('hidden-peak', true);
-        });
     });
     icon6?.addEventListener('change', () => { G.matchXRD?.clear(); setPanelMessage($std, STD_MSG); });
     ['click', 'mousedown', 'pointerdown', 'focusin', 'input', 'keydown', 'keyup'].forEach(ev => fs?.addEventListener(ev, e => { e.stopPropagation(); setTimeout(() => G.matchXRD?.render(), 10); }));
@@ -1386,14 +1383,17 @@ window.GraphPlotter = window.GraphPlotter || {
         const box = $xrd.node();
         box?.querySelectorAll('.matchedrow').forEach(r => { if (r !== t) { r.style.background = ''; const d = r.querySelector('.xrd-ref-detail'); if (d) d.remove(); } });
         t.style.background = '#f0f8ff';
+
         let peaks = t.dataset.peaks ? JSON.parse(t.dataset.peaks) : [];
         let ints = t.dataset.ints ? JSON.parse(t.dataset.ints) : [];
         let fulldata = t.dataset.fulldata ? JSON.parse(t.dataset.fulldata) : null;
+
         if (!fulldata && !G.matchXRD.isLocked() && t.dataset.refid) {
+            // Lazy load ONLY if unlocked
             try {
                 const rd = await G.matchXRD.fetchRef(t.dataset.refid);
                 if (rd) {
-                    fulldata = rd.data;
+                    fulldata = rd.data; // The JSON blob from DB
                     t.dataset.fulldata = JSON.stringify(fulldata);
                     if (fulldata.mineral) t.dataset.mineral = fulldata.mineral;
                     if (fulldata.Peaks) {
@@ -1405,8 +1405,10 @@ window.GraphPlotter = window.GraphPlotter || {
                 }
             } catch (err) { console.error('Ref fetch failed', err); }
         }
+
         try { G.matchXRD.showRef(peaks, ints); } catch (_) { }
         if (!fulldata) return;
+
         let det = t.querySelector('.xrd-ref-detail');
         if (det) { det.remove(); return; }
         try {
@@ -1489,7 +1491,6 @@ window.GraphPlotter = window.GraphPlotter || {
     const metaCache = new Map();
     const indexCache = new Map();
     const chunkCache = new Map();
-    let currentTransactionId = 0;
     const PERIODIC_TABLE = { 'H': 1, 'He': 2, 'Li': 3, 'Be': 4, 'B': 5, 'C': 6, 'N': 7, 'O': 8, 'F': 9, 'Ne': 10, 'Na': 11, 'Mg': 12, 'Al': 13, 'Si': 14, 'P': 15, 'S': 16, 'Cl': 17, 'Ar': 18, 'K': 19, 'Ca': 20, 'Sc': 21, 'Ti': 22, 'V': 23, 'Cr': 24, 'Mn': 25, 'Fe': 26, 'Co': 27, 'Ni': 28, 'Cu': 29, 'Zn': 30, 'Ga': 31, 'Ge': 32, 'As': 33, 'Se': 34, 'Br': 35, 'Kr': 36, 'Rb': 37, 'Sr': 38, 'Y': 39, 'Zr': 40, 'Nb': 41, 'Mo': 42, 'Tc': 43, 'Ru': 44, 'Rh': 45, 'Pd': 46, 'Ag': 47, 'Cd': 48, 'In': 49, 'Sn': 50, 'Sb': 51, 'Te': 52, 'I': 53, 'Xe': 54, 'Cs': 55, 'Ba': 56, 'La': 57, 'Ce': 58, 'Pr': 59, 'Nd': 60, 'Pm': 61, 'Sm': 62, 'Eu': 63, 'Gd': 64, 'Tb': 65, 'Dy': 66, 'Ho': 67, 'Er': 68, 'Tm': 69, 'Yb': 70, 'Lu': 71, 'Hf': 72, 'Ta': 73, 'W': 74, 'Re': 75, 'Os': 76, 'Ir': 77, 'Pt': 78, 'Au': 79, 'Hg': 80, 'Tl': 81, 'Pb': 82, 'Bi': 83, 'Po': 84, 'At': 85, 'Rn': 86, 'Fr': 87, 'Ra': 88, 'Ac': 89, 'Th': 90, 'Pa': 91, 'U': 92, 'Np': 93, 'Pu': 94, 'Am': 95, 'Cm': 96, 'Bk': 97, 'Cf': 98, 'Es': 99, 'Fm': 100, 'Md': 101, 'No': 102, 'Lr': 103, 'Rf': 104, 'Db': 105, 'Sg': 106, 'Bh': 107, 'Hs': 108, 'Mt': 109, 'Ds': 110, 'Rg': 111, 'Cn': 112, 'Nh': 113, 'Fl': 114, 'Mc': 115, 'Lv': 116, 'Ts': 117, 'Og': 118 };
     const updateLabel = (t) => { const l = document.getElementById('xrd-match-label'); if (l) l.textContent = t; };
     const setProgress = (p) => { const b = document.getElementById('xrd-search-btn'); if (!b) return; if (p === 'done') b.classList.add('progress-done'); else { b.classList.contains('progress-done') && (b.classList.add('no-anim'), void b.offsetHeight); b.classList.remove('progress-done', 'no-anim'); b.style.setProperty('--progress', p + '%'); } };
@@ -1553,8 +1554,9 @@ window.GraphPlotter = window.GraphPlotter || {
         const r = await fetch(instananoCredits.ajaxUrl, { method: 'POST', body: fd });
         return r.json();
     }
+
     G.matchXRD = {
-        addPeak: (x, intensity) => { selectedPeaks.push({ x, intensity, normInt: 0 }); normalizeIntensity(); G.matchXRD.setTransactionId(0); G.matchXRD.render(); updateLabel("Search Database"); },
+        addPeak: (x, intensity) => { selectedPeaks.push({ x, intensity, normInt: 0 }); normalizeIntensity(); G.matchXRD.render(); updateLabel("Search Database"); },
         render: () => {
             const svg = d3.select('#chart svg');
             svg.selectAll('.xrd-user-peak').remove();
@@ -1565,25 +1567,18 @@ window.GraphPlotter = window.GraphPlotter || {
                     .attr('y1', G.config.DIM.H - G.config.DIM.MB)
                     .attr('y2', G.config.DIM.H - G.config.DIM.MB - 7)
                     .attr('stroke', 'red').attr('stroke-width', 3)
-                    .style('cursor', currentTransactionId ? 'default' : 'pointer')
-                    .on('click', (e) => {
-                        e.stopPropagation();
-                        if (currentTransactionId) return;
-                        selectedPeaks.splice(i, 1); normalizeIntensity();
-                        if (!selectedPeaks.length) updateLabel("Select Peak");
-                        G.matchXRD.render();
-                    });
+                    .style('cursor', 'pointer')
+                    .on('click', (e) => { e.stopPropagation(); selectedPeaks.splice(i, 1); normalizeIntensity(); if (!selectedPeaks.length) updateLabel("Select Peak"); G.matchXRD.render(); });
             });
         },
         showRef: (peaks, ints) => {
             const svg = d3.select('#chart svg');
             svg.selectAll('.xrd-ref-peak').remove();
-            const cls = 'xrd-ref-peak' + (document.getElementById('icon5')?.checked ? '' : ' hidden-peak');
             peaks.forEach((x, i) => {
                 const xp = G.state.lastXScale(x);
                 if (xp < G.config.DIM.ML || xp > G.config.DIM.W - G.config.DIM.MR) return;
                 const h = 5 + ((ints?.[i] ?? 100) / 100) * 35;
-                svg.append('line').attr('class', cls)
+                svg.append('line').attr('class', 'xrd-ref-peak')
                     .attr('x1', xp).attr('x2', xp)
                     .attr('y1', G.config.DIM.H - G.config.DIM.MB)
                     .attr('y2', G.config.DIM.H - G.config.DIM.MB - h)
@@ -1591,10 +1586,7 @@ window.GraphPlotter = window.GraphPlotter || {
                     .attr('stroke-dasharray', '4,2').style('pointer-events', 'none');
             });
         },
-        clear: () => {
-            if (currentTransactionId) return;
-            selectedPeaks = []; lastSearchResults = null; d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); updateLabel("Select Peak");
-        },
+        clear: () => { selectedPeaks = []; lastSearchResults = null; d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); updateLabel("Select Peak"); },
         validate: (input) => {
             if (!input.trim()) return { valid: true, invalid: [] };
             const parts = input.split(',').map(e => e.trim()).filter(e => e);
@@ -1685,17 +1677,14 @@ window.GraphPlotter = window.GraphPlotter || {
             final.sort((a, b) => b.score - a.score);
             setProgress('done');
             lastSearchResults = final;
+
             isLocked = true;
             if (typeof instananoCredits !== 'undefined') {
                 const sha = await getTableSHA();
-                const v = await ajaxPost('instanano_verify_sha', { sha_hash: sha, transaction_id: currentTransactionId });
-                if (v?.success && v.data.exists) {
-                    isLocked = false;
-                    currentTransactionId = v.data.transaction_id || 0;
-                } else {
-                    currentTransactionId = 0;
-                }
+                const v = await ajaxPost('instanano_verify_sha', { sha_hash: sha });
+                if (v?.success && v.data.exists) isLocked = false;
             }
+
             if (isLocked) {
                 updateLabel(`Found ${final.length}`);
                 const preview = final.slice(0, 5).map(m => ({
@@ -1705,6 +1694,7 @@ window.GraphPlotter = window.GraphPlotter || {
                 }));
                 return { matches: preview, cols: ['Ref ID', 'Formula', 'Match (%)'], locked: true };
             }
+
             updateLabel(`Found ${final.length} (already unlocked)`);
             return { matches: final, cols: ['Ref ID', 'Formula', 'Match (%)'], locked: false };
         },
@@ -1717,31 +1707,24 @@ window.GraphPlotter = window.GraphPlotter || {
             const r = await ajaxPost('instanano_use_credit', { sha_hash: sha, sample_count: n });
             if (!r?.success) return { ok: false, message: r?.data?.message || 'Failed.', remaining: r?.data?.remaining };
             isLocked = false;
-            currentTransactionId = r.data.transaction_id || 0;
             return { ok: true, matches: lastSearchResults, remaining: r.data.remaining, already_done: r.data.already_done };
         },
         fetchRef: async (refId) => {
-            const sha = await getTableSHA();
-            const r = await ajaxPost('instanano_xrd_fetch_refs', { ref_ids: [refId], transaction_id: currentTransactionId, sha_hash: sha });
+            const r = await ajaxPost('instanano_xrd_fetch_refs', { ref_ids: [refId] });
             return r?.success ? r.data[refId] : null;
         },
-        isLocked: () => isLocked,
-        setTransactionId: (tid) => { currentTransactionId = tid; isLocked = false; G.matchXRD.render(); },
-        getTransactionId: () => currentTransactionId
+        isLocked: () => isLocked
     };
 })(window.GraphPlotter);
-(function (G) {
+(function(G) {
     "use strict";
     const MAX_CHART_HTML_LENGTH = 2_000_000;
     async function htmlPrompt(message, defaultValue) {
-        return new Promise(res => {
-            $('#html-prompt-message').text(message); $('#html-prompt-input').val(defaultValue);
-            $('#popup-prompt-overlay').css('display', 'flex').fadeIn(150); $('#html-prompt-input').focus().off('keydown').on('keydown', e => {
-                if (e.key === 'Enter') $('#html-prompt-ok').click();
-            });
-            $('#html-prompt-ok').off('click').on('click', () => { $('#popup-prompt-overlay').fadeOut(150); res($('#html-prompt-input').val()); });
-            $('#html-prompt-cancel').off('click').on('click', () => { $('#popup-prompt-overlay').fadeOut(150); res(null); });
-        });
+        return new Promise(res => { $('#html-prompt-message').text(message); $('#html-prompt-input').val(defaultValue); 
+        $('#popup-prompt-overlay').css('display','flex').fadeIn(150); $('#html-prompt-input').focus().off('keydown').on('keydown', e => {
+        if (e.key === 'Enter')   $('#html-prompt-ok').click();});
+        $('#html-prompt-ok').off('click').on('click', () => { $('#popup-prompt-overlay').fadeOut(150); res($('#html-prompt-input').val());});
+        $('#html-prompt-cancel').off('click').on('click', () => { $('#popup-prompt-overlay').fadeOut(150); res(null);});});
     }
     function sanitizeChartHTML(raw) {
         if (typeof raw !== "string") return "";
@@ -1792,91 +1775,81 @@ window.GraphPlotter = window.GraphPlotter || {
             useCustomTicksOn: raw.useCustomTicksOn && typeof raw.useCustomTicksOn === "object" ? raw.useCustomTicksOn : {}
         };
     }
-    $('#download').click(async function (e) {
-        e.preventDefault(); if (!myUserVars.isLoggedIn) { e.stopPropagation(); $('#ajax-login-modal').show(); return }
+    $('#download').click(async function(e){
+        e.preventDefault(); if (!myUserVars.isLoggedIn) { e.stopPropagation(); $('#ajax-login-modal').show(); return}     
         $('#transparent-option').show();
-        const input = await htmlPrompt("Enter DPI  (e.g. 150, 300, or 600 etc.)", "600");
-        if (input === null) return;
-        const dpi = parseFloat(input);
-        if (isNaN(dpi) || dpi <= 0) return alert("Invalid DPI");
+        const input = await htmlPrompt( "Enter DPI  (e.g. 150, 300, or 600 etc.)", "600");
+        if(input===null)return;
+        const dpi=parseFloat(input);
+        if(isNaN(dpi)||dpi<=0)return alert("Invalid DPI");
         const transparent = document.getElementById('html-prompt-transparent').checked;
-        const scale = dpi / 96;
-        const svg = document.querySelector("#chart svg");
-        if (!svg) return;
-        const clone = svg.cloneNode(true);
-        clone.querySelectorAll("foreignObject div[contenteditable]").forEach(d => d.style.border = "none");
-        clone.querySelectorAll(".outline[visibility='visible']").forEach(e => e.setAttribute("visibility", "hidden"));
-        clone.querySelectorAll("text[contenteditable='true']").forEach(t => { t.removeAttribute("contenteditable"); t.style.outline = "none"; });
-        clone.setAttribute("style", `background:${transparent ? 'transparent' : '#fff'};font-family:Arial,sans-serif;`);
-        const data = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(new XMLSerializer().serializeToString(clone));
-        const img = new Image();
-        img.onload = () => {
-            const c = document.createElement("canvas");
-            c.width = img.width * scale; c.height = img.height * scale;
-            const ctx = c.getContext("2d");
-            if (!transparent) { ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height); }
-            ctx.drawImage(img, 0, 0, c.width, c.height);
-            c.toBlob(b => {
+        const scale=dpi/96;
+        const svg=document.querySelector("#chart svg");
+        if(!svg)return;
+        const clone=svg.cloneNode(true);
+        clone.querySelectorAll("foreignObject div[contenteditable]").forEach(d=>d.style.border="none");
+        clone.querySelectorAll(".outline[visibility='visible']").forEach(e=>e.setAttribute("visibility","hidden"));
+        clone.querySelectorAll("text[contenteditable='true']").forEach(t => { t.removeAttribute("contenteditable"); t.style.outline = "none";});
+        clone.setAttribute("style",`background:${transparent ? 'transparent' : '#fff'};font-family:Arial,sans-serif;`);
+        const data="data:image/svg+xml;charset=utf-8,"+encodeURIComponent(new XMLSerializer().serializeToString(clone));
+        const img=new Image();
+        img.onload=()=>{
+            const c=document.createElement("canvas");
+            c.width=img.width*scale; c.height=img.height*scale;
+            const ctx=c.getContext("2d");
+            if (!transparent) { ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);}
+            ctx.drawImage(img,0,0,c.width,c.height);
+            c.toBlob(b=>{
                 if (!b) return;
-                const a = document.createElement("a");
+                const a=document.createElement("a");
                 const url = URL.createObjectURL(b);
-                a.href = url;
+                a.href=url;
                 a.download = `chart@${dpi}dpi${transparent ? '_transparent' : ''}.png`;
                 a.click();
                 setTimeout(() => URL.revokeObjectURL(url), 1000);
-            }, "image/png");
+            },"image/png");
         };
-        img.src = data;
+        img.src=data;
     })
-    $('#save').click(async function (e) {
-        e.preventDefault(); if (!myUserVars.isLoggedIn) { e.stopPropagation(); $('#ajax-login-modal').show(); return }
+    $('#save').click(async function(e){  
+        e.preventDefault(); if (!myUserVars.isLoggedIn) { e.stopPropagation(); $('#ajax-login-modal').show(); return} 
         $('#transparent-option').hide();
-        G.utils.clearActive(); const d = new Date(), z = n => ('0' + n).slice(-2), ts = [z(d.getDate()), z(d.getMonth() + 1), d.getFullYear()].join('-') + '_' + [z(d.getHours()), z(d.getMinutes()), z(d.getSeconds())].join('-');
-        const payload = {
-            v: 'v1.0', ts, table: G.state.hot.getData(), settings: G.getSettings(), col: G.state.colEnabled, html: sanitizeChartHTML(d3.select('#chart').html()),
-            overrideX: G.state.overrideX || null, overrideMultiY: G.state.overrideMultiY || {}, overrideXTicks: G.state.overrideXTicks || null,
-            overrideYTicks: G.state.overrideYTicks || {}, overrideTernaryTicks: G.state.overrideTernaryTicks || {},
-            overrideScaleformatX: G.state.overrideScaleformatX || null, overrideScaleformatY: G.state.overrideScaleformatY || {},
-            overrideCustomTicksX: G.state.overrideCustomTicksX || null, overrideCustomTicksY: G.state.overrideCustomTicksY || {},
-            overrideCustomTicksTernary: G.state.overrideCustomTicksTernary || {}, overrideTernary: G.state.overrideTernary || {},
-            minorTickOn: G.state.minorTickOn || {}, useCustomTicksOn: G.state.useCustomTicksOn || {},
-            transactionId: G.matchXRD && typeof G.matchXRD.getTransactionId === 'function' ? G.matchXRD.getTransactionId() : 0
-        };
-        const u = URL.createObjectURL(new Blob([JSON.stringify(payload)])), a = document.createElement('a'), name = await htmlPrompt("Enter file name", `Project_${ts}`); if (!name) return; a.href = u; a.download = `${name}.instanano`;
-        document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(u);
-    })
-    G.importState = function (raw) {
+        G.utils.clearActive(); const d=new Date(), z=n=>('0'+n).slice(-2), ts=[z(d.getDate()), z(d.getMonth()+1), d.getFullYear()].join('-')+'_'+[z(d.getHours()),z(d.getMinutes()),z(d.getSeconds())].join('-'); 
+        const payload={v:'v1.0', ts, table:G.state.hot.getData(), settings:G.getSettings(), col:G.state.colEnabled, html:sanitizeChartHTML(d3.select('#chart').html()),
+        overrideX:G.state.overrideX||null, overrideMultiY:G.state.overrideMultiY||{}, overrideXTicks:G.state.overrideXTicks||null,
+        overrideYTicks:G.state.overrideYTicks||{}, overrideTernaryTicks:G.state.overrideTernaryTicks||{}, 
+        overrideScaleformatX:G.state.overrideScaleformatX||null, overrideScaleformatY:G.state.overrideScaleformatY||{},
+        overrideCustomTicksX:G.state.overrideCustomTicksX||null, overrideCustomTicksY:G.state.overrideCustomTicksY||{},
+        overrideCustomTicksTernary:G.state.overrideCustomTicksTernary||{}, overrideTernary:G.state.overrideTernary||{}, 
+        minorTickOn: G.state.minorTickOn || {}, useCustomTicksOn:G.state.useCustomTicksOn||{}};
+        const u=URL.createObjectURL(new Blob([JSON.stringify(payload)])), a=document.createElement('a'), name = await htmlPrompt( "Enter file name", `Project_${ts}`); if(!name) return; a.href=u; a.download=`${name}.instanano`; 
+        document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(u);})
+    G.importState = function(raw){ 
         const s = normalizeImportState(raw);
         if (!s) { alert("Invalid .instanano file."); return; }
-        G.state.hot.loadData(s.table); G.state.colEnabled = s.col; G.state.overrideX = s.overrideX; G.state.overrideMultiY = s.overrideMultiY;
-        G.state.overrideXTicks = s.overrideXTicks; G.state.overrideYTicks = s.overrideYTicks; G.state.overrideTernaryTicks = s.overrideTernaryTicks;
+        G.state.hot.loadData(s.table); G.state.colEnabled=s.col; G.state.overrideX = s.overrideX; G.state.overrideMultiY = s.overrideMultiY;
+        G.state.overrideXTicks= s.overrideXTicks; G.state.overrideYTicks = s.overrideYTicks; G.state.overrideTernaryTicks = s.overrideTernaryTicks;
         G.state.overrideScaleformatX = s.overrideScaleformatX; G.state.overrideScaleformatY = s.overrideScaleformatY;
         G.state.overrideCustomTicksX = s.overrideCustomTicksX; G.state.overrideCustomTicksY = s.overrideCustomTicksY;
-        G.state.overrideCustomTicksTernary = s.overrideCustomTicksTernary; G.state.overrideTernary = s.overrideTernary;
-        G.state.minorTickOn = s.minorTickOn || {}; G.state.useCustomTicksOn = s.useCustomTicksOn || {};
-        d3.selectAll('input[type="checkbox"][data-col]').each(function () { this.checked = G.state.colEnabled[this.dataset.col] });
+        G.state.overrideCustomTicksTernary = s.overrideCustomTicksTernary; G.state.overrideTernary = s.overrideTernary; 
+        G.state.minorTickOn = s.minorTickOn || {}; G.state.useCustomTicksOn=s.useCustomTicksOn||{};
+        d3.selectAll('input[type="checkbox"][data-col]').each(function(){this.checked=G.state.colEnabled[this.dataset.col]});
         const typeRadio = s.settings.type ? document.getElementById(s.settings.type) : null;
         if (typeRadio) typeRadio.checked = true;
-        if (s.settings.mode) {
-            const axisRadio = document.querySelector(`input[name="axistitles"][value="${s.settings.mode}"]`);
-            if (axisRadio) axisRadio.checked = true;
-        }
+        if (s.settings.mode) { const axisRadio = document.querySelector(`input[name="axistitles"][value="${s.settings.mode}"]`); 
+        if (axisRadio) axisRadio.checked = true;}
         G.state.hot.render(); G.axis.resetScales(false); G.renderChart();
         const ratioRadio = s.settings.ratio ? document.querySelector(`[name="aspectratio"][value="${s.settings.ratio}"]`) : null;
         if (ratioRadio) ratioRadio.checked = true;
         const modeRadio = s.settings.mode ? document.querySelector(`[name="axistitles"][value="${s.settings.mode}"]`) : null;
         if (modeRadio) modeRadio.checked = true;
-        Object.entries(s.settings).forEach(([k, v]) => {
+        Object.entries(s.settings).forEach(([k,v]) => {
             if (/^(type|ratio|mode)$/.test(k) || v == null) return;
             const input = document.getElementById(k);
             if (input) input.value = v;
         });
-        d3.select('#chart').html(s.html); G.features.prepareShapeLayer(); d3.selectAll('.shape-group').each(function () { G.features.makeShapeInteractive(d3.select(this)) });
-        d3.select('#chart').html(s.html); G.features.prepareShapeLayer(); d3.selectAll('.shape-group').each(function () { G.features.makeShapeInteractive(d3.select(this)) });
+        d3.select('#chart').html(s.html); G.features.prepareShapeLayer(); d3.selectAll('.shape-group').each(function(){G.features.makeShapeInteractive(d3.select(this))});
         d3.selectAll('foreignObject.user-text,g.legend-group,g.axis-title').call(G.utils.applyDrag); G.axis.tickEditing(d3.select('#chart svg'));
-        if (s.transactionId && G.matchXRD && typeof G.matchXRD.setTransactionId === 'function') {
-            G.matchXRD.setTransactionId(s.transactionId);
-        }
     }
 })(window.GraphPlotter);
 (function(G) {
