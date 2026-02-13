@@ -156,6 +156,7 @@ window.GraphPlotter = window.GraphPlotter || {
             if (e.target.matches('input[type="checkbox"][data-col]')) {
                 const col = +e.target.dataset.col;
                 G.state.colEnabled[col] = e.target.checked;
+                if (G.matchXRD) { G.matchXRD.lockActive = false; G.matchXRD.lockedPeaks = []; G.matchXRD.lockInfo = null; G.matchXRD.render(); }
                 G.state.hot.render();
                 G.axis.resetScales(false);
                 G.renderChart(); checkEmptyColumns();}});
@@ -1539,7 +1540,7 @@ window.GraphPlotter = window.GraphPlotter || {
         if (maxInt > 0) peaks.forEach(p => p.normInt = (p.intensity / maxInt) * 100);
     };
     async function getTableSHA() {
-        const raw = JSON.stringify(G.state.hot.getData());
+        const raw = JSON.stringify({ t: G.state.hot.getData(), c: G.state.colEnabled });
         const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
         return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
     }
@@ -1734,18 +1735,22 @@ window.GraphPlotter = window.GraphPlotter || {
         getSampleCount,
         getTableSHA,
         checkCredit: async () => { const r = await ajaxPost('instanano_check_credit'); return r?.success ? r.data : null; },
+        computeLockHash: async (peaks) => {
+            const tableHash = await getTableSHA();
+            const peaksHash = await getPeaksHash(peaks);
+            const lockRaw = `${LOCK_VERSION}|${tableHash}|${peaksHash}`;
+            const lockHash = await sha256Hex(lockRaw);
+            return { lock_hash: lockHash, table_hash: tableHash, peaks_hash: peaksHash, lock_version: LOCK_VERSION };
+        },
         unlock: async () => {
             if (!selectedPeaks.length) return { ok: false, message: 'No peaks selected.' };
             const n = getSampleCount();
-            const tableHash = await getTableSHA();
-            const peaksHash = await getPeaksHash(selectedPeaks);
-            const lockRaw = `${LOCK_VERSION}|${tableHash}|${peaksHash}`;
-            const lockHash = await sha256Hex(lockRaw);
-            const r = await ajaxPost('instanano_use_credit', { lock_hash: lockHash, lock_version: LOCK_VERSION, sample_count: n });
+            const lock = await G.matchXRD.computeLockHash(selectedPeaks);
+            const r = await ajaxPost('instanano_use_credit', { lock_hash: lock.lock_hash, lock_version: lock.lock_version, sample_count: n });
             if (!r?.success || !r?.data?.signature) return { ok: false, message: r?.data?.message || 'Failed.', remaining: r?.data?.remaining };
             G.matchXRD.lockActive = true;
             G.matchXRD.lockedPeaks = selectedPeaks.map(p => ({ x: p.x, intensity: p.intensity, normInt: p.normInt }));
-            G.matchXRD.lockInfo = { lock_hash: lockHash, signature: r.data.signature, lock_version: LOCK_VERSION, table_hash: tableHash, peaks_hash: peaksHash, verified: true };
+            G.matchXRD.lockInfo = { lock_hash: lock.lock_hash, signature: r.data.signature, lock_version: lock.lock_version, table_hash: lock.table_hash, peaks_hash: lock.peaks_hash, verified: true };
             return { ok: true, matches: lastSearchResults, remaining: r.data.remaining, already_done: false };
         },
         fetchRef: async (refId) => {
@@ -1917,35 +1922,54 @@ window.GraphPlotter = window.GraphPlotter || {
             const peaks = s.xrd_peaks.map(p => ({ x: Number(p.x), intensity: Number(p.intensity ?? 0), normInt: 0 }));
             const maxInt = peaks.length ? Math.max(...peaks.map(p => p.intensity)) : 0;
             if (maxInt > 0) peaks.forEach(p => p.normInt = (p.intensity / maxInt) * 100);
-            const fd = new FormData();
-            fd.append('action', 'instanano_verify_lock');
-            fd.append('nonce', instananoCredits.nonce);
-            fd.append('lock_hash', s.xrd_lock_hash);
-            fd.append('signature', s.xrd_signature);
-            if (s.xrd_lock_version != null) fd.append('lock_version', s.xrd_lock_version);
-            fetch(instananoCredits.ajaxUrl, { method: 'POST', body: fd })
-                .then(r => r.json())
-                .then(res => {
-                    if (!G.matchXRD) return;
-                    if (res?.success && res.data?.valid) {
-                        G.matchXRD.lockActive = true;
-                        G.matchXRD.lockedPeaks = peaks;
-                        G.matchXRD.lockInfo = { lock_hash: s.xrd_lock_hash, signature: s.xrd_signature, lock_version: s.xrd_lock_version ?? null, table_hash: s.xrd_table_hash || null, peaks_hash: s.xrd_peaks_hash || null, verified: true };
-                        G.matchXRD.render();
-                    } else {
+            const compute = G.matchXRD?.computeLockHash;
+            if (compute) {
+                compute(peaks).then(lock => {
+                    if (!lock || lock.lock_hash !== s.xrd_lock_hash) {
+                        if (!G.matchXRD) return;
                         G.matchXRD.lockActive = false;
                         G.matchXRD.lockedPeaks = [];
                         G.matchXRD.lockInfo = null;
                         G.matchXRD.render();
+                        return;
                     }
-                })
-                .catch(() => {
+                    const fd = new FormData();
+                    fd.append('action', 'instanano_verify_lock');
+                    fd.append('nonce', instananoCredits.nonce);
+                    fd.append('lock_hash', s.xrd_lock_hash);
+                    fd.append('signature', s.xrd_signature);
+                    if (s.xrd_lock_version != null) fd.append('lock_version', s.xrd_lock_version);
+                    fetch(instananoCredits.ajaxUrl, { method: 'POST', body: fd })
+                        .then(r => r.json())
+                        .then(res => {
+                            if (!G.matchXRD) return;
+                            if (res?.success && res.data?.valid) {
+                                G.matchXRD.lockActive = true;
+                                G.matchXRD.lockedPeaks = peaks;
+                                G.matchXRD.lockInfo = { lock_hash: s.xrd_lock_hash, signature: s.xrd_signature, lock_version: s.xrd_lock_version ?? null, table_hash: lock.table_hash, peaks_hash: lock.peaks_hash, verified: true };
+                                G.matchXRD.render();
+                            } else {
+                                G.matchXRD.lockActive = false;
+                                G.matchXRD.lockedPeaks = [];
+                                G.matchXRD.lockInfo = null;
+                                G.matchXRD.render();
+                            }
+                        })
+                        .catch(() => {
+                            if (!G.matchXRD) return;
+                            G.matchXRD.lockActive = false;
+                            G.matchXRD.lockedPeaks = [];
+                            G.matchXRD.lockInfo = null;
+                            G.matchXRD.render();
+                        });
+                }).catch(() => {
                     if (!G.matchXRD) return;
                     G.matchXRD.lockActive = false;
                     G.matchXRD.lockedPeaks = [];
                     G.matchXRD.lockInfo = null;
                     G.matchXRD.render();
                 });
+            }
         }
     }
 })(window.GraphPlotter);
