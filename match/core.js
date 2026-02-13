@@ -90,6 +90,7 @@
     icon5?.addEventListener('change', async () => {
         setPanelMessage($xrd, XRD_MSG);
         refreshCredits();
+        G.matchXRD?.render();
     });
     icon6?.addEventListener('change', () => { G.matchXRD?.clear(); setPanelMessage($std, STD_MSG); });
     ['click', 'mousedown', 'pointerdown', 'focusin', 'input', 'keydown', 'keyup'].forEach(ev => fs?.addEventListener(ev, e => { e.stopPropagation(); setTimeout(() => G.matchXRD?.render(), 10); }));
