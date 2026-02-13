@@ -1488,8 +1488,6 @@ window.GraphPlotter = window.GraphPlotter || {
     let elementFilter = { elements: [], mode: 'and', count: 0 };
     let lastSearchResults = null;
     let isLocked = true;
-    let paymentSignature = null;
-    let lockedPeaksToken = null; // JSON string of peaks used for signing
     const metaCache = new Map();
     const indexCache = new Map();
     const chunkCache = new Map();
@@ -1540,12 +1538,6 @@ window.GraphPlotter = window.GraphPlotter || {
         const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
         return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
     }
-    
-    function getPeaksJSON() {
-        // Sort peaks to ensure consistent JSON for signing
-        const sorted = [...selectedPeaks].sort((a, b) => a.x - b.x);
-        return JSON.stringify(sorted.map(p => ({ x: p.x, i: p.intensity })));
-    }
     function getSampleCount() {
         const data = G.state.hot.getData();
         return data[0].filter((h, i) => h === 'Y-axis' && G.state.colEnabled[i] !== false).length || 1;
@@ -1570,19 +1562,13 @@ window.GraphPlotter = window.GraphPlotter || {
             svg.selectAll('.xrd-user-peak').remove();
             selectedPeaks.forEach((p, i) => {
                 const xp = G.state.lastXScale(p.x);
-                const line = svg.append('line').attr('class', 'xrd-user-peak')
+                svg.append('line').attr('class', 'xrd-user-peak')
                     .attr('x1', xp).attr('x2', xp)
                     .attr('y1', G.config.DIM.H - G.config.DIM.MB)
                     .attr('y2', G.config.DIM.H - G.config.DIM.MB - 7)
-                    .attr('stroke', 'red').attr('stroke-width', 3);
-                
-                // Only allow removal if NOT locked/paid
-                if (isLocked) {
-                    line.style('cursor', 'pointer')
-                        .on('click', (e) => { e.stopPropagation(); selectedPeaks.splice(i, 1); normalizeIntensity(); if (!selectedPeaks.length) updateLabel("Select Peak"); G.matchXRD.render(); });
-                } else {
-                    line.style('cursor', 'not-allowed').attr('stroke', '#cc0000'); // Darker red to indicate locked
-                }
+                    .attr('stroke', 'red').attr('stroke-width', 3)
+                    .style('cursor', 'pointer')
+                    .on('click', (e) => { e.stopPropagation(); selectedPeaks.splice(i, 1); normalizeIntensity(); if (!selectedPeaks.length) updateLabel("Select Peak"); G.matchXRD.render(); });
             });
         },
         showRef: (peaks, ints) => {
@@ -1600,10 +1586,7 @@ window.GraphPlotter = window.GraphPlotter || {
                     .attr('stroke-dasharray', '4,2').style('pointer-events', 'none');
             });
         },
-        clear: () => { 
-            if (!isLocked) return; // Prevent clearing if paid/unlocked
-            selectedPeaks = []; lastSearchResults = null; d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); updateLabel("Select Peak"); 
-        },
+        clear: () => { selectedPeaks = []; lastSearchResults = null; d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); updateLabel("Select Peak"); },
         validate: (input) => {
             if (!input.trim()) return { valid: true, invalid: [] };
             const parts = input.split(',').map(e => e.trim()).filter(e => e);
@@ -1695,24 +1678,11 @@ window.GraphPlotter = window.GraphPlotter || {
             setProgress('done');
             lastSearchResults = final;
 
-
             isLocked = true;
             if (typeof instananoCredits !== 'undefined') {
                 const sha = await getTableSHA();
-                const pjson = getPeaksJSON();
-                // If we have a stored signature, try to verify it
-                if (paymentSignature) {
-                    const v = await ajaxPost('instanano_verify_sha', { sha_hash: sha, signature: paymentSignature, peaks: lockedPeaksToken || pjson });
-                    if (v?.success && v.data.valid) {
-                         isLocked = false;
-                    } else {
-                        // Signature invalid or does not match current state -> Revoke
-                        paymentSignature = null;
-                        lockedPeaksToken = null;
-                    }
-                }
-                // Note: We NO LONGER check for just 'exists'. We require a signature.
-                // This enforces the "Raw Data = New Payment" rule.
+                const v = await ajaxPost('instanano_verify_sha', { sha_hash: sha });
+                if (v?.success && v.data.exists) isLocked = false;
             }
 
             if (isLocked) {
@@ -1734,53 +1704,27 @@ window.GraphPlotter = window.GraphPlotter || {
         unlock: async () => {
             const sha = await getTableSHA();
             const n = getSampleCount();
-            const pjson = getPeaksJSON();
-            const r = await ajaxPost('instanano_use_credit', { sha_hash: sha, sample_count: n, peaks: pjson });
+            const r = await ajaxPost('instanano_use_credit', { sha_hash: sha, sample_count: n });
             if (!r?.success) return { ok: false, message: r?.data?.message || 'Failed.', remaining: r?.data?.remaining };
-            
             isLocked = false;
-            if (r.data.signature) {
-                paymentSignature = r.data.signature;
-                lockedPeaksToken = pjson; // Store what we signed
-            }
-            G.matchXRD.render(); // Re-render to update lock UI
-            return { ok: true, matches: lastSearchResults, remaining: r.data.remaining, signature: r.data.signature };
+            return { ok: true, matches: lastSearchResults, remaining: r.data.remaining, already_done: r.data.already_done };
         },
         fetchRef: async (refId) => {
-            const sha = await getTableSHA();
-            // Pass signature + peaks for verification
-            const r = await ajaxPost('instanano_xrd_fetch_refs', { 
-                ref_ids: [refId], 
-                sha_hash: sha, 
-                signature: paymentSignature || '',
-                peaks: lockedPeaksToken || getPeaksJSON()
-            });
+            const r = await ajaxPost('instanano_xrd_fetch_refs', { ref_ids: [refId] });
             return r?.success ? r.data[refId] : null;
         },
-        isLocked: () => isLocked,
-        getSignature: () => ({ signature: paymentSignature, lockedPeaks: lockedPeaksToken }),
-        importSignature: (sig, peaks) => {
-            paymentSignature = sig;
-            lockedPeaksToken = peaks;
-            // If we imported a signature, we assume it *might* be valid, but 'search' will verify it against the server.
-            // But immediate UI update:
-            if (sig) isLocked = false; 
-            G.matchXRD.render();
-        }
+        isLocked: () => isLocked
     };
 })(window.GraphPlotter);
-(function (G) {
+(function(G) {
     "use strict";
     const MAX_CHART_HTML_LENGTH = 2_000_000;
     async function htmlPrompt(message, defaultValue) {
-        return new Promise(res => {
-            $('#html-prompt-message').text(message); $('#html-prompt-input').val(defaultValue);
-            $('#popup-prompt-overlay').css('display', 'flex').fadeIn(150); $('#html-prompt-input').focus().off('keydown').on('keydown', e => {
-                if (e.key === 'Enter') $('#html-prompt-ok').click();
-            });
-            $('#html-prompt-ok').off('click').on('click', () => { $('#popup-prompt-overlay').fadeOut(150); res($('#html-prompt-input').val()); });
-            $('#html-prompt-cancel').off('click').on('click', () => { $('#popup-prompt-overlay').fadeOut(150); res(null); });
-        });
+        return new Promise(res => { $('#html-prompt-message').text(message); $('#html-prompt-input').val(defaultValue); 
+        $('#popup-prompt-overlay').css('display','flex').fadeIn(150); $('#html-prompt-input').focus().off('keydown').on('keydown', e => {
+        if (e.key === 'Enter')   $('#html-prompt-ok').click();});
+        $('#html-prompt-ok').off('click').on('click', () => { $('#popup-prompt-overlay').fadeOut(150); res($('#html-prompt-input').val());});
+        $('#html-prompt-cancel').off('click').on('click', () => { $('#popup-prompt-overlay').fadeOut(150); res(null);});});
     }
     function sanitizeChartHTML(raw) {
         if (typeof raw !== "string") return "";
@@ -1831,98 +1775,80 @@ window.GraphPlotter = window.GraphPlotter || {
             useCustomTicksOn: raw.useCustomTicksOn && typeof raw.useCustomTicksOn === "object" ? raw.useCustomTicksOn : {}
         };
     }
-    $('#download').click(async function (e) {
-        e.preventDefault(); if (!myUserVars.isLoggedIn) { e.stopPropagation(); $('#ajax-login-modal').show(); return }
+    $('#download').click(async function(e){
+        e.preventDefault(); if (!myUserVars.isLoggedIn) { e.stopPropagation(); $('#ajax-login-modal').show(); return}     
         $('#transparent-option').show();
-        const input = await htmlPrompt("Enter DPI  (e.g. 150, 300, or 600 etc.)", "600");
-        if (input === null) return;
-        const dpi = parseFloat(input);
-        if (isNaN(dpi) || dpi <= 0) return alert("Invalid DPI");
+        const input = await htmlPrompt( "Enter DPI  (e.g. 150, 300, or 600 etc.)", "600");
+        if(input===null)return;
+        const dpi=parseFloat(input);
+        if(isNaN(dpi)||dpi<=0)return alert("Invalid DPI");
         const transparent = document.getElementById('html-prompt-transparent').checked;
-        const scale = dpi / 96;
-        const svg = document.querySelector("#chart svg");
-        if (!svg) return;
-        const clone = svg.cloneNode(true);
-        clone.querySelectorAll("foreignObject div[contenteditable]").forEach(d => d.style.border = "none");
-        clone.querySelectorAll(".outline[visibility='visible']").forEach(e => e.setAttribute("visibility", "hidden"));
-        clone.querySelectorAll("text[contenteditable='true']").forEach(t => { t.removeAttribute("contenteditable"); t.style.outline = "none"; });
-        clone.setAttribute("style", `background:${transparent ? 'transparent' : '#fff'};font-family:Arial,sans-serif;`);
-        const data = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(new XMLSerializer().serializeToString(clone));
-        const img = new Image();
-        img.onload = () => {
-            const c = document.createElement("canvas");
-            c.width = img.width * scale; c.height = img.height * scale;
-            const ctx = c.getContext("2d");
-            if (!transparent) { ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height); }
-            ctx.drawImage(img, 0, 0, c.width, c.height);
-            c.toBlob(b => {
+        const scale=dpi/96;
+        const svg=document.querySelector("#chart svg");
+        if(!svg)return;
+        const clone=svg.cloneNode(true);
+        clone.querySelectorAll("foreignObject div[contenteditable]").forEach(d=>d.style.border="none");
+        clone.querySelectorAll(".outline[visibility='visible']").forEach(e=>e.setAttribute("visibility","hidden"));
+        clone.querySelectorAll("text[contenteditable='true']").forEach(t => { t.removeAttribute("contenteditable"); t.style.outline = "none";});
+        clone.setAttribute("style",`background:${transparent ? 'transparent' : '#fff'};font-family:Arial,sans-serif;`);
+        const data="data:image/svg+xml;charset=utf-8,"+encodeURIComponent(new XMLSerializer().serializeToString(clone));
+        const img=new Image();
+        img.onload=()=>{
+            const c=document.createElement("canvas");
+            c.width=img.width*scale; c.height=img.height*scale;
+            const ctx=c.getContext("2d");
+            if (!transparent) { ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);}
+            ctx.drawImage(img,0,0,c.width,c.height);
+            c.toBlob(b=>{
                 if (!b) return;
-                const a = document.createElement("a");
+                const a=document.createElement("a");
                 const url = URL.createObjectURL(b);
-                a.href = url;
+                a.href=url;
                 a.download = `chart@${dpi}dpi${transparent ? '_transparent' : ''}.png`;
                 a.click();
                 setTimeout(() => URL.revokeObjectURL(url), 1000);
-            }, "image/png");
+            },"image/png");
         };
-        img.src = data;
+        img.src=data;
     })
-    $('#save').click(async function (e) {
-        e.preventDefault(); if (!myUserVars.isLoggedIn) { e.stopPropagation(); $('#ajax-login-modal').show(); return }
+    $('#save').click(async function(e){  
+        e.preventDefault(); if (!myUserVars.isLoggedIn) { e.stopPropagation(); $('#ajax-login-modal').show(); return} 
         $('#transparent-option').hide();
-        G.utils.clearActive(); const d = new Date(), z = n => ('0' + n).slice(-2), ts = [z(d.getDate()), z(d.getMonth() + 1), d.getFullYear()].join('-') + '_' + [z(d.getHours()), z(d.getMinutes()), z(d.getSeconds())].join('-');
-
-        let xrdSig = null, xrdPeaks = null;
-        if (G.matchXRD && G.matchXRD.getSignature) {
-            const s = G.matchXRD.getSignature();
-            xrdSig = s.signature;
-            xrdPeaks = s.lockedPeaks;
-        }
-
-        const payload = {
-            v: 'v1.0', ts, table: G.state.hot.getData(), settings: G.getSettings(), col: G.state.colEnabled, html: sanitizeChartHTML(d3.select('#chart').html()),
-            overrideX: G.state.overrideX || null, overrideMultiY: G.state.overrideMultiY || {}, overrideXTicks: G.state.overrideXTicks || null,
-            overrideYTicks: G.state.overrideYTicks || {}, overrideTernaryTicks: G.state.overrideTernaryTicks || {},
-            overrideScaleformatX: G.state.overrideScaleformatX || null, overrideScaleformatY: G.state.overrideScaleformatY || {},
-            overrideCustomTicksX: G.state.overrideCustomTicksX || null, overrideCustomTicksY: G.state.overrideCustomTicksY || {},
-            overrideCustomTicksTernary: G.state.overrideCustomTicksTernary || {}, overrideTernary: G.state.overrideTernary || {},
-            minorTickOn: G.state.minorTickOn || {}, useCustomTicksOn: G.state.useCustomTicksOn || {},
-            xrd_signature: xrdSig, xrd_locked_peaks: xrdPeaks
-        };
-        const u = URL.createObjectURL(new Blob([JSON.stringify(payload)])), a = document.createElement('a'), name = await htmlPrompt("Enter file name", `Project_${ts}`); if (!name) return; a.href = u; a.download = `${name}.instanano`;
-        document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(u);
-    })
-    G.importState = function (raw) {
+        G.utils.clearActive(); const d=new Date(), z=n=>('0'+n).slice(-2), ts=[z(d.getDate()), z(d.getMonth()+1), d.getFullYear()].join('-')+'_'+[z(d.getHours()),z(d.getMinutes()),z(d.getSeconds())].join('-'); 
+        const payload={v:'v1.0', ts, table:G.state.hot.getData(), settings:G.getSettings(), col:G.state.colEnabled, html:sanitizeChartHTML(d3.select('#chart').html()),
+        overrideX:G.state.overrideX||null, overrideMultiY:G.state.overrideMultiY||{}, overrideXTicks:G.state.overrideXTicks||null,
+        overrideYTicks:G.state.overrideYTicks||{}, overrideTernaryTicks:G.state.overrideTernaryTicks||{}, 
+        overrideScaleformatX:G.state.overrideScaleformatX||null, overrideScaleformatY:G.state.overrideScaleformatY||{},
+        overrideCustomTicksX:G.state.overrideCustomTicksX||null, overrideCustomTicksY:G.state.overrideCustomTicksY||{},
+        overrideCustomTicksTernary:G.state.overrideCustomTicksTernary||{}, overrideTernary:G.state.overrideTernary||{}, 
+        minorTickOn: G.state.minorTickOn || {}, useCustomTicksOn:G.state.useCustomTicksOn||{}};
+        const u=URL.createObjectURL(new Blob([JSON.stringify(payload)])), a=document.createElement('a'), name = await htmlPrompt( "Enter file name", `Project_${ts}`); if(!name) return; a.href=u; a.download=`${name}.instanano`; 
+        document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(u);})
+    G.importState = function(raw){ 
         const s = normalizeImportState(raw);
         if (!s) { alert("Invalid .instanano file."); return; }
-        G.state.hot.loadData(s.table); G.state.colEnabled = s.col; G.state.overrideX = s.overrideX; G.state.overrideMultiY = s.overrideMultiY;
-        G.state.overrideXTicks = s.overrideXTicks; G.state.overrideYTicks = s.overrideYTicks; G.state.overrideTernaryTicks = s.overrideTernaryTicks;
+        G.state.hot.loadData(s.table); G.state.colEnabled=s.col; G.state.overrideX = s.overrideX; G.state.overrideMultiY = s.overrideMultiY;
+        G.state.overrideXTicks= s.overrideXTicks; G.state.overrideYTicks = s.overrideYTicks; G.state.overrideTernaryTicks = s.overrideTernaryTicks;
         G.state.overrideScaleformatX = s.overrideScaleformatX; G.state.overrideScaleformatY = s.overrideScaleformatY;
         G.state.overrideCustomTicksX = s.overrideCustomTicksX; G.state.overrideCustomTicksY = s.overrideCustomTicksY;
-        G.state.overrideCustomTicksTernary = s.overrideCustomTicksTernary; G.state.overrideTernary = s.overrideTernary;
-        G.state.minorTickOn = s.minorTickOn || {}; G.state.useCustomTicksOn = s.useCustomTicksOn || {};
-        d3.selectAll('input[type="checkbox"][data-col]').each(function () { this.checked = G.state.colEnabled[this.dataset.col] });
+        G.state.overrideCustomTicksTernary = s.overrideCustomTicksTernary; G.state.overrideTernary = s.overrideTernary; 
+        G.state.minorTickOn = s.minorTickOn || {}; G.state.useCustomTicksOn=s.useCustomTicksOn||{};
+        d3.selectAll('input[type="checkbox"][data-col]').each(function(){this.checked=G.state.colEnabled[this.dataset.col]});
         const typeRadio = s.settings.type ? document.getElementById(s.settings.type) : null;
         if (typeRadio) typeRadio.checked = true;
-        if (s.settings.mode) {
-            const axisRadio = document.querySelector(`input[name="axistitles"][value="${s.settings.mode}"]`);
-            if (axisRadio) axisRadio.checked = true;
-        }
+        if (s.settings.mode) { const axisRadio = document.querySelector(`input[name="axistitles"][value="${s.settings.mode}"]`); 
+        if (axisRadio) axisRadio.checked = true;}
         G.state.hot.render(); G.axis.resetScales(false); G.renderChart();
         const ratioRadio = s.settings.ratio ? document.querySelector(`[name="aspectratio"][value="${s.settings.ratio}"]`) : null;
         if (ratioRadio) ratioRadio.checked = true;
         const modeRadio = s.settings.mode ? document.querySelector(`[name="axistitles"][value="${s.settings.mode}"]`) : null;
         if (modeRadio) modeRadio.checked = true;
-        Object.entries(s.settings).forEach(([k, v]) => {
+        Object.entries(s.settings).forEach(([k,v]) => {
             if (/^(type|ratio|mode)$/.test(k) || v == null) return;
             const input = document.getElementById(k);
             if (input) input.value = v;
         });
-        if (G.matchXRD && G.matchXRD.importSignature) {
-            G.matchXRD.importSignature(raw.xrd_signature || null, raw.xrd_locked_peaks || null);
-        }
-
-        d3.select('#chart').html(s.html); G.features.prepareShapeLayer(); d3.selectAll('.shape-group').each(function () { G.features.makeShapeInteractive(d3.select(this)) });
+        d3.select('#chart').html(s.html); G.features.prepareShapeLayer(); d3.selectAll('.shape-group').each(function(){G.features.makeShapeInteractive(d3.select(this))});
         d3.selectAll('foreignObject.user-text,g.legend-group,g.axis-title').call(G.utils.applyDrag); G.axis.tickEditing(d3.select('#chart svg'));
     }
 })(window.GraphPlotter);
