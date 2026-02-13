@@ -158,35 +158,54 @@
             const peaks = s.xrd_peaks.map(p => ({ x: Number(p.x), intensity: Number(p.intensity ?? 0), normInt: 0 }));
             const maxInt = peaks.length ? Math.max(...peaks.map(p => p.intensity)) : 0;
             if (maxInt > 0) peaks.forEach(p => p.normInt = (p.intensity / maxInt) * 100);
-            const fd = new FormData();
-            fd.append('action', 'instanano_verify_lock');
-            fd.append('nonce', instananoCredits.nonce);
-            fd.append('lock_hash', s.xrd_lock_hash);
-            fd.append('signature', s.xrd_signature);
-            if (s.xrd_lock_version != null) fd.append('lock_version', s.xrd_lock_version);
-            fetch(instananoCredits.ajaxUrl, { method: 'POST', body: fd })
-                .then(r => r.json())
-                .then(res => {
-                    if (!G.matchXRD) return;
-                    if (res?.success && res.data?.valid) {
-                        G.matchXRD.lockActive = true;
-                        G.matchXRD.lockedPeaks = peaks;
-                        G.matchXRD.lockInfo = { lock_hash: s.xrd_lock_hash, signature: s.xrd_signature, lock_version: s.xrd_lock_version ?? null, table_hash: s.xrd_table_hash || null, peaks_hash: s.xrd_peaks_hash || null, verified: true };
-                        G.matchXRD.render();
-                    } else {
+            const compute = G.matchXRD?.computeLockHash;
+            if (compute) {
+                compute(peaks).then(lock => {
+                    if (!lock || lock.lock_hash !== s.xrd_lock_hash) {
+                        if (!G.matchXRD) return;
                         G.matchXRD.lockActive = false;
                         G.matchXRD.lockedPeaks = [];
                         G.matchXRD.lockInfo = null;
                         G.matchXRD.render();
+                        return;
                     }
-                })
-                .catch(() => {
+                    const fd = new FormData();
+                    fd.append('action', 'instanano_verify_lock');
+                    fd.append('nonce', instananoCredits.nonce);
+                    fd.append('lock_hash', s.xrd_lock_hash);
+                    fd.append('signature', s.xrd_signature);
+                    if (s.xrd_lock_version != null) fd.append('lock_version', s.xrd_lock_version);
+                    fetch(instananoCredits.ajaxUrl, { method: 'POST', body: fd })
+                        .then(r => r.json())
+                        .then(res => {
+                            if (!G.matchXRD) return;
+                            if (res?.success && res.data?.valid) {
+                                G.matchXRD.lockActive = true;
+                                G.matchXRD.lockedPeaks = peaks;
+                                G.matchXRD.lockInfo = { lock_hash: s.xrd_lock_hash, signature: s.xrd_signature, lock_version: s.xrd_lock_version ?? null, table_hash: lock.table_hash, peaks_hash: lock.peaks_hash, verified: true };
+                                G.matchXRD.render();
+                            } else {
+                                G.matchXRD.lockActive = false;
+                                G.matchXRD.lockedPeaks = [];
+                                G.matchXRD.lockInfo = null;
+                                G.matchXRD.render();
+                            }
+                        })
+                        .catch(() => {
+                            if (!G.matchXRD) return;
+                            G.matchXRD.lockActive = false;
+                            G.matchXRD.lockedPeaks = [];
+                            G.matchXRD.lockInfo = null;
+                            G.matchXRD.render();
+                        });
+                }).catch(() => {
                     if (!G.matchXRD) return;
                     G.matchXRD.lockActive = false;
                     G.matchXRD.lockedPeaks = [];
                     G.matchXRD.lockInfo = null;
                     G.matchXRD.render();
                 });
+            }
         }
     }
 })(window.GraphPlotter);
