@@ -1488,6 +1488,8 @@ window.GraphPlotter = window.GraphPlotter || {
     let elementFilter = { elements: [], mode: 'and', count: 0 };
     let lastSearchResults = null;
     let isLocked = true;
+    let matchSignature = null;
+    let isUiLocked = false;
     const metaCache = new Map();
     const indexCache = new Map();
     const chunkCache = new Map();
@@ -1554,9 +1556,15 @@ window.GraphPlotter = window.GraphPlotter || {
         const r = await fetch(instananoCredits.ajaxUrl, { method: 'POST', body: fd });
         return r.json();
     }
-
     G.matchXRD = {
-        addPeak: (x, intensity) => { selectedPeaks.push({ x, intensity, normInt: 0 }); normalizeIntensity(); G.matchXRD.render(); updateLabel("Search Database"); },
+        addPeak: (x, intensity) => {
+            if (isUiLocked) { alert("Cannot modify peaks in a Paid file. Create a new plot to edit."); return; }
+            selectedPeaks.push({ x, intensity, normInt: 0 }); normalizeIntensity(); G.matchXRD.render(); updateLabel("Search Database");
+        },
+        removePeak: (i) => {
+            if (isUiLocked) { alert("Cannot modify peaks in a Paid file. Create a new plot to edit."); return; }
+            selectedPeaks.splice(i, 1); normalizeIntensity(); if (!selectedPeaks.length) updateLabel("Select Peak"); G.matchXRD.render();
+        },
         render: () => {
             const svg = d3.select('#chart svg');
             svg.selectAll('.xrd-user-peak').remove();
@@ -1568,7 +1576,7 @@ window.GraphPlotter = window.GraphPlotter || {
                     .attr('y2', G.config.DIM.H - G.config.DIM.MB - 7)
                     .attr('stroke', 'red').attr('stroke-width', 3)
                     .style('cursor', 'pointer')
-                    .on('click', (e) => { e.stopPropagation(); selectedPeaks.splice(i, 1); normalizeIntensity(); if (!selectedPeaks.length) updateLabel("Select Peak"); G.matchXRD.render(); });
+                    .on('click', (e) => { e.stopPropagation(); G.matchXRD.removePeak(i); });
             });
         },
         showRef: (peaks, ints) => {
@@ -1586,7 +1594,10 @@ window.GraphPlotter = window.GraphPlotter || {
                     .attr('stroke-dasharray', '4,2').style('pointer-events', 'none');
             });
         },
-        clear: () => { selectedPeaks = []; lastSearchResults = null; d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); updateLabel("Select Peak"); },
+        clear: () => {
+            if (isUiLocked) { alert("Cannot clear peaks in a Paid file."); return; }
+            selectedPeaks = []; lastSearchResults = null; d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); updateLabel("Select Peak");
+        },
         validate: (input) => {
             if (!input.trim()) return { valid: true, invalid: [] };
             const parts = input.split(',').map(e => e.trim()).filter(e => e);
@@ -1677,37 +1688,58 @@ window.GraphPlotter = window.GraphPlotter || {
             final.sort((a, b) => b.score - a.score);
             setProgress('done');
             lastSearchResults = final;
-
             isLocked = true;
-            if (typeof instananoCredits !== 'undefined') {
-                const sha = await getTableSHA();
-                const v = await ajaxPost('instanano_verify_sha', { sha_hash: sha });
-                if (v?.success && v.data.exists) isLocked = false;
-            }
-
-            if (isLocked) {
-                updateLabel(`Found ${final.length}`);
-                const preview = final.slice(0, 5).map(m => ({
-                    ...m,
-                    peaks: m.peaks.slice(0, 3),
-                    intensities: m.intensities.slice(0, 3)
-                }));
-                return { matches: preview, cols: ['Ref ID', 'Formula', 'Match (%)'], locked: true };
-            }
-
-            updateLabel(`Found ${final.length} (already unlocked)`);
-            return { matches: final, cols: ['Ref ID', 'Formula', 'Match (%)'], locked: false };
+            isUiLocked = false;
+            updateLabel(`Found ${final.length}`);
+            const preview = final.slice(0, 5).map(m => ({
+                ...m,
+                peaks: m.peaks.slice(0, 3),
+                intensities: m.intensities.slice(0, 3)
+            }));
+            return { matches: preview, cols: ['Ref ID', 'Formula', 'Match (%)'], locked: true };
         },
         getSampleCount,
         getTableSHA,
+        getPeakData: () => JSON.stringify(selectedPeaks),
+        getMatchSignature: () => matchSignature,
+        getIsUiLocked: () => isUiLocked,
         checkCredit: async () => { const r = await ajaxPost('instanano_check_credit'); return r?.success ? r.data : null; },
         unlock: async () => {
             const sha = await getTableSHA();
             const n = getSampleCount();
+            // 1. Pay
             const r = await ajaxPost('instanano_use_credit', { sha_hash: sha, sample_count: n });
             if (!r?.success) return { ok: false, message: r?.data?.message || 'Failed.', remaining: r?.data?.remaining };
-            isLocked = false;
-            return { ok: true, matches: lastSearchResults, remaining: r.data.remaining, already_done: r.data.already_done };
+
+            // 2. Sign
+            const peaksJson = JSON.stringify(selectedPeaks);
+            const s = await ajaxPost('instanano_sign_match', { sha_hash: sha, peaks: peaksJson });
+            if (s?.success && s.data.signature) {
+                isLocked = false;
+                matchSignature = s.data.signature;
+                isUiLocked = true;
+                return { ok: true, matches: lastSearchResults, remaining: r.data.remaining, already_done: r.data.already_done };
+            } else {
+                return { ok: false, message: 'Payment successful but signature generation failed. Contact support.', remaining: r.data.remaining };
+            }
+        },
+        importState: async (peaks, signature) => {
+            if (!peaks || !Array.isArray(peaks) || !signature) return false;
+            const sha = await getTableSHA();
+            const peaksJson = JSON.stringify(peaks);
+            const v = await ajaxPost('instanano_validate_match', { sha_hash: sha, peaks: peaksJson, signature: signature });
+            if (v?.success && v.data.valid) {
+                selectedPeaks = peaks;
+                matchSignature = signature;
+                isLocked = false;
+                isUiLocked = true;
+                normalizeIntensity();
+                G.matchXRD.render();
+                return true;
+            } else {
+                alert("Security Verification Failed: This file's signature does not match its data. It may have been tampered with or belongs to a different dataset.");
+                return false;
+            }
         },
         fetchRef: async (refId) => {
             const r = await ajaxPost('instanano_xrd_fetch_refs', { ref_ids: [refId] });
@@ -1716,15 +1748,18 @@ window.GraphPlotter = window.GraphPlotter || {
         isLocked: () => isLocked
     };
 })(window.GraphPlotter);
-(function(G) {
+(function (G) {
     "use strict";
     const MAX_CHART_HTML_LENGTH = 2_000_000;
     async function htmlPrompt(message, defaultValue) {
-        return new Promise(res => { $('#html-prompt-message').text(message); $('#html-prompt-input').val(defaultValue); 
-        $('#popup-prompt-overlay').css('display','flex').fadeIn(150); $('#html-prompt-input').focus().off('keydown').on('keydown', e => {
-        if (e.key === 'Enter')   $('#html-prompt-ok').click();});
-        $('#html-prompt-ok').off('click').on('click', () => { $('#popup-prompt-overlay').fadeOut(150); res($('#html-prompt-input').val());});
-        $('#html-prompt-cancel').off('click').on('click', () => { $('#popup-prompt-overlay').fadeOut(150); res(null);});});
+        return new Promise(res => {
+            $('#html-prompt-message').text(message); $('#html-prompt-input').val(defaultValue);
+            $('#popup-prompt-overlay').css('display', 'flex').fadeIn(150); $('#html-prompt-input').focus().off('keydown').on('keydown', e => {
+                if (e.key === 'Enter') $('#html-prompt-ok').click();
+            });
+            $('#html-prompt-ok').off('click').on('click', () => { $('#popup-prompt-overlay').fadeOut(150); res($('#html-prompt-input').val()); });
+            $('#html-prompt-cancel').off('click').on('click', () => { $('#popup-prompt-overlay').fadeOut(150); res(null); });
+        });
     }
     function sanitizeChartHTML(raw) {
         if (typeof raw !== "string") return "";
@@ -1772,84 +1807,109 @@ window.GraphPlotter = window.GraphPlotter || {
             overrideCustomTicksTernary: raw.overrideCustomTicksTernary && typeof raw.overrideCustomTicksTernary === "object" ? raw.overrideCustomTicksTernary : {},
             overrideTernary: raw.overrideTernary && typeof raw.overrideTernary === "object" ? raw.overrideTernary : {},
             minorTickOn: raw.minorTickOn && typeof raw.minorTickOn === "object" ? raw.minorTickOn : {},
-            useCustomTicksOn: raw.useCustomTicksOn && typeof raw.useCustomTicksOn === "object" ? raw.useCustomTicksOn : {}
+            useCustomTicksOn: raw.useCustomTicksOn && typeof raw.useCustomTicksOn === "object" ? raw.useCustomTicksOn : {},
+            matchData: raw.matchData || null
         };
     }
-    $('#download').click(async function(e){
-        e.preventDefault(); if (!myUserVars.isLoggedIn) { e.stopPropagation(); $('#ajax-login-modal').show(); return}     
+    $('#download').click(async function (e) {
+        e.preventDefault(); if (!myUserVars.isLoggedIn) { e.stopPropagation(); $('#ajax-login-modal').show(); return }
         $('#transparent-option').show();
-        const input = await htmlPrompt( "Enter DPI  (e.g. 150, 300, or 600 etc.)", "600");
-        if(input===null)return;
-        const dpi=parseFloat(input);
-        if(isNaN(dpi)||dpi<=0)return alert("Invalid DPI");
+        const input = await htmlPrompt("Enter DPI  (e.g. 150, 300, or 600 etc.)", "600");
+        if (input === null) return;
+        const dpi = parseFloat(input);
+        if (isNaN(dpi) || dpi <= 0) return alert("Invalid DPI");
         const transparent = document.getElementById('html-prompt-transparent').checked;
-        const scale=dpi/96;
-        const svg=document.querySelector("#chart svg");
-        if(!svg)return;
-        const clone=svg.cloneNode(true);
-        clone.querySelectorAll("foreignObject div[contenteditable]").forEach(d=>d.style.border="none");
-        clone.querySelectorAll(".outline[visibility='visible']").forEach(e=>e.setAttribute("visibility","hidden"));
-        clone.querySelectorAll("text[contenteditable='true']").forEach(t => { t.removeAttribute("contenteditable"); t.style.outline = "none";});
-        clone.setAttribute("style",`background:${transparent ? 'transparent' : '#fff'};font-family:Arial,sans-serif;`);
-        const data="data:image/svg+xml;charset=utf-8,"+encodeURIComponent(new XMLSerializer().serializeToString(clone));
-        const img=new Image();
-        img.onload=()=>{
-            const c=document.createElement("canvas");
-            c.width=img.width*scale; c.height=img.height*scale;
-            const ctx=c.getContext("2d");
-            if (!transparent) { ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);}
-            ctx.drawImage(img,0,0,c.width,c.height);
-            c.toBlob(b=>{
+        const scale = dpi / 96;
+        const svg = document.querySelector("#chart svg");
+        if (!svg) return;
+        const clone = svg.cloneNode(true);
+        clone.querySelectorAll("foreignObject div[contenteditable]").forEach(d => d.style.border = "none");
+        clone.querySelectorAll(".outline[visibility='visible']").forEach(e => e.setAttribute("visibility", "hidden"));
+        clone.querySelectorAll("text[contenteditable='true']").forEach(t => { t.removeAttribute("contenteditable"); t.style.outline = "none"; });
+        clone.querySelectorAll(".xrd-user-peak").forEach(e => e.remove()); // Don't export red peak markers to image? Or keep them? User usually wants graph. Keep them if they are part of SVG.
+        // Actually, user might want them. Let's leave them.
+        clone.setAttribute("style", `background:${transparent ? 'transparent' : '#fff'};font-family:Arial,sans-serif;`);
+        const data = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(new XMLSerializer().serializeToString(clone));
+        const img = new Image();
+        img.onload = () => {
+            const c = document.createElement("canvas");
+            c.width = img.width * scale; c.height = img.height * scale;
+            const ctx = c.getContext("2d");
+            if (!transparent) { ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height); }
+            ctx.drawImage(img, 0, 0, c.width, c.height);
+            c.toBlob(b => {
                 if (!b) return;
-                const a=document.createElement("a");
+                const a = document.createElement("a");
                 const url = URL.createObjectURL(b);
-                a.href=url;
+                a.href = url;
                 a.download = `chart@${dpi}dpi${transparent ? '_transparent' : ''}.png`;
                 a.click();
                 setTimeout(() => URL.revokeObjectURL(url), 1000);
-            },"image/png");
+            }, "image/png");
         };
-        img.src=data;
+        img.src = data;
     })
-    $('#save').click(async function(e){  
-        e.preventDefault(); if (!myUserVars.isLoggedIn) { e.stopPropagation(); $('#ajax-login-modal').show(); return} 
+    $('#save').click(async function (e) {
+        e.preventDefault(); if (!myUserVars.isLoggedIn) { e.stopPropagation(); $('#ajax-login-modal').show(); return }
         $('#transparent-option').hide();
-        G.utils.clearActive(); const d=new Date(), z=n=>('0'+n).slice(-2), ts=[z(d.getDate()), z(d.getMonth()+1), d.getFullYear()].join('-')+'_'+[z(d.getHours()),z(d.getMinutes()),z(d.getSeconds())].join('-'); 
-        const payload={v:'v1.0', ts, table:G.state.hot.getData(), settings:G.getSettings(), col:G.state.colEnabled, html:sanitizeChartHTML(d3.select('#chart').html()),
-        overrideX:G.state.overrideX||null, overrideMultiY:G.state.overrideMultiY||{}, overrideXTicks:G.state.overrideXTicks||null,
-        overrideYTicks:G.state.overrideYTicks||{}, overrideTernaryTicks:G.state.overrideTernaryTicks||{}, 
-        overrideScaleformatX:G.state.overrideScaleformatX||null, overrideScaleformatY:G.state.overrideScaleformatY||{},
-        overrideCustomTicksX:G.state.overrideCustomTicksX||null, overrideCustomTicksY:G.state.overrideCustomTicksY||{},
-        overrideCustomTicksTernary:G.state.overrideCustomTicksTernary||{}, overrideTernary:G.state.overrideTernary||{}, 
-        minorTickOn: G.state.minorTickOn || {}, useCustomTicksOn:G.state.useCustomTicksOn||{}};
-        const u=URL.createObjectURL(new Blob([JSON.stringify(payload)])), a=document.createElement('a'), name = await htmlPrompt( "Enter file name", `Project_${ts}`); if(!name) return; a.href=u; a.download=`${name}.instanano`; 
-        document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(u);})
-    G.importState = function(raw){ 
+        G.utils.clearActive(); const d = new Date(), z = n => ('0' + n).slice(-2), ts = [z(d.getDate()), z(d.getMonth() + 1), d.getFullYear()].join('-') + '_' + [z(d.getHours()), z(d.getMinutes()), z(d.getSeconds())].join('-');
+
+        let matchData = null;
+        if (G.matchXRD && G.matchXRD.getMatchSignature && G.matchXRD.getMatchSignature()) {
+            matchData = {
+                peaks: JSON.parse(G.matchXRD.getPeakData()),
+                signature: G.matchXRD.getMatchSignature()
+            };
+        }
+        const payload = {
+            v: 'v1.0', ts, table: G.state.hot.getData(), settings: G.getSettings(), col: G.state.colEnabled, html: sanitizeChartHTML(d3.select('#chart').html()),
+            overrideX: G.state.overrideX || null, overrideMultiY: G.state.overrideMultiY || {}, overrideXTicks: G.state.overrideXTicks || null,
+            overrideYTicks: G.state.overrideYTicks || {}, overrideTernaryTicks: G.state.overrideTernaryTicks || {},
+            overrideScaleformatX: G.state.overrideScaleformatX || null, overrideScaleformatY: G.state.overrideScaleformatY || {},
+            overrideCustomTicksX: G.state.overrideCustomTicksX || null, overrideCustomTicksY: G.state.overrideCustomTicksY || {},
+            overrideCustomTicksTernary: G.state.overrideCustomTicksTernary || {}, overrideTernary: G.state.overrideTernary || {},
+            minorTickOn: G.state.minorTickOn || {}, useCustomTicksOn: G.state.useCustomTicksOn || {},
+            matchData: matchData
+        };
+        const u = URL.createObjectURL(new Blob([JSON.stringify(payload)])), a = document.createElement('a'), name = await htmlPrompt("Enter file name", `Project_${ts}`); if (!name) return; a.href = u; a.download = `${name}.instanano`;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(u);
+    })
+    G.importState = function (raw) {
         const s = normalizeImportState(raw);
         if (!s) { alert("Invalid .instanano file."); return; }
-        G.state.hot.loadData(s.table); G.state.colEnabled=s.col; G.state.overrideX = s.overrideX; G.state.overrideMultiY = s.overrideMultiY;
-        G.state.overrideXTicks= s.overrideXTicks; G.state.overrideYTicks = s.overrideYTicks; G.state.overrideTernaryTicks = s.overrideTernaryTicks;
+        G.state.hot.loadData(s.table); G.state.colEnabled = s.col; G.state.overrideX = s.overrideX; G.state.overrideMultiY = s.overrideMultiY;
+        G.state.overrideXTicks = s.overrideXTicks; G.state.overrideYTicks = s.overrideYTicks; G.state.overrideTernaryTicks = s.overrideTernaryTicks;
         G.state.overrideScaleformatX = s.overrideScaleformatX; G.state.overrideScaleformatY = s.overrideScaleformatY;
         G.state.overrideCustomTicksX = s.overrideCustomTicksX; G.state.overrideCustomTicksY = s.overrideCustomTicksY;
-        G.state.overrideCustomTicksTernary = s.overrideCustomTicksTernary; G.state.overrideTernary = s.overrideTernary; 
-        G.state.minorTickOn = s.minorTickOn || {}; G.state.useCustomTicksOn=s.useCustomTicksOn||{};
-        d3.selectAll('input[type="checkbox"][data-col]').each(function(){this.checked=G.state.colEnabled[this.dataset.col]});
+        G.state.overrideCustomTicksTernary = s.overrideCustomTicksTernary; G.state.overrideTernary = s.overrideTernary;
+        G.state.minorTickOn = s.minorTickOn || {}; G.state.useCustomTicksOn = s.useCustomTicksOn || {};
+        d3.selectAll('input[type="checkbox"][data-col]').each(function () { this.checked = G.state.colEnabled[this.dataset.col] });
         const typeRadio = s.settings.type ? document.getElementById(s.settings.type) : null;
         if (typeRadio) typeRadio.checked = true;
-        if (s.settings.mode) { const axisRadio = document.querySelector(`input[name="axistitles"][value="${s.settings.mode}"]`); 
-        if (axisRadio) axisRadio.checked = true;}
+        if (s.settings.mode) {
+            const axisRadio = document.querySelector(`input[name="axistitles"][value="${s.settings.mode}"]`);
+            if (axisRadio) axisRadio.checked = true;
+        }
         G.state.hot.render(); G.axis.resetScales(false); G.renderChart();
         const ratioRadio = s.settings.ratio ? document.querySelector(`[name="aspectratio"][value="${s.settings.ratio}"]`) : null;
         if (ratioRadio) ratioRadio.checked = true;
         const modeRadio = s.settings.mode ? document.querySelector(`[name="axistitles"][value="${s.settings.mode}"]`) : null;
         if (modeRadio) modeRadio.checked = true;
-        Object.entries(s.settings).forEach(([k,v]) => {
+        Object.entries(s.settings).forEach(([k, v]) => {
             if (/^(type|ratio|mode)$/.test(k) || v == null) return;
             const input = document.getElementById(k);
             if (input) input.value = v;
         });
-        d3.select('#chart').html(s.html); G.features.prepareShapeLayer(); d3.selectAll('.shape-group').each(function(){G.features.makeShapeInteractive(d3.select(this))});
+        d3.select('#chart').html(s.html); G.features.prepareShapeLayer(); d3.selectAll('.shape-group').each(function () { G.features.makeShapeInteractive(d3.select(this)) });
         d3.selectAll('foreignObject.user-text,g.legend-group,g.axis-title').call(G.utils.applyDrag); G.axis.tickEditing(d3.select('#chart svg'));
+
+        if (s.matchData && G.matchXRD && G.matchXRD.importState) {
+            G.matchXRD.importState(s.matchData.peaks, s.matchData.signature).then(success => {
+                if (success) {
+                    console.log("Match data imported and verified.");
+                }
+            });
+        }
     }
 })(window.GraphPlotter);
 (function(G) {
