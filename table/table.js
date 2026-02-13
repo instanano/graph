@@ -12,6 +12,10 @@
             contextMenu: true, 
             afterRemoveRow: () => { G.axis.resetScales(true); G.renderChart(); },
             afterRemoveCol: () => { G.axis.resetScales(true); G.renderChart(); },
+            afterChange: (changes) => {
+                if (!changes) return;
+                if (G.matchXRD) { G.matchXRD.lockActive = false; G.matchXRD.lockedPeaks = []; G.matchXRD.lockInfo = null; G.matchXRD.render(); }
+            },
             afterCreateCol: (start, count) => {
                 for (let c = start; c < start + count; c++) {
                     G.state.hot.setDataAtCell(0, c, "Y-axis");
