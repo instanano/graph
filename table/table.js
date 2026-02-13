@@ -40,6 +40,7 @@
             if (e.target.matches('input[type="checkbox"][data-col]')) {
                 const col = +e.target.dataset.col;
                 G.state.colEnabled[col] = e.target.checked;
+                if (G.matchXRD) { G.matchXRD.lockActive = false; G.matchXRD.lockedPeaks = []; G.matchXRD.lockInfo = null; G.matchXRD.render(); }
                 G.state.hot.render();
                 G.axis.resetScales(false);
                 G.renderChart(); checkEmptyColumns();}});
