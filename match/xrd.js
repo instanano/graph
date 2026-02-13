@@ -10,8 +10,6 @@
     let elementFilter = { elements: [], mode: 'and', count: 0 };
     let lastSearchResults = null;
     let isLocked = true;
-    let paymentSignature = null;
-    let lockedPeaksToken = null; // JSON string of peaks used for signing
     const metaCache = new Map();
     const indexCache = new Map();
     const chunkCache = new Map();
@@ -62,12 +60,6 @@
         const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
         return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
     }
-    
-    function getPeaksJSON() {
-        // Sort peaks to ensure consistent JSON for signing
-        const sorted = [...selectedPeaks].sort((a, b) => a.x - b.x);
-        return JSON.stringify(sorted.map(p => ({ x: p.x, i: p.intensity })));
-    }
     function getSampleCount() {
         const data = G.state.hot.getData();
         return data[0].filter((h, i) => h === 'Y-axis' && G.state.colEnabled[i] !== false).length || 1;
@@ -92,19 +84,13 @@
             svg.selectAll('.xrd-user-peak').remove();
             selectedPeaks.forEach((p, i) => {
                 const xp = G.state.lastXScale(p.x);
-                const line = svg.append('line').attr('class', 'xrd-user-peak')
+                svg.append('line').attr('class', 'xrd-user-peak')
                     .attr('x1', xp).attr('x2', xp)
                     .attr('y1', G.config.DIM.H - G.config.DIM.MB)
                     .attr('y2', G.config.DIM.H - G.config.DIM.MB - 7)
-                    .attr('stroke', 'red').attr('stroke-width', 3);
-                
-                // Only allow removal if NOT locked/paid
-                if (isLocked) {
-                    line.style('cursor', 'pointer')
-                        .on('click', (e) => { e.stopPropagation(); selectedPeaks.splice(i, 1); normalizeIntensity(); if (!selectedPeaks.length) updateLabel("Select Peak"); G.matchXRD.render(); });
-                } else {
-                    line.style('cursor', 'not-allowed').attr('stroke', '#cc0000'); // Darker red to indicate locked
-                }
+                    .attr('stroke', 'red').attr('stroke-width', 3)
+                    .style('cursor', 'pointer')
+                    .on('click', (e) => { e.stopPropagation(); selectedPeaks.splice(i, 1); normalizeIntensity(); if (!selectedPeaks.length) updateLabel("Select Peak"); G.matchXRD.render(); });
             });
         },
         showRef: (peaks, ints) => {
@@ -122,10 +108,7 @@
                     .attr('stroke-dasharray', '4,2').style('pointer-events', 'none');
             });
         },
-        clear: () => { 
-            if (!isLocked) return; // Prevent clearing if paid/unlocked
-            selectedPeaks = []; lastSearchResults = null; d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); updateLabel("Select Peak"); 
-        },
+        clear: () => { selectedPeaks = []; lastSearchResults = null; d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); updateLabel("Select Peak"); },
         validate: (input) => {
             if (!input.trim()) return { valid: true, invalid: [] };
             const parts = input.split(',').map(e => e.trim()).filter(e => e);
@@ -217,24 +200,11 @@
             setProgress('done');
             lastSearchResults = final;
 
-
             isLocked = true;
             if (typeof instananoCredits !== 'undefined') {
                 const sha = await getTableSHA();
-                const pjson = getPeaksJSON();
-                // If we have a stored signature, try to verify it
-                if (paymentSignature) {
-                    const v = await ajaxPost('instanano_verify_sha', { sha_hash: sha, signature: paymentSignature, peaks: lockedPeaksToken || pjson });
-                    if (v?.success && v.data.valid) {
-                         isLocked = false;
-                    } else {
-                        // Signature invalid or does not match current state -> Revoke
-                        paymentSignature = null;
-                        lockedPeaksToken = null;
-                    }
-                }
-                // Note: We NO LONGER check for just 'exists'. We require a signature.
-                // This enforces the "Raw Data = New Payment" rule.
+                const v = await ajaxPost('instanano_verify_sha', { sha_hash: sha });
+                if (v?.success && v.data.exists) isLocked = false;
             }
 
             if (isLocked) {
@@ -256,38 +226,15 @@
         unlock: async () => {
             const sha = await getTableSHA();
             const n = getSampleCount();
-            const pjson = getPeaksJSON();
-            const r = await ajaxPost('instanano_use_credit', { sha_hash: sha, sample_count: n, peaks: pjson });
+            const r = await ajaxPost('instanano_use_credit', { sha_hash: sha, sample_count: n });
             if (!r?.success) return { ok: false, message: r?.data?.message || 'Failed.', remaining: r?.data?.remaining };
-            
             isLocked = false;
-            if (r.data.signature) {
-                paymentSignature = r.data.signature;
-                lockedPeaksToken = pjson; // Store what we signed
-            }
-            G.matchXRD.render(); // Re-render to update lock UI
-            return { ok: true, matches: lastSearchResults, remaining: r.data.remaining, signature: r.data.signature };
+            return { ok: true, matches: lastSearchResults, remaining: r.data.remaining, already_done: r.data.already_done };
         },
         fetchRef: async (refId) => {
-            const sha = await getTableSHA();
-            // Pass signature + peaks for verification
-            const r = await ajaxPost('instanano_xrd_fetch_refs', { 
-                ref_ids: [refId], 
-                sha_hash: sha, 
-                signature: paymentSignature || '',
-                peaks: lockedPeaksToken || getPeaksJSON()
-            });
+            const r = await ajaxPost('instanano_xrd_fetch_refs', { ref_ids: [refId] });
             return r?.success ? r.data[refId] : null;
         },
-        isLocked: () => isLocked,
-        getSignature: () => ({ signature: paymentSignature, lockedPeaks: lockedPeaksToken }),
-        importSignature: (sig, peaks) => {
-            paymentSignature = sig;
-            lockedPeaksToken = peaks;
-            // If we imported a signature, we assume it *might* be valid, but 'search' will verify it against the server.
-            // But immediate UI update:
-            if (sig) isLocked = false; 
-            G.matchXRD.render();
-        }
+        isLocked: () => isLocked
     };
 })(window.GraphPlotter);
