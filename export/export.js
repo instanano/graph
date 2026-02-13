@@ -57,8 +57,7 @@
             overrideCustomTicksTernary: raw.overrideCustomTicksTernary && typeof raw.overrideCustomTicksTernary === "object" ? raw.overrideCustomTicksTernary : {},
             overrideTernary: raw.overrideTernary && typeof raw.overrideTernary === "object" ? raw.overrideTernary : {},
             minorTickOn: raw.minorTickOn && typeof raw.minorTickOn === "object" ? raw.minorTickOn : {},
-            useCustomTicksOn: raw.useCustomTicksOn && typeof raw.useCustomTicksOn === "object" ? raw.useCustomTicksOn : {},
-            matchData: raw.matchData || null
+            useCustomTicksOn: raw.useCustomTicksOn && typeof raw.useCustomTicksOn === "object" ? raw.useCustomTicksOn : {}
         };
     }
     $('#download').click(async function (e) {
@@ -76,8 +75,6 @@
         clone.querySelectorAll("foreignObject div[contenteditable]").forEach(d => d.style.border = "none");
         clone.querySelectorAll(".outline[visibility='visible']").forEach(e => e.setAttribute("visibility", "hidden"));
         clone.querySelectorAll("text[contenteditable='true']").forEach(t => { t.removeAttribute("contenteditable"); t.style.outline = "none"; });
-        clone.querySelectorAll(".xrd-user-peak").forEach(e => e.remove()); // Don't export red peak markers to image? Or keep them? User usually wants graph. Keep them if they are part of SVG.
-        // Actually, user might want them. Let's leave them.
         clone.setAttribute("style", `background:${transparent ? 'transparent' : '#fff'};font-family:Arial,sans-serif;`);
         const data = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(new XMLSerializer().serializeToString(clone));
         const img = new Image();
@@ -104,13 +101,13 @@
         $('#transparent-option').hide();
         G.utils.clearActive(); const d = new Date(), z = n => ('0' + n).slice(-2), ts = [z(d.getDate()), z(d.getMonth() + 1), d.getFullYear()].join('-') + '_' + [z(d.getHours()), z(d.getMinutes()), z(d.getSeconds())].join('-');
 
-        let matchData = null;
-        if (G.matchXRD && G.matchXRD.getMatchSignature && G.matchXRD.getMatchSignature()) {
-            matchData = {
-                peaks: JSON.parse(G.matchXRD.getPeakData()),
-                signature: G.matchXRD.getMatchSignature()
-            };
+        let xrdSig = null, xrdPeaks = null;
+        if (G.matchXRD && G.matchXRD.getSignature) {
+            const s = G.matchXRD.getSignature();
+            xrdSig = s.signature;
+            xrdPeaks = s.lockedPeaks;
         }
+
         const payload = {
             v: 'v1.0', ts, table: G.state.hot.getData(), settings: G.getSettings(), col: G.state.colEnabled, html: sanitizeChartHTML(d3.select('#chart').html()),
             overrideX: G.state.overrideX || null, overrideMultiY: G.state.overrideMultiY || {}, overrideXTicks: G.state.overrideXTicks || null,
@@ -119,7 +116,7 @@
             overrideCustomTicksX: G.state.overrideCustomTicksX || null, overrideCustomTicksY: G.state.overrideCustomTicksY || {},
             overrideCustomTicksTernary: G.state.overrideCustomTicksTernary || {}, overrideTernary: G.state.overrideTernary || {},
             minorTickOn: G.state.minorTickOn || {}, useCustomTicksOn: G.state.useCustomTicksOn || {},
-            matchData: matchData
+            xrd_signature: xrdSig, xrd_locked_peaks: xrdPeaks
         };
         const u = URL.createObjectURL(new Blob([JSON.stringify(payload)])), a = document.createElement('a'), name = await htmlPrompt("Enter file name", `Project_${ts}`); if (!name) return; a.href = u; a.download = `${name}.instanano`;
         document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(u);
@@ -150,15 +147,11 @@
             const input = document.getElementById(k);
             if (input) input.value = v;
         });
+        if (G.matchXRD && G.matchXRD.importSignature) {
+            G.matchXRD.importSignature(raw.xrd_signature || null, raw.xrd_locked_peaks || null);
+        }
+
         d3.select('#chart').html(s.html); G.features.prepareShapeLayer(); d3.selectAll('.shape-group').each(function () { G.features.makeShapeInteractive(d3.select(this)) });
         d3.selectAll('foreignObject.user-text,g.legend-group,g.axis-title').call(G.utils.applyDrag); G.axis.tickEditing(d3.select('#chart svg'));
-
-        if (s.matchData && G.matchXRD && G.matchXRD.importState) {
-            G.matchXRD.importState(s.matchData.peaks, s.matchData.signature).then(success => {
-                if (success) {
-                    console.log("Match data imported and verified.");
-                }
-            });
-        }
     }
 })(window.GraphPlotter);
