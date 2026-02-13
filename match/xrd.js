@@ -213,10 +213,13 @@
                 const refPeaks = d[2].map(p => p / PRECISION);
                 const refInts = d[3] || [];
                 const totalRefPeaks = refPeaks.length;
-                let posPenalty = 0, intPenalty = 0, matchCount = 0;
+                let posPenalty = 0, intPenalty = 0, matchCount = 0, weightSum = 0;
+                const matchedUserPeaks = new Set();
                 const usedUserPeaks = new Set();
                 for (let i = 0; i < totalRefPeaks; i++) {
                     const rp = refPeaks[i], ri = refInts[i] || 50;
+                    const w = Math.max(0.2, Math.min(1, ri / 100));
+                    weightSum += w;
                     let bestMatch = null, bestIdx = -1;
                 for (let j = 0; j < peaks.length; j++) {
                     if (usedUserPeaks.has(j)) continue;
@@ -225,11 +228,17 @@
                 }
                     if (bestMatch && bestIdx >= 0) {
                         usedUserPeaks.add(bestIdx); matchCount++;
-                        posPenalty += (bestMatch.diff / TOLERANCE) * 8;
-                        intPenalty += (Math.abs(bestMatch.userInt - ri) / 100) * 2;
-                    } else { posPenalty += 8; intPenalty += 2; }
+                        matchedUserPeaks.add(bestIdx);
+                        posPenalty += (bestMatch.diff / TOLERANCE) * 8 * w;
+                        intPenalty += (Math.abs(bestMatch.userInt - ri) / 100) * 2 * w;
+                    } else { posPenalty += 8 * w; intPenalty += 2 * w; }
                 }
-                final.push({ row: [d[0], d[1], Math.max(0, 100 - posPenalty - intPenalty).toFixed(1)], refId: d[0], peaks: refPeaks, intensities: refInts, score: Math.max(0, 100 - posPenalty - intPenalty) });
+                const refRatio = matchCount / Math.max(1, totalRefPeaks);
+                const userRatio = matchedUserPeaks.size / Math.max(1, peaks.length);
+                let score = (refRatio * 100) + (userRatio * 5);
+                score -= (posPenalty + intPenalty);
+                score = Math.max(50, score);
+                final.push({ row: [d[0], d[1], score.toFixed(1)], refId: d[0], peaks: refPeaks, intensities: refInts, score });
             }
             final.sort((a, b) => b.score - a.score);
             setProgress('done');
