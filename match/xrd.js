@@ -10,6 +10,8 @@
     let elementFilter = { elements: [], mode: 'and', count: 0 };
     let lastSearchResults = null;
     let isLocked = true;
+    let matchSignature = null;
+    let isUiLocked = false;
     const metaCache = new Map();
     const indexCache = new Map();
     const chunkCache = new Map();
@@ -76,9 +78,15 @@
         const r = await fetch(instananoCredits.ajaxUrl, { method: 'POST', body: fd });
         return r.json();
     }
-
     G.matchXRD = {
-        addPeak: (x, intensity) => { selectedPeaks.push({ x, intensity, normInt: 0 }); normalizeIntensity(); G.matchXRD.render(); updateLabel("Search Database"); },
+        addPeak: (x, intensity) => {
+            if (isUiLocked) { alert("Cannot modify peaks in a Paid file. Create a new plot to edit."); return; }
+            selectedPeaks.push({ x, intensity, normInt: 0 }); normalizeIntensity(); G.matchXRD.render(); updateLabel("Search Database");
+        },
+        removePeak: (i) => {
+            if (isUiLocked) { alert("Cannot modify peaks in a Paid file. Create a new plot to edit."); return; }
+            selectedPeaks.splice(i, 1); normalizeIntensity(); if (!selectedPeaks.length) updateLabel("Select Peak"); G.matchXRD.render();
+        },
         render: () => {
             const svg = d3.select('#chart svg');
             svg.selectAll('.xrd-user-peak').remove();
@@ -90,7 +98,7 @@
                     .attr('y2', G.config.DIM.H - G.config.DIM.MB - 7)
                     .attr('stroke', 'red').attr('stroke-width', 3)
                     .style('cursor', 'pointer')
-                    .on('click', (e) => { e.stopPropagation(); selectedPeaks.splice(i, 1); normalizeIntensity(); if (!selectedPeaks.length) updateLabel("Select Peak"); G.matchXRD.render(); });
+                    .on('click', (e) => { e.stopPropagation(); G.matchXRD.removePeak(i); });
             });
         },
         showRef: (peaks, ints) => {
@@ -108,7 +116,10 @@
                     .attr('stroke-dasharray', '4,2').style('pointer-events', 'none');
             });
         },
-        clear: () => { selectedPeaks = []; lastSearchResults = null; d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); updateLabel("Select Peak"); },
+        clear: () => {
+            if (isUiLocked) { alert("Cannot clear peaks in a Paid file."); return; }
+            selectedPeaks = []; lastSearchResults = null; d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); updateLabel("Select Peak");
+        },
         validate: (input) => {
             if (!input.trim()) return { valid: true, invalid: [] };
             const parts = input.split(',').map(e => e.trim()).filter(e => e);
@@ -199,37 +210,58 @@
             final.sort((a, b) => b.score - a.score);
             setProgress('done');
             lastSearchResults = final;
-
             isLocked = true;
-            if (typeof instananoCredits !== 'undefined') {
-                const sha = await getTableSHA();
-                const v = await ajaxPost('instanano_verify_sha', { sha_hash: sha });
-                if (v?.success && v.data.exists) isLocked = false;
-            }
-
-            if (isLocked) {
-                updateLabel(`Found ${final.length}`);
-                const preview = final.slice(0, 5).map(m => ({
-                    ...m,
-                    peaks: m.peaks.slice(0, 3),
-                    intensities: m.intensities.slice(0, 3)
-                }));
-                return { matches: preview, cols: ['Ref ID', 'Formula', 'Match (%)'], locked: true };
-            }
-
-            updateLabel(`Found ${final.length} (already unlocked)`);
-            return { matches: final, cols: ['Ref ID', 'Formula', 'Match (%)'], locked: false };
+            isUiLocked = false;
+            updateLabel(`Found ${final.length}`);
+            const preview = final.slice(0, 5).map(m => ({
+                ...m,
+                peaks: m.peaks.slice(0, 3),
+                intensities: m.intensities.slice(0, 3)
+            }));
+            return { matches: preview, cols: ['Ref ID', 'Formula', 'Match (%)'], locked: true };
         },
         getSampleCount,
         getTableSHA,
+        getPeakData: () => JSON.stringify(selectedPeaks),
+        getMatchSignature: () => matchSignature,
+        getIsUiLocked: () => isUiLocked,
         checkCredit: async () => { const r = await ajaxPost('instanano_check_credit'); return r?.success ? r.data : null; },
         unlock: async () => {
             const sha = await getTableSHA();
             const n = getSampleCount();
+            // 1. Pay
             const r = await ajaxPost('instanano_use_credit', { sha_hash: sha, sample_count: n });
             if (!r?.success) return { ok: false, message: r?.data?.message || 'Failed.', remaining: r?.data?.remaining };
-            isLocked = false;
-            return { ok: true, matches: lastSearchResults, remaining: r.data.remaining, already_done: r.data.already_done };
+
+            // 2. Sign
+            const peaksJson = JSON.stringify(selectedPeaks);
+            const s = await ajaxPost('instanano_sign_match', { sha_hash: sha, peaks: peaksJson });
+            if (s?.success && s.data.signature) {
+                isLocked = false;
+                matchSignature = s.data.signature;
+                isUiLocked = true;
+                return { ok: true, matches: lastSearchResults, remaining: r.data.remaining, already_done: r.data.already_done };
+            } else {
+                return { ok: false, message: 'Payment successful but signature generation failed. Contact support.', remaining: r.data.remaining };
+            }
+        },
+        importState: async (peaks, signature) => {
+            if (!peaks || !Array.isArray(peaks) || !signature) return false;
+            const sha = await getTableSHA();
+            const peaksJson = JSON.stringify(peaks);
+            const v = await ajaxPost('instanano_validate_match', { sha_hash: sha, peaks: peaksJson, signature: signature });
+            if (v?.success && v.data.valid) {
+                selectedPeaks = peaks;
+                matchSignature = signature;
+                isLocked = false;
+                isUiLocked = true;
+                normalizeIntensity();
+                G.matchXRD.render();
+                return true;
+            } else {
+                alert("Security Verification Failed: This file's signature does not match its data. It may have been tampered with or belongs to a different dataset.");
+                return false;
+            }
         },
         fetchRef: async (refId) => {
             const r = await ajaxPost('instanano_xrd_fetch_refs', { ref_ids: [refId] });
