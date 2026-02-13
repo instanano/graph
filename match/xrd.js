@@ -56,7 +56,7 @@
         if (maxInt > 0) peaks.forEach(p => p.normInt = (p.intensity / maxInt) * 100);
     };
     async function getTableSHA() {
-        const raw = JSON.stringify(G.state.hot.getData());
+        const raw = JSON.stringify({ t: G.state.hot.getData(), c: G.state.colEnabled });
         const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
         return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
     }
@@ -251,18 +251,22 @@
         getSampleCount,
         getTableSHA,
         checkCredit: async () => { const r = await ajaxPost('instanano_check_credit'); return r?.success ? r.data : null; },
+        computeLockHash: async (peaks) => {
+            const tableHash = await getTableSHA();
+            const peaksHash = await getPeaksHash(peaks);
+            const lockRaw = `${LOCK_VERSION}|${tableHash}|${peaksHash}`;
+            const lockHash = await sha256Hex(lockRaw);
+            return { lock_hash: lockHash, table_hash: tableHash, peaks_hash: peaksHash, lock_version: LOCK_VERSION };
+        },
         unlock: async () => {
             if (!selectedPeaks.length) return { ok: false, message: 'No peaks selected.' };
             const n = getSampleCount();
-            const tableHash = await getTableSHA();
-            const peaksHash = await getPeaksHash(selectedPeaks);
-            const lockRaw = `${LOCK_VERSION}|${tableHash}|${peaksHash}`;
-            const lockHash = await sha256Hex(lockRaw);
-            const r = await ajaxPost('instanano_use_credit', { lock_hash: lockHash, lock_version: LOCK_VERSION, sample_count: n });
+            const lock = await G.matchXRD.computeLockHash(selectedPeaks);
+            const r = await ajaxPost('instanano_use_credit', { lock_hash: lock.lock_hash, lock_version: lock.lock_version, sample_count: n });
             if (!r?.success || !r?.data?.signature) return { ok: false, message: r?.data?.message || 'Failed.', remaining: r?.data?.remaining };
             G.matchXRD.lockActive = true;
             G.matchXRD.lockedPeaks = selectedPeaks.map(p => ({ x: p.x, intensity: p.intensity, normInt: p.normInt }));
-            G.matchXRD.lockInfo = { lock_hash: lockHash, signature: r.data.signature, lock_version: LOCK_VERSION, table_hash: tableHash, peaks_hash: peaksHash, verified: true };
+            G.matchXRD.lockInfo = { lock_hash: lock.lock_hash, signature: r.data.signature, lock_version: lock.lock_version, table_hash: lock.table_hash, peaks_hash: lock.peaks_hash, verified: true };
             return { ok: true, matches: lastSearchResults, remaining: r.data.remaining, already_done: false };
         },
         fetchRef: async (refId) => {
