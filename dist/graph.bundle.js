@@ -1697,25 +1697,40 @@ window.GraphPlotter = window.GraphPlotter || {
                 const refPeaks = d[2].map(p => p / PRECISION);
                 const refInts = d[3] || [];
                 const totalRefPeaks = refPeaks.length;
-                let posPenalty = 0, intPenalty = 0, matchCount = 0;
+                let thetaQualitySum = 0, intQualitySum = 0, matchCount = 0;
                 const usedUserPeaks = new Set();
                 for (let i = 0; i < totalRefPeaks; i++) {
                     const rp = refPeaks[i], ri = refInts[i] || 50;
                     let bestMatch = null, bestIdx = -1;
-                for (let j = 0; j < peaks.length; j++) {
-                    if (usedUserPeaks.has(j)) continue;
-                    const diff = Math.abs(peaks[j].x - rp);
-                    if (diff <= TOLERANCE && (!bestMatch || diff < bestMatch.diff)) { bestMatch = { diff, userInt: peaks[j].normInt }; bestIdx = j; }
-                }
+                    for (let j = 0; j < peaks.length; j++) {
+                        if (usedUserPeaks.has(j)) continue;
+                        const diff = Math.abs(peaks[j].x - rp);
+                        if (diff <= TOLERANCE && (!bestMatch || diff < bestMatch.diff)) { bestMatch = { diff, userInt: peaks[j].normInt }; bestIdx = j; }
+                    }
                     if (bestMatch && bestIdx >= 0) {
-                        usedUserPeaks.add(bestIdx); matchCount++;
-                        posPenalty += (bestMatch.diff / TOLERANCE) * 8;
-                        intPenalty += (Math.abs(bestMatch.userInt - ri) / 100) * 2;
-                    } else { posPenalty += 8; intPenalty += 2; }
+                        usedUserPeaks.add(bestIdx);
+                        matchCount++;
+                        thetaQualitySum += 1 - (bestMatch.diff / TOLERANCE);
+                        intQualitySum += 1 - Math.min(1, Math.abs(bestMatch.userInt - ri) / 100);
+                    }
                 }
-                final.push({ row: [d[0], d[1], Math.max(0, 100 - posPenalty - intPenalty).toFixed(1)], refId: d[0], peaks: refPeaks, intensities: refInts, score: Math.max(0, 100 - posPenalty - intPenalty) });
+                const coverage = matchCount / Math.max(1, totalRefPeaks);
+                const thetaQuality = matchCount ? (thetaQualitySum / matchCount) : 0;
+                const intensityQuality = matchCount ? (intQualitySum / matchCount) : 0;
+                const quality = (thetaQuality * 0.7) + (intensityQuality * 0.3);
+                let score = 0;
+                if (matchCount > 0) score = 45 + (coverage * 50) + (quality * 5);
+                score = Math.min(99.9, Math.max(0, score));
+                final.push({
+                    row: [d[0], d[1], score.toFixed(1)],
+                    refId: d[0],
+                    peaks: refPeaks,
+                    intensities: refInts,
+                    score,
+                    matchCount
+                });
             }
-            final.sort((a, b) => b.score - a.score);
+            final.sort((a, b) => b.score - a.score || b.matchCount - a.matchCount);
             setProgress('done');
             lastSearchResults = final;
             const locked = !G.matchXRD.lockActive;
