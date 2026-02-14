@@ -1489,6 +1489,7 @@ window.GraphPlotter = window.GraphPlotter || {
     const LOCK_VERSION = 1;
     const PRECISION = 100;
     const TOLERANCE = 0.5;
+    const MIN_TOLERANCE = 0.25;
     const FETCH_CONCURRENCY = 8;
     let selectedPeaks = [];
     let compositions = null;
@@ -1536,9 +1537,12 @@ window.GraphPlotter = window.GraphPlotter || {
     };
     const normalizeIntensity = (peaks) => {
         if (!peaks.length) return;
-        const maxInt = Math.max(...peaks.map(p => p.intensity));
-        if (maxInt > 0) peaks.forEach(p => p.normInt = (p.intensity / maxInt) * 100);
+        const vals = peaks.map(p => Number(p.intensity) || 0).filter(v => v > 0).sort((a, b) => b - a);
+        if (!vals.length) return peaks.forEach(p => p.normInt = 0);
+        const anchor = vals[Math.min(2, vals.length - 1)] || vals[0];
+        peaks.forEach(p => p.normInt = anchor > 0 ? Math.max(0, Math.min(100, (Number(p.intensity) || 0) / anchor * 100)) : 0);
     };
+    const getTolerance = (twoTheta) => Math.max(MIN_TOLERANCE, Math.min(TOLERANCE, 0.18 + ((Number(twoTheta) || 0) * 0.0065)));
     async function getTableSHA() {
         const raw = JSON.stringify({ t: G.state.hot.getData(), c: G.state.colEnabled });
         const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
@@ -1672,7 +1676,8 @@ window.GraphPlotter = window.GraphPlotter || {
                     const rid = p >> 8, off = p & 0xFF;
                     const rp = (bid * BIN_WIDTH) + (off / PRECISION);
                     const diff = Math.abs(up.x - rp);
-                    if (diff <= TOLERANCE) {
+                    const tol = getTolerance((up.x + rp) * 0.5);
+                    if (diff <= tol) {
                         if (!candidates.has(rid)) candidates.set(rid, []);
                         candidates.get(rid).push({ rp, diff, userInt: up.normInt });
                     }
@@ -1697,7 +1702,7 @@ window.GraphPlotter = window.GraphPlotter || {
                 const refPeaks = d[2].map(p => p / PRECISION);
                 const refInts = d[3] || [];
                 const totalRefPeaks = refPeaks.length;
-                let posPenalty = 0, intPenalty = 0, matchCount = 0;
+                let posPenalty = 0, intPenalty = 0, matchCount = 0, matchBonus = 0;
                 const usedUserPeaks = new Set();
                 for (let i = 0; i < totalRefPeaks; i++) {
                     const rp = refPeaks[i], ri = refInts[i] || 50;
@@ -1705,15 +1710,18 @@ window.GraphPlotter = window.GraphPlotter || {
                 for (let j = 0; j < peaks.length; j++) {
                     if (usedUserPeaks.has(j)) continue;
                     const diff = Math.abs(peaks[j].x - rp);
-                    if (diff <= TOLERANCE && (!bestMatch || diff < bestMatch.diff)) { bestMatch = { diff, userInt: peaks[j].normInt }; bestIdx = j; }
+                    const tol = getTolerance((peaks[j].x + rp) * 0.5);
+                    if (diff <= tol && (!bestMatch || (diff / tol) < (bestMatch.diff / bestMatch.tol))) { bestMatch = { diff, tol, userInt: peaks[j].normInt }; bestIdx = j; }
                 }
                     if (bestMatch && bestIdx >= 0) {
                         usedUserPeaks.add(bestIdx); matchCount++;
-                        posPenalty += (bestMatch.diff / TOLERANCE) * 8;
+                        matchBonus += 3.5;
+                        posPenalty += (bestMatch.diff / bestMatch.tol) * 8;
                         intPenalty += (Math.abs(bestMatch.userInt - ri) / 100) * 2;
-                    } else { posPenalty += 8; intPenalty += 2; }
+                    } else { posPenalty += 6; intPenalty += 1; }
                 }
-                final.push({ row: [d[0], d[1], Math.max(0, 100 - posPenalty - intPenalty).toFixed(1)], refId: d[0], peaks: refPeaks, intensities: refInts, score: Math.max(0, 100 - posPenalty - intPenalty) });
+                const score = Math.max(0, Math.min(100, matchCount ? (100 - posPenalty - intPenalty + matchBonus) : 0));
+                final.push({ row: [d[0], d[1], score.toFixed(1)], refId: d[0], peaks: refPeaks, intensities: refInts, score });
             }
             final.sort((a, b) => b.score - a.score);
             setProgress('done');
