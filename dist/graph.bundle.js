@@ -1718,7 +1718,7 @@ window.GraphPlotter = window.GraphPlotter || {
                         matchBonus += 3.5;
                         posPenalty += (bestMatch.diff / bestMatch.tol) * 8;
                         intPenalty += (Math.abs(bestMatch.userInt - ri) / 100) * 2;
-                    } else { posPenalty += 6; intPenalty += 1; }
+                    } else { posPenalty += 8; intPenalty += 2; }
                 }
                 const score = Math.max(0, Math.min(100, matchCount ? (100 - posPenalty - intPenalty + matchBonus) : 0));
                 final.push({ row: [d[0], d[1], score.toFixed(1)], refId: d[0], peaks: refPeaks, intensities: refInts, score });
