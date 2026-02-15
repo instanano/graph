@@ -182,7 +182,16 @@
                             if (res?.success && res.data?.valid) {
                                 G.matchXRD.lockActive = true;
                                 G.matchXRD.lockedPeaks = peaks;
-                                G.matchXRD.lockInfo = { lock_hash: s.xrd_lock_hash, signature: s.xrd_signature, lock_version: s.xrd_lock_version ?? null, table_hash: lock.table_hash, peaks_hash: lock.peaks_hash, verified: true };
+                                G.matchXRD.lockInfo = {
+                                    lock_hash: s.xrd_lock_hash,
+                                    signature: s.xrd_signature,
+                                    lock_version: s.xrd_lock_version ?? null,
+                                    table_hash: lock.table_hash,
+                                    peaks_hash: lock.peaks_hash,
+                                    fetch_token: res.data.fetch_token || "",
+                                    fetch_token_expires: Number(res.data.fetch_token_expires || 0),
+                                    verified: true
+                                };
                                 G.matchXRD.render();
                             } else {
                                 G.matchXRD.lockActive = false;
