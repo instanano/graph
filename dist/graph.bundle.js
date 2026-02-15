@@ -1683,16 +1683,7 @@ window.GraphPlotter = window.GraphPlotter || {
                     }
                 }
             }
-            const CANDIDATE_LIMIT = peaks.length <= 3 ? 100 : (peaks.length <= 5 ? 60 : 35);
-            const ranked = [...candidates.entries()].map(([rid, arr]) => {
-                let diffSum = 0;
-                for (const h of arr) diffSum += h.diff;
-                return { rid, arr, hits: arr.length, avgDiff: diffSum / Math.max(1, arr.length) };
-            });
-            const sorted = ranked
-                .sort((a, b) => (b.hits - a.hits) || (a.avgDiff - b.avgDiff))
-                .slice(0, CANDIDATE_LIMIT)
-                .map(r => [r.rid, r.arr]);
+            const sorted = [...candidates.entries()].sort((a, b) => b[1].length - a[1].length).slice(0, 25);
             if (!sorted.length) { setProgress(0); updateLabel('No matches'); return { matches: [], cols: [] }; }
             const chunks = {};
             const cids = [...new Set(sorted.map(([r]) => Math.floor(r / 1000)))];
