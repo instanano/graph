@@ -1200,6 +1200,51 @@ window.GraphPlotter = window.GraphPlotter || {
         });
         return rows.length ? rows : G.parsers.parseText(text);
     };
+    function includesAscii(bytes, text) {
+        for (let i = 0, n = bytes.length - text.length; i <= n; i++) {
+            let ok = true;
+            for (let j = 0; j < text.length; j++) {
+                if (bytes[i + j] !== text.charCodeAt(j)) { ok = false; break; }
+            }
+            if (ok) return true;
+        }
+        return false;
+    }
+    function parseRAWRigakuUltima(buffer) {
+        if (!(buffer instanceof ArrayBuffer) || buffer.byteLength < 0x0c5a) return null;
+        const bytes = new Uint8Array(buffer);
+        if (bytes[0] !== 0x46 || bytes[1] !== 0x49 || !includesAscii(bytes, "Ultima IV")) return null;
+        const dv = new DataView(buffer);
+        const n = dv.getUint16(0x0c52, true);
+        const dataOff = 0x0c56;
+        if (n < 2 || dataOff + n * 4 > buffer.byteLength) return null;
+        const start = dv.getFloat32(0x0b92, true);
+        const end = dv.getFloat32(0x0b96, true);
+        const step = dv.getFloat32(0x0b9a, true);
+        const metaOk = Number.isFinite(start) && Number.isFinite(end) && Number.isFinite(step) && step > 0;
+        if (metaOk) {
+            const expected = Math.round((end - start) / step) + 1;
+            if (Math.abs(expected - n) > 3) return null;
+        }
+        const x0 = Number.isFinite(start) ? start : 0;
+        const xStep = metaOk ? step : (Number.isFinite(start) && Number.isFinite(end) ? (end - start) / (n - 1) : 1);
+        if (!(Number.isFinite(xStep) && xStep > 0)) return null;
+        const rows = new Array(n);
+        for (let i = 0; i < n; i++) {
+            const y = dv.getFloat32(dataOff + i * 4, true);
+            if (!Number.isFinite(y)) return null;
+            rows[i] = [x0 + i * xStep, y];
+        }
+        return rows;
+    }
+    const rawVariants = [{ id: "rigaku-ultima", parse: parseRAWRigakuUltima }];
+    G.parsers.parseRAW = function(buffer) {
+        for (const variant of rawVariants) {
+            const rows = variant.parse(buffer);
+            if (rows && rows.length) return rows;
+        }
+        return [];
+    };
     G.parsers.parseXRDML = function(text) {
         const xml = new DOMParser().parseFromString(text, "application/xml");
         const scan = xml.getElementsByTagName("scan")[0] || xml.getElementsByTagNameNS("*", "scan")[0];
@@ -1265,7 +1310,7 @@ window.GraphPlotter = window.GraphPlotter || {
     G.io.initFileLoader = function({ detectModeFromData, openPanelForMode } = {}) {
         if (bound) return;
         bound = true;
-        const fileHandlers={ instanano:null, csv:G.parsers.parseText, txt:G.parsers.parseText, xls:G.parsers.parseXLSX, xlsx:G.parsers.parseXLSX, xrdml:G.parsers.parseXRDML, xy:G.parsers.parseXRDASCII, xye:G.parsers.parseXRDASCII, asc:G.parsers.parseXRDASCII, dat:G.parsers.parseXRDASCII, uxd:G.parsers.parseXRDASCII};
+        const fileHandlers={ instanano:null, csv:G.parsers.parseText, txt:G.parsers.parseText, xls:G.parsers.parseXLSX, xlsx:G.parsers.parseXLSX, xrdml:G.parsers.parseXRDML, raw:G.parsers.parseRAW, xy:G.parsers.parseXRDASCII, xye:G.parsers.parseXRDASCII, asc:G.parsers.parseXRDASCII, dat:G.parsers.parseXRDASCII, uxd:G.parsers.parseXRDASCII};
         const fileModes = {xrdml:'xrd',xy:'xrd',xye:'xrd',asc:'xrd',dat:'xrd',uxd:'xrd',raw:'xrd',spc:'uvvis'};
         const fileinput=document.getElementById('fileinput');
         const dropzone=document.getElementById('dropzone');
@@ -1294,7 +1339,7 @@ window.GraphPlotter = window.GraphPlotter || {
             const parser=fileHandlers[ext]; if(!parser) return alert('Unsupported file type: .'+ext);
             if (fileModes[ext]) setMode(fileModes[ext]);
             let rows;
-            if(ext==='xls'||ext==='xlsx'){ const buffer=await file.arrayBuffer(); rows=parser(buffer);}
+            if(ext==='xls'||ext==='xlsx'||ext==='raw'){ const buffer=await file.arrayBuffer(); rows=parser(buffer);}
             else { const text=await file.text(); rows=parser(text);}
             const n=Math.max(...rows.map(r=>r.length)), header=Array(n).fill().map((_,i)=>i===0?'X-axis':'Y-axis'),
             color=Array(n).fill().map((_,i)=>G.config.COLORS[i%G.config.COLORS.length]), name=Array(n).fill('Sample');
