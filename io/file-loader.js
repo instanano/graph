@@ -5,8 +5,8 @@
     G.io.initFileLoader = function({ detectModeFromData, openPanelForMode } = {}) {
         if (bound) return;
         bound = true;
-        const fileHandlers={ instanano:null, csv:G.parsers.parseText, txt:G.parsers.parseText, xls:G.parsers.parseXLSX, xlsx:G.parsers.parseXLSX, xrdml:G.parsers.parseXRDML};
-        const fileModes = {xrdml:'xrd',raw:'xrd',spc:'uvvis'};
+        const fileHandlers={ instanano:null, csv:G.parsers.parseText, txt:G.parsers.parseText, xls:G.parsers.parseXLSX, xlsx:G.parsers.parseXLSX, xrdml:G.parsers.parseXRDML, xy:G.parsers.parseXRDASCII, xye:G.parsers.parseXRDASCII, asc:G.parsers.parseXRDASCII, dat:G.parsers.parseXRDASCII, uxd:G.parsers.parseXRDASCII};
+        const fileModes = {xrdml:'xrd',xy:'xrd',xye:'xrd',asc:'xrd',dat:'xrd',uxd:'xrd',raw:'xrd',spc:'uvvis'};
         const fileinput=document.getElementById('fileinput');
         const dropzone=document.getElementById('dropzone');
         if (!fileinput || !dropzone) return;
