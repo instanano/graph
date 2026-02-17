@@ -1374,10 +1374,16 @@ window.GraphPlotter = window.GraphPlotter || {
     const matchLabel = document.getElementById('xrd-match-label');
     let currentCredits = 0;
 
-    function updateCreditDisplay(n) {
-        currentCredits = n != null ? n : 0;
+    function updateCreditDisplay(data) {
+        const total = Number(typeof data === 'object' && data ? (data.remaining_total ?? data.remaining ?? 0) : (data ?? 0));
+        const current = Number(typeof data === 'object' && data ? (data.current_remaining ?? total) : total);
+        currentCredits = Number.isFinite(total) ? Math.max(0, total) : 0;
         if (creditBar) creditBar.style.display = '';
-        if (creditCount) creditCount.textContent = currentCredits;
+        if (creditCount) {
+            const currentSafe = Number.isFinite(current) ? Math.max(0, current) : 0;
+            const other = Math.max(0, currentCredits - currentSafe);
+            creditCount.textContent = other > 0 ? `${currentCredits} (Current: ${currentSafe}, Other: ${other})` : `${currentCredits}`;
+        }
     }
 
     function setPanelMessage(panel, message) {
@@ -1436,7 +1442,7 @@ window.GraphPlotter = window.GraphPlotter || {
     async function refreshCredits() {
         if (typeof instananoCredits !== 'undefined' && G.matchXRD?.checkCredit) {
             const cr = await G.matchXRD.checkCredit();
-            updateCreditDisplay(cr ? cr.remaining : 0);
+            updateCreditDisplay(cr || 0);
         } else {
             updateCreditDisplay(0);
         }
@@ -1506,7 +1512,7 @@ window.GraphPlotter = window.GraphPlotter || {
         unlockBtn.style.pointerEvents = '';
         if (result.ok) {
             unlockBtn.style.display = 'none';
-            updateCreditDisplay(result.remaining);
+            updateCreditDisplay({ remaining_total: result.remaining, current_remaining: result.current_remaining });
             if (matchLabel) matchLabel.textContent = result.already_done ? 'Already analyzed — no credit deducted' : `Unlocked! ${result.remaining} credits left`;
             renderMatches($xrd, result.matches, result.matches.length > 0 && result.matches[0].fullData ? ['Ref ID', 'Formula', 'Match (%)'] : ['Ref ID', 'Formula', 'Match (%)']);
         } else {
@@ -1892,27 +1898,36 @@ window.GraphPlotter = window.GraphPlotter || {
             const lock = await G.matchXRD.computeLockHash(selectedPeaks);
             const r = await ajaxPost('instanano_use_credit', { lock_hash: lock.lock_hash, lock_version: lock.lock_version, sample_count: n });
             if (!r?.success || !r?.data?.signature) return { ok: false, message: r?.data?.message || 'Failed.', remaining: r?.data?.remaining };
+            const accountId = Number(r.data.account_id || 0);
             G.matchXRD.lockActive = true;
             G.matchXRD.lockedPeaks = selectedPeaks.map(p => ({ x: p.x, intensity: p.intensity, normInt: p.normInt }));
             G.matchXRD.lockInfo = {
                 lock_hash: lock.lock_hash,
                 signature: r.data.signature,
                 lock_version: lock.lock_version,
+                account_id: accountId,
                 table_hash: lock.table_hash,
                 peaks_hash: lock.peaks_hash,
                 fetch_token: r.data.fetch_token || "",
                 fetch_token_expires: Number(r.data.fetch_token_expires || 0),
                 verified: true
             };
-            return { ok: true, matches: lastSearchResults, remaining: r.data.remaining, already_done: false };
+            return {
+                ok: true,
+                matches: lastSearchResults,
+                remaining: Number(r.data.remaining_total ?? r.data.remaining ?? 0),
+                current_remaining: Number(r.data.current_remaining ?? 0),
+                already_done: false
+            };
         },
         refreshFetchToken: async () => {
             const lock = G.matchXRD.lockInfo;
-            if (!G.matchXRD.lockActive || !lock?.signature || !lock?.lock_hash) return false;
+            if (!G.matchXRD.lockActive || !lock?.signature || !lock?.lock_hash || !lock?.account_id) return false;
             const r = await ajaxPost('instanano_verify_lock', {
                 lock_hash: lock.lock_hash,
                 signature: lock.signature,
-                lock_version: lock.lock_version
+                lock_version: lock.lock_version,
+                account_id: lock.account_id
             });
             if (!r?.success || !r?.data?.valid || !r?.data?.fetch_token) return false;
             lock.fetch_token = r.data.fetch_token;
@@ -1921,7 +1936,7 @@ window.GraphPlotter = window.GraphPlotter || {
         },
         fetchRef: async (refId) => {
             const lock = G.matchXRD.lockInfo;
-            if (!G.matchXRD.lockActive || !lock?.signature) return null;
+            if (!G.matchXRD.lockActive || !lock?.signature || !lock?.account_id) return null;
             const now = Math.floor(Date.now() / 1000);
             if (!lock.fetch_token || !lock.fetch_token_expires || now >= (lock.fetch_token_expires - 5)) {
                 const ok = await G.matchXRD.refreshFetchToken();
@@ -1930,7 +1945,8 @@ window.GraphPlotter = window.GraphPlotter || {
             let r = await ajaxPost('instanano_xrd_fetch_refs', {
                 ref_ids: [refId],
                 lock_hash: lock.lock_hash,
-                fetch_token: lock.fetch_token
+                fetch_token: lock.fetch_token,
+                account_id: lock.account_id
             });
             if (!r?.success && r?.data?.code === 'fetch_token_expired') {
                 const ok = await G.matchXRD.refreshFetchToken();
@@ -1938,7 +1954,8 @@ window.GraphPlotter = window.GraphPlotter || {
                 r = await ajaxPost('instanano_xrd_fetch_refs', {
                     ref_ids: [refId],
                     lock_hash: lock.lock_hash,
-                    fetch_token: lock.fetch_token
+                    fetch_token: lock.fetch_token,
+                    account_id: lock.account_id
                 });
             }
             return r?.success ? r.data[refId] : null;
@@ -1991,6 +2008,7 @@ window.GraphPlotter = window.GraphPlotter || {
             settings: raw.settings && typeof raw.settings === "object" ? raw.settings : {},
             html: sanitizeChartHTML(raw.html || ""),
             xrd_lock_version: raw.xrd_lock_version ?? null,
+            xrd_account_id: Number(raw.xrd_account_id || 0),
             xrd_lock_hash: typeof raw.xrd_lock_hash === "string" ? raw.xrd_lock_hash : "",
             xrd_signature: typeof raw.xrd_signature === "string" ? raw.xrd_signature : "",
             xrd_table_hash: typeof raw.xrd_table_hash === "string" ? raw.xrd_table_hash : "",
@@ -2067,6 +2085,7 @@ window.GraphPlotter = window.GraphPlotter || {
         const lpeaks = G.matchXRD?.lockedPeaks;
         if (lock?.verified && Array.isArray(lpeaks) && lpeaks.length) {
             payload.xrd_lock_version = lock.lock_version ?? null;
+            payload.xrd_account_id = Number(lock.account_id || 0);
             payload.xrd_lock_hash = lock.lock_hash || "";
             payload.xrd_signature = lock.signature || "";
             if (lock.table_hash) payload.xrd_table_hash = lock.table_hash;
@@ -2102,7 +2121,7 @@ window.GraphPlotter = window.GraphPlotter || {
         d3.select('#chart').html(s.html); d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); G.features.prepareShapeLayer(); d3.selectAll('.shape-group').each(function(){G.features.makeShapeInteractive(d3.select(this))});
         d3.selectAll('foreignObject.user-text,g.legend-group,g.axis-title').call(G.utils.applyDrag); G.axis.tickEditing(d3.select('#chart svg'));
         if (G.matchXRD) { G.matchXRD.lockActive = false; G.matchXRD.lockedPeaks = []; G.matchXRD.lockInfo = null; }
-        if (s.xrd_lock_hash && s.xrd_signature && Array.isArray(s.xrd_peaks) && typeof instananoCredits !== 'undefined') {
+        if (s.xrd_lock_hash && s.xrd_signature && Array.isArray(s.xrd_peaks) && s.xrd_account_id > 0 && typeof instananoCredits !== 'undefined') {
             const peaks = s.xrd_peaks.map(p => ({ x: Number(p.x), intensity: Number(p.intensity ?? 0), normInt: 0 }));
             const maxInt = peaks.length ? Math.max(...peaks.map(p => p.intensity)) : 0;
             if (maxInt > 0) peaks.forEach(p => p.normInt = (p.intensity / maxInt) * 100);
@@ -2122,6 +2141,7 @@ window.GraphPlotter = window.GraphPlotter || {
                     fd.append('nonce', instananoCredits.nonce);
                     fd.append('lock_hash', s.xrd_lock_hash);
                     fd.append('signature', s.xrd_signature);
+                    fd.append('account_id', s.xrd_account_id);
                     if (s.xrd_lock_version != null) fd.append('lock_version', s.xrd_lock_version);
                     fetch(instananoCredits.ajaxUrl, { method: 'POST', body: fd })
                         .then(r => r.json())
@@ -2134,6 +2154,7 @@ window.GraphPlotter = window.GraphPlotter || {
                                     lock_hash: s.xrd_lock_hash,
                                     signature: s.xrd_signature,
                                     lock_version: s.xrd_lock_version ?? null,
+                                    account_id: Number(res.data.account_id || s.xrd_account_id || 0),
                                     table_hash: lock.table_hash,
                                     peaks_hash: lock.peaks_hash,
                                     fetch_token: res.data.fetch_token || "",
