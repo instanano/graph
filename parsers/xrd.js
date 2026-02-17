@@ -1,5 +1,18 @@
 (function(G) {
     "use strict";
+    G.parsers.parseXRDASCII = function(text) {
+        const rows = [];
+        String(text || "").split(/\r?\n/).forEach(line => {
+            const t = line.trim();
+            if (!t || t.startsWith("#") || t.startsWith(";") || /^[_A-Za-z]+\s*=/.test(t)) return;
+            const nums = t.match(/[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g);
+            if (!nums || nums.length < 2) return;
+            const x = Number(nums[0]);
+            const y = Number(nums[1]);
+            if (Number.isFinite(x) && Number.isFinite(y)) rows.push([x, y]);
+        });
+        return rows.length ? rows : G.parsers.parseText(text);
+    };
     G.parsers.parseXRDML = function(text) {
         const xml = new DOMParser().parseFromString(text, "application/xml");
         const scan = xml.getElementsByTagName("scan")[0] || xml.getElementsByTagNameNS("*", "scan")[0];
