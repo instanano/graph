@@ -43,6 +43,7 @@
             settings: raw.settings && typeof raw.settings === "object" ? raw.settings : {},
             html: sanitizeChartHTML(raw.html || ""),
             xrd_lock_version: raw.xrd_lock_version ?? null,
+            xrd_account_id: Number(raw.xrd_account_id || 0),
             xrd_lock_hash: typeof raw.xrd_lock_hash === "string" ? raw.xrd_lock_hash : "",
             xrd_signature: typeof raw.xrd_signature === "string" ? raw.xrd_signature : "",
             xrd_table_hash: typeof raw.xrd_table_hash === "string" ? raw.xrd_table_hash : "",
@@ -119,6 +120,7 @@
         const lpeaks = G.matchXRD?.lockedPeaks;
         if (lock?.verified && Array.isArray(lpeaks) && lpeaks.length) {
             payload.xrd_lock_version = lock.lock_version ?? null;
+            payload.xrd_account_id = Number(lock.account_id || 0);
             payload.xrd_lock_hash = lock.lock_hash || "";
             payload.xrd_signature = lock.signature || "";
             if (lock.table_hash) payload.xrd_table_hash = lock.table_hash;
@@ -154,7 +156,7 @@
         d3.select('#chart').html(s.html); d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); G.features.prepareShapeLayer(); d3.selectAll('.shape-group').each(function(){G.features.makeShapeInteractive(d3.select(this))});
         d3.selectAll('foreignObject.user-text,g.legend-group,g.axis-title').call(G.utils.applyDrag); G.axis.tickEditing(d3.select('#chart svg'));
         if (G.matchXRD) { G.matchXRD.lockActive = false; G.matchXRD.lockedPeaks = []; G.matchXRD.lockInfo = null; }
-        if (s.xrd_lock_hash && s.xrd_signature && Array.isArray(s.xrd_peaks) && typeof instananoCredits !== 'undefined') {
+        if (s.xrd_lock_hash && s.xrd_signature && Array.isArray(s.xrd_peaks) && s.xrd_account_id > 0 && typeof instananoCredits !== 'undefined') {
             const peaks = s.xrd_peaks.map(p => ({ x: Number(p.x), intensity: Number(p.intensity ?? 0), normInt: 0 }));
             const maxInt = peaks.length ? Math.max(...peaks.map(p => p.intensity)) : 0;
             if (maxInt > 0) peaks.forEach(p => p.normInt = (p.intensity / maxInt) * 100);
@@ -174,6 +176,7 @@
                     fd.append('nonce', instananoCredits.nonce);
                     fd.append('lock_hash', s.xrd_lock_hash);
                     fd.append('signature', s.xrd_signature);
+                    fd.append('account_id', s.xrd_account_id);
                     if (s.xrd_lock_version != null) fd.append('lock_version', s.xrd_lock_version);
                     fetch(instananoCredits.ajaxUrl, { method: 'POST', body: fd })
                         .then(r => r.json())
@@ -186,6 +189,7 @@
                                     lock_hash: s.xrd_lock_hash,
                                     signature: s.xrd_signature,
                                     lock_version: s.xrd_lock_version ?? null,
+                                    account_id: Number(res.data.account_id || s.xrd_account_id || 0),
                                     table_hash: lock.table_hash,
                                     peaks_hash: lock.peaks_hash,
                                     fetch_token: res.data.fetch_token || "",
