@@ -1,6 +1,12 @@
 (function(G) {
     "use strict";
     let bound = false;
+    G.ui.openSidebarPanel = function(panelId) {
+        const panel = document.getElementById(panelId);
+        if (!panel || panel.name !== 'sidebar') return false;
+        panel.checked = true;
+        return true;
+    };
     G.ui.bindShellEvents = function() {
         if (bound) return;
         bound = true;
