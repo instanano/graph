@@ -96,41 +96,6 @@
         const t=e.target; if(!t.matches('.control input')) return;
         if(t.name==='axistitles'|| t.name==='aspectratio') G.axis.resetScales(false); if(t.name==='aspectratio'){G.axis.applyGraphRatio(t.value);} scheduleRender();});
     }
-    const fileHandlers={ instanano:null, csv:G.parsers.parseText, txt:G.parsers.parseText, xls:G.parsers.parseXLSX, xlsx:G.parsers.parseXLSX, xrdml:G.parsers.parseXRDML};
-    const fileModes = {xrdml:'xrd',raw:'xrd',spc:'uvvis'};
-    const fileinput=document.getElementById('fileinput');
-    fileinput.accept=Object.keys(fileHandlers).map(ext=>'.'+ext).join(',');
-    const dropzone=document.getElementById('dropzone');
-    async function handleFileList(src){
-        const items = src && src.items; const files = items && items.length ? await (async()=>{const out=[];
-        const readAll=r=>new Promise(res=>{const a=[];(function n(){r.readEntries(es=>{if(!es.length)res(a);else{a.push(...es);n()}})})()});
-        const walk=async (en,p='')=>en.isFile ? await new Promise(r=>en.file(f=>{f.relativePath=p+f.name;out.push(f);r()})) : await Promise.all((await readAll(en.createReader())).map(e=>walk(e,p+en.name+'/')));
-        for (const it of items){const en=it.webkitGetAsEntry&&it.webkitGetAsEntry(); if(en) await walk(en)} return out})() : [...(src?.files||src||[])]; if(!files.length) return; if (await G.parsers.parseNMR(files)) return;
-        const file=files[0]; const ext=file.name.split('.').pop().toLowerCase();
-        if (ext === 'instanano') {
-            const text = await file.text();
-            try { G.importState(JSON.parse(text)); }
-            catch (_) { alert('Invalid .instanano file'); }
-            return;
-        }  
-        const parser=fileHandlers[ext]; if(!parser) return alert('Unsupported file type: .'+ext);
-        if (fileModes[ext]) { const mappedMode = fileModes[ext]; const radio = document.querySelector(`input[name="axistitles"][value="${mappedMode}"]`); 
-        if (radio) radio.checked = true; openPanelForMode(mappedMode);} let rows; 
-        if(ext==='xls'||ext==='xlsx'){ const buffer=await file.arrayBuffer();
-        rows=parser(buffer);} else { const text=await file.text(); rows=parser(text);}
-        const n=Math.max(...rows.map(r=>r.length)), header=Array(n).fill().map((_,i)=>i===0?'X-axis':'Y-axis'),
-        color=Array(n).fill().map((_,i)=>G.config.COLORS[i%G.config.COLORS.length]), name=Array(n).fill('Sample');
-        G.state.hot.loadData([header,color,name,...rows]); G.state.colEnabled = {}; G.state.hot.getData()[0].forEach((_, c) => { G.state.colEnabled[c] = true; }); 
-        G.state.hot.render(); const mode = detectModeFromData(); if (mode) { const radio = document.querySelector(`input[name="axistitles"][value="${mode}"]`); if (radio) radio.checked = true; openPanelForMode(mode);}
-        d3.select('#chart').selectAll("g.axis-title, g.legend-group, g.shape-group, defs, foreignObject.user-text").remove();
-        G.ui.disableAreaCal(); G.state.tickLabelStyles={x:{fontSize:null,color:null},y:{fontSize:null,color:null}};
-        G.axis.resetScales(true); G.renderChart(); 
-    }
-    ['dragenter','dragover'].forEach(evt=>dropzone.addEventListener(evt,e=>{e.preventDefault();dropzone.classList.add('hover')}));
-    ['dragleave','drop'].forEach(evt=>dropzone.addEventListener(evt,e=>{e.preventDefault();dropzone.classList.remove('hover')}));
-    dropzone.addEventListener('drop', async e=>{ e.preventDefault(); dropzone.classList.remove('hover'); await handleFileList(e.dataTransfer);});
-    fileinput.addEventListener('change', async ()=>{ await handleFileList(fileinput.files); });
-    dropzone.addEventListener('click',()=>fileinput.click()); 
     const controls = document.querySelectorAll('input[id]'); const showEls  = document.querySelectorAll('[data-show]');
     const radios   = document.querySelectorAll('input[name="charttype"]');
     radios.forEach(radio => radio.addEventListener('change', () => { if (!G.state.hot || typeof G.renderChart !== "function") return; controls.forEach(ctl => {
@@ -156,6 +121,7 @@
         G.ui.bindShellEvents?.();
         G.initTable(); 
         bindEvents(); 
+        G.io.initFileLoader?.({ detectModeFromData, openPanelForMode });
         G.axis.resetScales(true);
         const selectedType = document.querySelector('input[name="charttype"]:checked');
         if (selectedType) selectedType.dispatchEvent(new Event('change'));
