@@ -50,6 +50,7 @@ jobs:
             features/tauc.js \
             features/upsell.js \
             parsers/parsers.js \
+            parsers/xrd.js \
             parsers/nmr.js \
             io/file-loader.js \
             match/core.js \
