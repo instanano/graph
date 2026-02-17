@@ -16,6 +16,7 @@
         else if(bi!=null){ axisName="B"; key="B"; axisTicks=d3.select(axisGrp).selectAll("text.tick-b"); domain=G.state.axisScales.b.domain();}
         else if(ci!=null){ axisName="C"; key="C"; axisTicks=d3.select(axisGrp).selectAll("text.tick-c"); domain=G.state.axisScales.c.domain();}
         else return; window.selectedAxisName=axisName;
+        G.ui.openSidebarPanel?.('icon3');
         axisTicks.attr("contenteditable",true).style("outline","1px solid #4A90E2").style("cursor","pointer"); G.state.activeTicks=axisTicks;
         const el=id=>document.getElementById(id); const lbl=el("axis-label"); const minI=el("scalemin"); const maxI=el("scalemax");
         const tc=el("tickcount"); const sf=el("scaleformat"); const chk=el("useCustomTicks"); const ctk=el("customticks");
