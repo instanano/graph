@@ -272,27 +272,36 @@
             const lock = await G.matchXRD.computeLockHash(selectedPeaks);
             const r = await ajaxPost('instanano_use_credit', { lock_hash: lock.lock_hash, lock_version: lock.lock_version, sample_count: n });
             if (!r?.success || !r?.data?.signature) return { ok: false, message: r?.data?.message || 'Failed.', remaining: r?.data?.remaining };
+            const accountId = Number(r.data.account_id || 0);
             G.matchXRD.lockActive = true;
             G.matchXRD.lockedPeaks = selectedPeaks.map(p => ({ x: p.x, intensity: p.intensity, normInt: p.normInt }));
             G.matchXRD.lockInfo = {
                 lock_hash: lock.lock_hash,
                 signature: r.data.signature,
                 lock_version: lock.lock_version,
+                account_id: accountId,
                 table_hash: lock.table_hash,
                 peaks_hash: lock.peaks_hash,
                 fetch_token: r.data.fetch_token || "",
                 fetch_token_expires: Number(r.data.fetch_token_expires || 0),
                 verified: true
             };
-            return { ok: true, matches: lastSearchResults, remaining: r.data.remaining, already_done: false };
+            return {
+                ok: true,
+                matches: lastSearchResults,
+                remaining: Number(r.data.remaining_total ?? r.data.remaining ?? 0),
+                current_remaining: Number(r.data.current_remaining ?? 0),
+                already_done: false
+            };
         },
         refreshFetchToken: async () => {
             const lock = G.matchXRD.lockInfo;
-            if (!G.matchXRD.lockActive || !lock?.signature || !lock?.lock_hash) return false;
+            if (!G.matchXRD.lockActive || !lock?.signature || !lock?.lock_hash || !lock?.account_id) return false;
             const r = await ajaxPost('instanano_verify_lock', {
                 lock_hash: lock.lock_hash,
                 signature: lock.signature,
-                lock_version: lock.lock_version
+                lock_version: lock.lock_version,
+                account_id: lock.account_id
             });
             if (!r?.success || !r?.data?.valid || !r?.data?.fetch_token) return false;
             lock.fetch_token = r.data.fetch_token;
@@ -301,7 +310,7 @@
         },
         fetchRef: async (refId) => {
             const lock = G.matchXRD.lockInfo;
-            if (!G.matchXRD.lockActive || !lock?.signature) return null;
+            if (!G.matchXRD.lockActive || !lock?.signature || !lock?.account_id) return null;
             const now = Math.floor(Date.now() / 1000);
             if (!lock.fetch_token || !lock.fetch_token_expires || now >= (lock.fetch_token_expires - 5)) {
                 const ok = await G.matchXRD.refreshFetchToken();
@@ -310,7 +319,8 @@
             let r = await ajaxPost('instanano_xrd_fetch_refs', {
                 ref_ids: [refId],
                 lock_hash: lock.lock_hash,
-                fetch_token: lock.fetch_token
+                fetch_token: lock.fetch_token,
+                account_id: lock.account_id
             });
             if (!r?.success && r?.data?.code === 'fetch_token_expired') {
                 const ok = await G.matchXRD.refreshFetchToken();
@@ -318,7 +328,8 @@
                 r = await ajaxPost('instanano_xrd_fetch_refs', {
                     ref_ids: [refId],
                     lock_hash: lock.lock_hash,
-                    fetch_token: lock.fetch_token
+                    fetch_token: lock.fetch_token,
+                    account_id: lock.account_id
                 });
             }
             return r?.success ? r.data[refId] : null;
