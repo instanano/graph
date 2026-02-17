@@ -15,10 +15,16 @@
     const matchLabel = document.getElementById('xrd-match-label');
     let currentCredits = 0;
 
-    function updateCreditDisplay(n) {
-        currentCredits = n != null ? n : 0;
+    function updateCreditDisplay(data) {
+        const total = Number(typeof data === 'object' && data ? (data.remaining_total ?? data.remaining ?? 0) : (data ?? 0));
+        const current = Number(typeof data === 'object' && data ? (data.current_remaining ?? total) : total);
+        currentCredits = Number.isFinite(total) ? Math.max(0, total) : 0;
         if (creditBar) creditBar.style.display = '';
-        if (creditCount) creditCount.textContent = currentCredits;
+        if (creditCount) {
+            const currentSafe = Number.isFinite(current) ? Math.max(0, current) : 0;
+            const other = Math.max(0, currentCredits - currentSafe);
+            creditCount.textContent = other > 0 ? `${currentCredits} (Current: ${currentSafe}, Other: ${other})` : `${currentCredits}`;
+        }
     }
 
     function setPanelMessage(panel, message) {
@@ -77,7 +83,7 @@
     async function refreshCredits() {
         if (typeof instananoCredits !== 'undefined' && G.matchXRD?.checkCredit) {
             const cr = await G.matchXRD.checkCredit();
-            updateCreditDisplay(cr ? cr.remaining : 0);
+            updateCreditDisplay(cr || 0);
         } else {
             updateCreditDisplay(0);
         }
@@ -147,7 +153,7 @@
         unlockBtn.style.pointerEvents = '';
         if (result.ok) {
             unlockBtn.style.display = 'none';
-            updateCreditDisplay(result.remaining);
+            updateCreditDisplay({ remaining_total: result.remaining, current_remaining: result.current_remaining });
             if (matchLabel) matchLabel.textContent = result.already_done ? 'Already analyzed — no credit deducted' : `Unlocked! ${result.remaining} credits left`;
             renderMatches($xrd, result.matches, result.matches.length > 0 && result.matches[0].fullData ? ['Ref ID', 'Formula', 'Match (%)'] : ['Ref ID', 'Formula', 'Match (%)']);
         } else {
