@@ -2168,7 +2168,7 @@ window.GraphPlotter = window.GraphPlotter || {
     ? G.config.COLORS[r.length % G.config.COLORS.length] : i === 2 ? "Sample" : "")); G.state.hot.loadData(d);} if (specs) { let p = specs.findIndex(s => s.endsWith('*'));
     if (p < 0) p = specs.length; const patterns = specs.map(s => s.replace(/\*$/, '')); const wild     = patterns.slice(p);
     G.state.hot.getData()[0].forEach((orig, i) => { const lbl = i < p ? patterns[i] : (wild.length ? wild[(i - p) % wild.length] : orig);
-    G.state.hot.setDataAtCell(0, i, lbl); G.state.colEnabled[i] = G.state.colEnabled[i] && patterns.includes(lbl); }); G.state.hot.render();} 
+    G.state.hot.setDataAtCell(0, i, lbl); G.state.colEnabled[i] = (G.state.colEnabled[i] !== false) && patterns.includes(lbl); }); G.state.hot.render();} 
     G.axis.resetScales(false); scheduleRender(); }));
     ['smoothingslider','baselineslider','multiyaxis'].forEach(id => { const input = document.getElementById(id);
     function updateThumbColor() { input.classList.toggle('zero', input.value === '0');}
