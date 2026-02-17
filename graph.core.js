@@ -70,6 +70,11 @@
         if (minX >= 0 && minX <= 10 && maxX >= 80 && maxX <= 90) return 'xrd';
         return null;
     }
+    function openPanelForMode(mode) {
+        const panelByMode = { xrd: 'icon5' };
+        const panelId = panelByMode[mode];
+        if (panelId) G.ui.openSidebarPanel?.(panelId);
+    }
     let renderQueued = false;
     function scheduleRender() {
         if (renderQueued) return;
@@ -81,7 +86,7 @@
     }
     function bindEvents(){
         G.state.hot.addHook('afterPaste', () => { setTimeout(() => { G.state.colEnabled = {}; G.state.hot.getData()[0].forEach((_, c) => { G.state.colEnabled[c] = true; }); G.state.hot.render(); const mode = detectModeFromData(); if (mode) { 
-        const radio = document.querySelector(`input[name="axistitles"][value="${mode}"]`); if (radio) radio.checked = true;} G.axis.resetScales(true);
+        const radio = document.querySelector(`input[name="axistitles"][value="${mode}"]`); if (radio) radio.checked = true; openPanelForMode(mode);} G.axis.resetScales(true);
         const svg = d3.select("#chart svg"); if (!svg.empty()) { svg.selectAll(".shape-group").remove(); svg.selectAll("foreignObject.user-text").remove(); G.state.tickLabelStyles={x:{fontSize:null,color:null},y:{fontSize:null,color:null}};} G.renderChart();}, 0);});
         G.state.hot.addHook('afterChange', (changes, src)=>{ if(!changes) return; let h=false, d=false; for(const [r,,o,n] of changes){
         if(r===0 && o!==n) h=true; if(r>=3 && o!==n) d=true;} d? G.axis.resetScales(true): h&& G.axis.resetScales(false); if(src!=='paste') scheduleRender(); 
@@ -109,14 +114,14 @@
             return;
         }  
         const parser=fileHandlers[ext]; if(!parser) return alert('Unsupported file type: .'+ext);
-        if (fileModes[ext]) { const radio = document.querySelector(`input[name="axistitles"][value="${fileModes[ext]}"]`); 
-        if (radio) radio.checked = true;} let rows; 
+        if (fileModes[ext]) { const mappedMode = fileModes[ext]; const radio = document.querySelector(`input[name="axistitles"][value="${mappedMode}"]`); 
+        if (radio) radio.checked = true; openPanelForMode(mappedMode);} let rows; 
         if(ext==='xls'||ext==='xlsx'){ const buffer=await file.arrayBuffer();
         rows=parser(buffer);} else { const text=await file.text(); rows=parser(text);}
         const n=Math.max(...rows.map(r=>r.length)), header=Array(n).fill().map((_,i)=>i===0?'X-axis':'Y-axis'),
         color=Array(n).fill().map((_,i)=>G.config.COLORS[i%G.config.COLORS.length]), name=Array(n).fill('Sample');
         G.state.hot.loadData([header,color,name,...rows]); G.state.colEnabled = {}; G.state.hot.getData()[0].forEach((_, c) => { G.state.colEnabled[c] = true; }); 
-        G.state.hot.render(); const mode = detectModeFromData(); if (mode) { const radio = document.querySelector(`input[name="axistitles"][value="${mode}"]`); if (radio) radio.checked = true;}
+        G.state.hot.render(); const mode = detectModeFromData(); if (mode) { const radio = document.querySelector(`input[name="axistitles"][value="${mode}"]`); if (radio) radio.checked = true; openPanelForMode(mode);}
         d3.select('#chart').selectAll("g.axis-title, g.legend-group, g.shape-group, defs, foreignObject.user-text").remove();
         G.ui.disableAreaCal(); G.state.tickLabelStyles={x:{fontSize:null,color:null},y:{fontSize:null,color:null}};
         G.axis.resetScales(true); G.renderChart(); 
