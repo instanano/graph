@@ -5,7 +5,7 @@
     G.io.initFileLoader = function({ detectModeFromData, openPanelForMode } = {}) {
         if (bound) return;
         bound = true;
-        const fileHandlers={ instanano:null, csv:G.parsers.parseText, txt:G.parsers.parseText, xls:G.parsers.parseXLSX, xlsx:G.parsers.parseXLSX, xrdml:G.parsers.parseXRDML, xy:G.parsers.parseXRDASCII, xye:G.parsers.parseXRDASCII, asc:G.parsers.parseXRDASCII, dat:G.parsers.parseXRDASCII, uxd:G.parsers.parseXRDASCII};
+        const fileHandlers={ instanano:null, csv:G.parsers.parseText, txt:G.parsers.parseText, xls:G.parsers.parseXLSX, xlsx:G.parsers.parseXLSX, xrdml:G.parsers.parseXRDML, raw:G.parsers.parseRAW, xy:G.parsers.parseXRDASCII, xye:G.parsers.parseXRDASCII, asc:G.parsers.parseXRDASCII, dat:G.parsers.parseXRDASCII, uxd:G.parsers.parseXRDASCII};
         const fileModes = {xrdml:'xrd',xy:'xrd',xye:'xrd',asc:'xrd',dat:'xrd',uxd:'xrd',raw:'xrd',spc:'uvvis'};
         const fileinput=document.getElementById('fileinput');
         const dropzone=document.getElementById('dropzone');
@@ -34,7 +34,7 @@
             const parser=fileHandlers[ext]; if(!parser) return alert('Unsupported file type: .'+ext);
             if (fileModes[ext]) setMode(fileModes[ext]);
             let rows;
-            if(ext==='xls'||ext==='xlsx'){ const buffer=await file.arrayBuffer(); rows=parser(buffer);}
+            if(ext==='xls'||ext==='xlsx'||ext==='raw'){ const buffer=await file.arrayBuffer(); rows=parser(buffer);}
             else { const text=await file.text(); rows=parser(text);}
             const n=Math.max(...rows.map(r=>r.length)), header=Array(n).fill().map((_,i)=>i===0?'X-axis':'Y-axis'),
             color=Array(n).fill().map((_,i)=>G.config.COLORS[i%G.config.COLORS.length]), name=Array(n).fill('Sample');
