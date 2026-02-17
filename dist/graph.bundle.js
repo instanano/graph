@@ -1187,6 +1187,19 @@ window.GraphPlotter = window.GraphPlotter || {
 })(window.GraphPlotter);
 (function(G) {
     "use strict";
+    G.parsers.parseXRDASCII = function(text) {
+        const rows = [];
+        String(text || "").split(/\r?\n/).forEach(line => {
+            const t = line.trim();
+            if (!t || t.startsWith("#") || t.startsWith(";") || /^[_A-Za-z]+\s*=/.test(t)) return;
+            const nums = t.match(/[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g);
+            if (!nums || nums.length < 2) return;
+            const x = Number(nums[0]);
+            const y = Number(nums[1]);
+            if (Number.isFinite(x) && Number.isFinite(y)) rows.push([x, y]);
+        });
+        return rows.length ? rows : G.parsers.parseText(text);
+    };
     G.parsers.parseXRDML = function(text) {
         const xml = new DOMParser().parseFromString(text, "application/xml");
         const scan = xml.getElementsByTagName("scan")[0] || xml.getElementsByTagNameNS("*", "scan")[0];
@@ -1252,8 +1265,8 @@ window.GraphPlotter = window.GraphPlotter || {
     G.io.initFileLoader = function({ detectModeFromData, openPanelForMode } = {}) {
         if (bound) return;
         bound = true;
-        const fileHandlers={ instanano:null, csv:G.parsers.parseText, txt:G.parsers.parseText, xls:G.parsers.parseXLSX, xlsx:G.parsers.parseXLSX, xrdml:G.parsers.parseXRDML};
-        const fileModes = {xrdml:'xrd',raw:'xrd',spc:'uvvis'};
+        const fileHandlers={ instanano:null, csv:G.parsers.parseText, txt:G.parsers.parseText, xls:G.parsers.parseXLSX, xlsx:G.parsers.parseXLSX, xrdml:G.parsers.parseXRDML, xy:G.parsers.parseXRDASCII, xye:G.parsers.parseXRDASCII, asc:G.parsers.parseXRDASCII, dat:G.parsers.parseXRDASCII, uxd:G.parsers.parseXRDASCII};
+        const fileModes = {xrdml:'xrd',xy:'xrd',xye:'xrd',asc:'xrd',dat:'xrd',uxd:'xrd',raw:'xrd',spc:'uvvis'};
         const fileinput=document.getElementById('fileinput');
         const dropzone=document.getElementById('dropzone');
         if (!fileinput || !dropzone) return;
