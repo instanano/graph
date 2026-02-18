@@ -1369,19 +1369,43 @@ window.GraphPlotter = window.GraphPlotter || {
     const fs = document.getElementById('xrd-filter-section');
     const ei = document.getElementById('xrd-elements');
     const unlockBtn = document.getElementById('xrd-unlock-btn');
+    const unlockSection = document.getElementById('xrd-unlock-section');
+    const lockedCountLabel = document.getElementById('xrd-locked-count');
     const creditBar = document.getElementById('xrd-credit-bar');
     const creditCount = document.getElementById('xrd-credit-count');
     let currentCredits = 0;
+    let creditsLoaded = false;
 
     function updateCreditDisplay(data) {
         const total = Number(typeof data === 'object' && data ? (data.remaining_total ?? data.remaining ?? 0) : (data ?? 0));
         const current = Number(typeof data === 'object' && data ? (data.current_remaining ?? total) : total);
         currentCredits = Number.isFinite(total) ? Math.max(0, total) : 0;
+        creditsLoaded = true;
         if (creditBar) creditBar.style.display = '';
         if (creditCount) {
             const currentSafe = Number.isFinite(current) ? Math.max(0, current) : 0;
             const other = Math.max(0, currentCredits - currentSafe);
             creditCount.textContent = other > 0 ? `${currentCredits} (Current: ${currentSafe}, Other: ${other})` : `${currentCredits}`;
+        }
+    }
+
+    function hideUnlockSection() {
+        if (unlockSection) unlockSection.style.display = 'none';
+        if (unlockBtn) unlockBtn.style.display = 'none';
+        if (lockedCountLabel) lockedCountLabel.textContent = '';
+    }
+
+    function showUnlockSection(meta = {}) {
+        if (unlockSection) unlockSection.style.display = '';
+        if (unlockBtn) {
+            unlockBtn.style.display = '';
+            const n = G.matchXRD?.getSampleCount?.() || 1;
+            unlockBtn.textContent = `🔓 Unlock Full XRD Match (${n} credit${n > 1 ? 's' : ''})`;
+        }
+        if (lockedCountLabel) {
+            const lockedCount = Number(meta.lockedCount || 0);
+            const totalMatches = Number(meta.totalMatches || 0);
+            lockedCountLabel.textContent = lockedCount > 0 ? `${lockedCount} more ranked references are locked${totalMatches > 0 ? ` (total ${totalMatches})` : ''}.` : '';
         }
     }
 
@@ -1393,70 +1417,82 @@ window.GraphPlotter = window.GraphPlotter || {
         node.replaceChildren(p);
     }
 
-    function renderMatches(panel, matches, cols) {
+    function renderMatches(panel, matches, cols, meta = {}) {
         const node = panel?.node();
         if (!node) return;
         node.replaceChildren();
-        if (!matches.length) {
+        const lockedMatches = Array.isArray(meta.lockedMatches) ? meta.lockedMatches : [];
+        if (!matches.length && !lockedMatches.length) {
             const p = document.createElement("p");
             p.textContent = "No matching peaks found.";
             node.appendChild(p);
             return;
         }
         const frag = document.createDocumentFragment();
-        matches.forEach(item => {
+        const appendRow = (item, teaser = false) => {
             const row = item.row || item;
             const rowDiv = document.createElement("div");
             rowDiv.className = "matchedrow";
             if (item.refId) rowDiv.dataset.refid = item.refId;
-            const fd = item.fullData?.data;
-            if (fd?.Peaks) {
-                rowDiv.dataset.peaks = JSON.stringify(fd.Peaks.map(p => p.T));
-                rowDiv.dataset.ints = JSON.stringify(fd.Peaks.map(p => p.I));
-                rowDiv.dataset.fulldata = JSON.stringify(fd);
+            if (teaser) {
+                rowDiv.dataset.locked = '1';
+                rowDiv.style.pointerEvents = 'none';
+                rowDiv.style.opacity = '0.82';
             } else {
-                if (item.peaks) rowDiv.dataset.peaks = JSON.stringify(item.peaks);
-                if (item.intensities) rowDiv.dataset.ints = JSON.stringify(item.intensities);
+                const fd = item.fullData?.data;
+                if (fd?.Peaks) {
+                    rowDiv.dataset.peaks = JSON.stringify(fd.Peaks.map(p => p.T));
+                    rowDiv.dataset.ints = JSON.stringify(fd.Peaks.map(p => p.I));
+                    rowDiv.dataset.fulldata = JSON.stringify(fd);
+                } else {
+                    if (item.peaks) rowDiv.dataset.peaks = JSON.stringify(item.peaks);
+                    if (item.intensities) rowDiv.dataset.ints = JSON.stringify(item.intensities);
+                }
+                if (item.fullData?.mineral) rowDiv.dataset.mineral = item.fullData.mineral;
+                if (item.fullData?.formula) rowDiv.dataset.formula = item.fullData.formula;
             }
-            if (item.fullData?.mineral) rowDiv.dataset.mineral = item.fullData.mineral;
-            if (item.fullData?.formula) rowDiv.dataset.formula = item.fullData.formula;
             row.forEach((val, idx) => {
                 const cell = document.createElement("div");
                 const label = document.createElement("b");
                 label.textContent = `${cols[idx]}:`;
                 cell.append(label, document.createTextNode(` ${val}`));
+                if (teaser) cell.style.filter = 'blur(1px)';
                 rowDiv.appendChild(cell);
             });
-            if (item.fullData?.mineral) {
+            if (!teaser && item.fullData?.mineral) {
                 const mn = document.createElement("div");
                 mn.style.cssText = 'font-size:11px;color:#555;margin-top:2px';
                 mn.textContent = `Mineral: ${item.fullData.mineral}`;
                 rowDiv.appendChild(mn);
             }
+            if (teaser) {
+                const badge = document.createElement("div");
+                badge.style.cssText = 'position:absolute;top:5px;right:6px;background:rgba(255,255,255,0.94);border:1px solid #ddd;border-radius:10px;padding:1px 7px;font-size:10px;color:#a16207;pointer-events:none';
+                badge.textContent = 'Locked';
+                rowDiv.style.position = 'relative';
+                rowDiv.appendChild(badge);
+            }
             frag.appendChild(rowDiv);
-        });
+        };
+        matches.forEach(item => appendRow(item, false));
+        if (lockedMatches.length) {
+            const sep = document.createElement("div");
+            sep.style.cssText = 'font-size:11px;font-weight:600;color:#666;margin:8px 0 4px';
+            sep.textContent = 'More references (locked)';
+            frag.appendChild(sep);
+            lockedMatches.forEach(item => appendRow(item, true));
+        }
         node.appendChild(frag);
     }
 
-    async function refreshCredits() {
-        if (typeof instananoCredits !== 'undefined' && G.matchXRD?.checkCredit) {
-            const cr = await G.matchXRD.checkCredit();
-            updateCreditDisplay(cr || 0);
-        } else {
-            updateCreditDisplay(0);
-        }
-    }
-
-    window.addEventListener('focus', refreshCredits);
-
     document.querySelectorAll('input[name="matchinstrument"]').forEach(inp => inp.addEventListener('change', () => setPanelMessage($std, STD_MSG)));
-    ['icon1', 'icon2', 'icon3', 'icon4'].forEach(id => document.getElementById(id)?.addEventListener('change', () => G.matchXRD?.clear()));
+    ['icon1', 'icon2', 'icon3', 'icon4'].forEach(id => document.getElementById(id)?.addEventListener('change', () => { G.matchXRD?.clear(); hideUnlockSection(); }));
     icon5?.addEventListener('change', async () => {
         setPanelMessage($xrd, XRD_MSG);
-        refreshCredits();
+        hideUnlockSection();
         G.matchXRD?.render();
     });
-    icon6?.addEventListener('change', () => { G.matchXRD?.clear(); setPanelMessage($std, STD_MSG); });
+    icon6?.addEventListener('change', () => { G.matchXRD?.clear(); hideUnlockSection(); setPanelMessage($std, STD_MSG); });
     ['click', 'mousedown', 'pointerdown', 'focusin', 'input', 'keydown', 'keyup'].forEach(ev => fs?.addEventListener(ev, e => { e.stopPropagation(); setTimeout(() => G.matchXRD?.render(), 10); }));
     ei?.addEventListener('input', () => {
         if (!G.matchXRD) return;
@@ -1490,41 +1526,53 @@ window.GraphPlotter = window.GraphPlotter || {
         const v = G.matchXRD.validate(val);
         if (!v.valid) { el.style.outline = '2px solid red'; el.title = 'Invalid: ' + v.invalid.join(', '); return; }
         G.matchXRD.setFilter(val.split(',').filter(e => e.trim()), lm?.value, parseInt(ec?.value) || 0);
-        if (unlockBtn) unlockBtn.style.display = 'none';
-        const { matches, cols, locked } = await G.matchXRD.search();
-        renderMatches($xrd, matches, cols);
-        if (!matches.length) return;
-        if (locked && unlockBtn) {
-            unlockBtn.style.display = '';
-            const n = G.matchXRD.getSampleCount();
-            unlockBtn.textContent = `🔓 Unlock (${n} credit${n > 1 ? 's' : ''})`;
+        hideUnlockSection();
+        const result = await G.matchXRD.search();
+        renderMatches($xrd, result.matches, result.cols, { lockedMatches: result.lockedMatches });
+        if (!result.matches.length && !(result.lockedMatches || []).length) return;
+        if (result.locked) {
+            showUnlockSection(result);
         }
     });
     unlockBtn?.addEventListener('click', async function () {
-        if (currentCredits <= 0 || typeof instananoCredits === 'undefined') {
+        if (typeof instananoCredits === 'undefined') {
             window.open(PRICING_URL, '_blank');
             return;
         }
-        unlockBtn.textContent = '⏳ Unlocking...';
         unlockBtn.style.pointerEvents = 'none';
-        const result = await G.matchXRD.unlock();
-        unlockBtn.style.pointerEvents = '';
-        if (result.ok) {
-            unlockBtn.style.display = 'none';
-            updateCreditDisplay({ remaining_total: result.remaining, current_remaining: result.current_remaining });
-            renderMatches($xrd, result.matches, result.matches.length > 0 && result.matches[0].fullData ? ['Ref ID', 'Formula', 'Match (%)'] : ['Ref ID', 'Formula', 'Match (%)']);
-        } else {
-            unlockBtn.textContent = '🔓 Unlock';
+        try {
+            if (!creditsLoaded || currentCredits <= 0) {
+                unlockBtn.textContent = '⏳ Checking credits...';
+                const cr = await G.matchXRD?.checkCredit?.();
+                updateCreditDisplay(cr || 0);
+            }
+            if (currentCredits <= 0) {
+                unlockBtn.textContent = '🔓 Unlock Full XRD Match';
+                window.open(PRICING_URL, '_blank');
+                return;
+            }
+            unlockBtn.textContent = '⏳ Unlocking...';
+            const result = await G.matchXRD.unlock();
+            if (result.ok) {
+                hideUnlockSection();
+                updateCreditDisplay({ remaining_total: result.remaining, current_remaining: result.current_remaining });
+                renderMatches($xrd, result.matches, ['Ref ID', 'Formula', 'Match (%)']);
+            } else {
+                unlockBtn.textContent = '🔓 Unlock Full XRD Match';
+            }
+        } finally {
+            unlockBtn.style.pointerEvents = '';
         }
     });
     document.getElementById('xrd-clear-peaks')?.addEventListener('click', function () {
         G.matchXRD?.clear();
-        if (unlockBtn) unlockBtn.style.display = 'none';
+        hideUnlockSection();
         setPanelMessage($xrd, XRD_MSG);
     });
     $xrd.on('click', async function (e) {
         const t = e.target.closest('.matchedrow');
         if (!t) return;
+        if (t.dataset.locked === '1') return;
         const box = $xrd.node();
         box?.querySelectorAll('.matchedrow').forEach(r => { if (r !== t) { r.style.background = ''; const d = r.querySelector('.xrd-ref-detail'); if (d) d.remove(); } });
         t.style.background = '#f0f8ff';
@@ -1581,6 +1629,7 @@ window.GraphPlotter = window.GraphPlotter || {
             t.appendChild(det);
         } catch (_) { }
     });
+    hideUnlockSection();
     setPanelMessage($xrd, XRD_MSG);
     setPanelMessage($std, STD_MSG);
 })(window.GraphPlotter);
@@ -1630,10 +1679,12 @@ window.GraphPlotter = window.GraphPlotter || {
     const TOLERANCE = 0.5;
     const MIN_TOLERANCE = 0.25;
     const FETCH_CONCURRENCY = 8;
+    const FREE_PREVIEW_REFS = 3;
+    const FREE_PREVIEW_PEAKS = 3;
+    const MAX_RANKED_REFS = 25;
     let selectedPeaks = [];
     let compositions = null;
     let elementFilter = { elements: [], mode: 'and', count: 0 };
-    let lastSearchResults = null;
     const metaCache = new Map();
     const indexCache = new Map();
     const chunkCache = new Map();
@@ -1762,7 +1813,6 @@ window.GraphPlotter = window.GraphPlotter || {
         },
         clear: () => {
             selectedPeaks = [];
-            lastSearchResults = null;
             d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove();
             if (G.matchXRD.lockActive) { G.matchXRD.render(); return; }
         },
@@ -1819,7 +1869,7 @@ window.GraphPlotter = window.GraphPlotter || {
                     }
                 }
             }
-            const sorted = [...candidates.entries()].sort((a, b) => b[1].length - a[1].length).slice(0, 25);
+            const sorted = [...candidates.entries()].sort((a, b) => b[1].length - a[1].length).slice(0, MAX_RANKED_REFS);
             if (!sorted.length) { setProgress(0); return { matches: [], cols: [] }; }
             const chunks = {};
             const cids = [...new Set(sorted.map(([r]) => Math.floor(r / 1000)))];
@@ -1861,15 +1911,24 @@ window.GraphPlotter = window.GraphPlotter || {
             }
             final.sort((a, b) => b.score - a.score);
             setProgress('done');
-            lastSearchResults = final;
             const locked = !G.matchXRD.lockActive;
             if (locked) {
-                const preview = final.slice(0, 5).map(m => ({
+                const preview = final.slice(0, FREE_PREVIEW_REFS).map(m => ({
                     ...m,
-                    peaks: m.peaks.slice(0, 3),
-                    intensities: m.intensities.slice(0, 3)
+                    peaks: m.peaks.slice(0, FREE_PREVIEW_PEAKS),
+                    intensities: m.intensities.slice(0, FREE_PREVIEW_PEAKS)
                 }));
-                return { matches: preview, cols: ['Ref ID', 'Formula', 'Match (%)'], locked: true };
+                const lockedMatches = final.slice(FREE_PREVIEW_REFS).map(({ row, refId, score }) => ({ row, refId, score, teaser: true }));
+                return {
+                    matches: preview,
+                    lockedMatches,
+                    lockedCount: lockedMatches.length,
+                    totalMatches: final.length,
+                    previewRefs: FREE_PREVIEW_REFS,
+                    previewPeaks: FREE_PREVIEW_PEAKS,
+                    cols: ['Ref ID', 'Formula', 'Match (%)'],
+                    locked: true
+                };
             }
 
             return { matches: final, cols: ['Ref ID', 'Formula', 'Match (%)'], locked: false };
@@ -1904,9 +1963,10 @@ window.GraphPlotter = window.GraphPlotter || {
                 fetch_token_expires: Number(r.data.fetch_token_expires || 0),
                 verified: true
             };
+            const full = await G.matchXRD.search();
             return {
                 ok: true,
-                matches: lastSearchResults,
+                matches: full.matches || [],
                 remaining: Number(r.data.remaining_total ?? r.data.remaining ?? 0),
                 current_remaining: Number(r.data.current_remaining ?? 0),
                 already_done: false
