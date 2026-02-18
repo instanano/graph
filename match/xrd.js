@@ -246,7 +246,7 @@
                     peaks: m.peaks.slice(0, FREE_PREVIEW_PEAKS),
                     intensities: m.intensities.slice(0, FREE_PREVIEW_PEAKS)
                 }));
-                const lockedMatches = final.slice(FREE_PREVIEW_REFS).map(({ row, refId, score }) => ({ row, refId, score, teaser: true }));
+                const lockedMatches = final.slice(FREE_PREVIEW_REFS).map(({ row, refId }) => ({ row, refId }));
                 return {
                     matches: preview,
                     lockedMatches,
