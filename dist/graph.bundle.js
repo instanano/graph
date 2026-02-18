@@ -1405,6 +1405,15 @@ window.GraphPlotter = window.GraphPlotter || {
         node.replaceChildren(p);
     }
 
+    async function refreshCredits() {
+        if (typeof instananoCredits !== 'undefined' && G.matchXRD?.checkCredit) {
+            const cr = await G.matchXRD.checkCredit();
+            updateCreditDisplay(cr || 0);
+        } else {
+            updateCreditDisplay(0);
+        }
+    }
+
     function renderMatches(panel, matches, cols, lockedMatches = [], showLimited = false) {
         const node = panel?.node();
         if (!node) return;
@@ -1451,10 +1460,12 @@ window.GraphPlotter = window.GraphPlotter || {
         node.appendChild(frag);
     }
 
+    window.addEventListener('focus', refreshCredits);
     document.querySelectorAll('input[name="matchinstrument"]').forEach(inp => inp.addEventListener('change', () => setPanelMessage($std, STD_MSG)));
     ['icon1', 'icon2', 'icon3', 'icon4'].forEach(id => document.getElementById(id)?.addEventListener('change', () => { G.matchXRD?.clear(); setUnlockVisible(false); }));
     icon5?.addEventListener('change', async () => {
         setPanelMessage($xrd, XRD_MSG);
+        refreshCredits();
         setUnlockVisible(false);
         G.matchXRD?.render();
     });
