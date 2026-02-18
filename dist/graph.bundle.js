@@ -1405,7 +1405,7 @@ window.GraphPlotter = window.GraphPlotter || {
         if (lockedCountLabel) {
             const lockedCount = Number(meta.lockedCount || 0);
             const totalMatches = Number(meta.totalMatches || 0);
-            lockedCountLabel.textContent = lockedCount > 0 ? `${lockedCount} more ranked references are locked${totalMatches > 0 ? ` (total ${totalMatches})` : ''}.` : '';
+            lockedCountLabel.textContent = lockedCount > 0 ? `Limited to first 3 references. ${lockedCount} more ranked references are locked${totalMatches > 0 ? ` (total ${totalMatches})` : ''}.` : '';
         }
     }
 
@@ -1478,7 +1478,7 @@ window.GraphPlotter = window.GraphPlotter || {
         if (lockedMatches.length) {
             const sep = document.createElement("div");
             sep.style.cssText = 'font-size:11px;font-weight:600;color:#666;margin:8px 0 4px';
-            sep.textContent = 'More references (locked)';
+            sep.textContent = 'Limited to first 3 references';
             frag.appendChild(sep);
             lockedMatches.forEach(item => appendRow(item, true));
         }
