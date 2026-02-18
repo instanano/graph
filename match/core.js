@@ -23,7 +23,11 @@
         if (creditCount) {
             const currentSafe = Number.isFinite(current) ? Math.max(0, current) : 0;
             const other = Math.max(0, currentCredits - currentSafe);
-            creditCount.textContent = other > 0 ? `${currentCredits} (Current: ${currentSafe}, Other: ${other})` : `${currentCredits}`;
+            if (currentCredits <= 0) {
+                creditCount.innerHTML = `0 (<a href="${PRICING_URL}" target="_blank" rel="noopener noreferrer">Click to buy credits</a>)`;
+            } else {
+                creditCount.textContent = other > 0 ? `${currentCredits} (Current: ${currentSafe}, Other: ${other})` : `${currentCredits}`;
+            }
         }
     }
 
@@ -33,7 +37,7 @@
         unlockBtn.style.display = show ? '' : 'none';
         if (!show) return;
         const n = G.matchXRD?.getSampleCount?.() || 1;
-        unlockBtn.textContent = `Unlock Full XRD Match (${n} Credit${n > 1 ? 's' : ''})`;
+        unlockBtn.textContent = `🔓 Unlock Full XRD Match (${n} required credit${n > 1 ? 's' : ''})`;
     }
 
     function setPanelMessage(panel, message) {
