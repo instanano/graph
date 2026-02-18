@@ -250,10 +250,6 @@
                 return {
                     matches: preview,
                     lockedMatches,
-                    lockedCount: lockedMatches.length,
-                    totalMatches: final.length,
-                    previewRefs: FREE_PREVIEW_REFS,
-                    previewPeaks: FREE_PREVIEW_PEAKS,
                     cols: ['Ref ID', 'Formula', 'Match (%)'],
                     locked: true
                 };
