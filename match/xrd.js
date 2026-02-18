@@ -7,10 +7,12 @@
     const TOLERANCE = 0.5;
     const MIN_TOLERANCE = 0.25;
     const FETCH_CONCURRENCY = 8;
+    const FREE_PREVIEW_REFS = 3;
+    const FREE_PREVIEW_PEAKS = 3;
+    const MAX_RANKED_REFS = 25;
     let selectedPeaks = [];
     let compositions = null;
     let elementFilter = { elements: [], mode: 'and', count: 0 };
-    let lastSearchResults = null;
     const metaCache = new Map();
     const indexCache = new Map();
     const chunkCache = new Map();
@@ -139,7 +141,6 @@
         },
         clear: () => {
             selectedPeaks = [];
-            lastSearchResults = null;
             d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove();
             if (G.matchXRD.lockActive) { G.matchXRD.render(); return; }
         },
@@ -196,7 +197,7 @@
                     }
                 }
             }
-            const sorted = [...candidates.entries()].sort((a, b) => b[1].length - a[1].length).slice(0, 25);
+            const sorted = [...candidates.entries()].sort((a, b) => b[1].length - a[1].length).slice(0, MAX_RANKED_REFS);
             if (!sorted.length) { setProgress(0); return { matches: [], cols: [] }; }
             const chunks = {};
             const cids = [...new Set(sorted.map(([r]) => Math.floor(r / 1000)))];
@@ -238,15 +239,24 @@
             }
             final.sort((a, b) => b.score - a.score);
             setProgress('done');
-            lastSearchResults = final;
             const locked = !G.matchXRD.lockActive;
             if (locked) {
-                const preview = final.slice(0, 5).map(m => ({
+                const preview = final.slice(0, FREE_PREVIEW_REFS).map(m => ({
                     ...m,
-                    peaks: m.peaks.slice(0, 3),
-                    intensities: m.intensities.slice(0, 3)
+                    peaks: m.peaks.slice(0, FREE_PREVIEW_PEAKS),
+                    intensities: m.intensities.slice(0, FREE_PREVIEW_PEAKS)
                 }));
-                return { matches: preview, cols: ['Ref ID', 'Formula', 'Match (%)'], locked: true };
+                const lockedMatches = final.slice(FREE_PREVIEW_REFS).map(({ row, refId, score }) => ({ row, refId, score, teaser: true }));
+                return {
+                    matches: preview,
+                    lockedMatches,
+                    lockedCount: lockedMatches.length,
+                    totalMatches: final.length,
+                    previewRefs: FREE_PREVIEW_REFS,
+                    previewPeaks: FREE_PREVIEW_PEAKS,
+                    cols: ['Ref ID', 'Formula', 'Match (%)'],
+                    locked: true
+                };
             }
 
             return { matches: final, cols: ['Ref ID', 'Formula', 'Match (%)'], locked: false };
@@ -281,9 +291,10 @@
                 fetch_token_expires: Number(r.data.fetch_token_expires || 0),
                 verified: true
             };
+            const full = await G.matchXRD.search();
             return {
                 ok: true,
-                matches: lastSearchResults,
+                matches: full.matches || [],
                 remaining: Number(r.data.remaining_total ?? r.data.remaining ?? 0),
                 current_remaining: Number(r.data.current_remaining ?? 0),
                 already_done: false
