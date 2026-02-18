@@ -12,7 +12,6 @@
     const unlockBtn = document.getElementById('xrd-unlock-btn');
     const creditBar = document.getElementById('xrd-credit-bar');
     const creditCount = document.getElementById('xrd-credit-count');
-    const matchLabel = document.getElementById('xrd-match-label');
     let currentCredits = 0;
 
     function updateCreditDisplay(data) {
@@ -154,11 +153,9 @@
         if (result.ok) {
             unlockBtn.style.display = 'none';
             updateCreditDisplay({ remaining_total: result.remaining, current_remaining: result.current_remaining });
-            if (matchLabel) matchLabel.textContent = result.already_done ? 'Already analyzed — no credit deducted' : `Unlocked! ${result.remaining} credits left`;
             renderMatches($xrd, result.matches, result.matches.length > 0 && result.matches[0].fullData ? ['Ref ID', 'Formula', 'Match (%)'] : ['Ref ID', 'Formula', 'Match (%)']);
         } else {
             unlockBtn.textContent = '🔓 Unlock';
-            if (matchLabel) matchLabel.textContent = result.message || 'Unlock failed';
         }
     });
     document.getElementById('xrd-clear-peaks')?.addEventListener('click', function () {
