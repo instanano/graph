@@ -1373,13 +1373,11 @@ window.GraphPlotter = window.GraphPlotter || {
     const creditBar = document.getElementById('xrd-credit-bar');
     const creditCount = document.getElementById('xrd-credit-count');
     let currentCredits = 0;
-    let creditsLoaded = false;
 
     function updateCreditDisplay(data) {
         const total = Number(typeof data === 'object' && data ? (data.remaining_total ?? data.remaining ?? 0) : (data ?? 0));
         const current = Number(typeof data === 'object' && data ? (data.current_remaining ?? total) : total);
         currentCredits = Number.isFinite(total) ? Math.max(0, total) : 0;
-        creditsLoaded = true;
         if (creditBar) creditBar.style.display = '';
         if (creditCount) {
             const currentSafe = Number.isFinite(current) ? Math.max(0, current) : 0;
@@ -1394,7 +1392,7 @@ window.GraphPlotter = window.GraphPlotter || {
         unlockBtn.style.display = show ? '' : 'none';
         if (!show) return;
         const n = G.matchXRD?.getSampleCount?.() || 1;
-        unlockBtn.textContent = `🔓 Unlock Full XRD Match (${n} credit${n > 1 ? 's' : ''})`;
+        unlockBtn.textContent = `🔓 Unlock Full XRD Match (${n} required credit${n > 1 ? 's' : ''})`;
     }
 
     function setPanelMessage(panel, message) {
@@ -1518,24 +1516,16 @@ window.GraphPlotter = window.GraphPlotter || {
         }
         unlockBtn.style.pointerEvents = 'none';
         try {
-            if (!creditsLoaded || currentCredits <= 0) {
-                unlockBtn.textContent = '⏳ Checking credits...';
-                const cr = await G.matchXRD?.checkCredit?.();
-                updateCreditDisplay(cr || 0);
-            }
+            await refreshCredits();
             if (currentCredits <= 0) {
-                unlockBtn.textContent = '🔓 Unlock Full XRD Match';
                 window.open(PRICING_URL, '_blank');
                 return;
             }
-            unlockBtn.textContent = '⏳ Unlocking...';
             const result = await G.matchXRD.unlock();
             if (result.ok) {
                 setUnlockVisible(false);
                 updateCreditDisplay({ remaining_total: result.remaining, current_remaining: result.current_remaining });
                 renderMatches($xrd, result.matches, ['Ref ID', 'Formula', 'Match (%)']);
-            } else {
-                unlockBtn.textContent = '🔓 Unlock Full XRD Match';
             }
         } finally {
             unlockBtn.style.pointerEvents = '';
