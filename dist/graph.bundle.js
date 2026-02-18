@@ -1370,7 +1370,6 @@ window.GraphPlotter = window.GraphPlotter || {
     const ei = document.getElementById('xrd-elements');
     const unlockBtn = document.getElementById('xrd-unlock-btn');
     const unlockSection = document.getElementById('xrd-unlock-section');
-    const lockedCountLabel = document.getElementById('xrd-locked-count');
     const creditBar = document.getElementById('xrd-credit-bar');
     const creditCount = document.getElementById('xrd-credit-count');
     let currentCredits = 0;
@@ -1392,20 +1391,14 @@ window.GraphPlotter = window.GraphPlotter || {
     function hideUnlockSection() {
         if (unlockSection) unlockSection.style.display = 'none';
         if (unlockBtn) unlockBtn.style.display = 'none';
-        if (lockedCountLabel) lockedCountLabel.textContent = '';
     }
 
-    function showUnlockSection(meta = {}) {
+    function showUnlockSection() {
         if (unlockSection) unlockSection.style.display = '';
         if (unlockBtn) {
             unlockBtn.style.display = '';
             const n = G.matchXRD?.getSampleCount?.() || 1;
             unlockBtn.textContent = `🔓 Unlock Full XRD Match (${n} credit${n > 1 ? 's' : ''})`;
-        }
-        if (lockedCountLabel) {
-            const lockedCount = Number(meta.lockedCount || 0);
-            const totalMatches = Number(meta.totalMatches || 0);
-            lockedCountLabel.textContent = lockedCount > 0 ? `Limited to first 3 references. ${lockedCount} more ranked references are locked${totalMatches > 0 ? ` (total ${totalMatches})` : ''}.` : '';
         }
     }
 
@@ -1531,7 +1524,7 @@ window.GraphPlotter = window.GraphPlotter || {
         renderMatches($xrd, result.matches, result.cols, { lockedMatches: result.lockedMatches });
         if (!result.matches.length && !(result.lockedMatches || []).length) return;
         if (result.locked) {
-            showUnlockSection(result);
+            showUnlockSection();
         }
     });
     unlockBtn?.addEventListener('click', async function () {
@@ -1922,10 +1915,6 @@ window.GraphPlotter = window.GraphPlotter || {
                 return {
                     matches: preview,
                     lockedMatches,
-                    lockedCount: lockedMatches.length,
-                    totalMatches: final.length,
-                    previewRefs: FREE_PREVIEW_REFS,
-                    previewPeaks: FREE_PREVIEW_PEAKS,
                     cols: ['Ref ID', 'Formula', 'Match (%)'],
                     locked: true
                 };
