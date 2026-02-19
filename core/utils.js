@@ -31,8 +31,8 @@
         sel.attr("transform", `translate(${x + event.dx},${y + event.dy})${rot}`);
     }
     function dragEnded() {
-        const sel = d3.select(this); if (sel.classed("user-text") || sel.classed("axis-title") || sel.classed("legend-group")) {
-        const div = sel.select("foreignObject div"); if (sel.classed("legend-group")) { this.dataset.savedTransform = sel.attr("transform");} div.on("blur", () => { div.attr("contenteditable", false).style("cursor", "move");});}
+        const sel = d3.select(this); if (sel.classed("user-text") || sel.classed("axis-title") || sel.classed("legend-group") || sel.classed("xrd-ref-legend-group")) {
+        const div = sel.select("foreignObject div"); if (sel.classed("legend-group") || sel.classed("xrd-ref-legend-group")) { const t = sel.attr("transform"); this.dataset.savedTransform = t; if (sel.classed("xrd-ref-legend-group")) { const d = sel.datum(); if (d && typeof d === "object") d.savedTransform = t; }} div.on("blur", () => { div.attr("contenteditable", false).style("cursor", "move");});}
     }
     G.utils.applyDrag = d3.drag().on("start", dragStarted).on("drag", dragged).on("end", dragEnded);
     G.utils.updateInspector = function(selection) {
