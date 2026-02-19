@@ -11,6 +11,8 @@
     const FREE_PREVIEW_PEAKS = 3;
     const MAX_RANKED_REFS = 25;
     let selectedPeaks = [];
+    let previewRef = null;
+    const checkedRefs = new Map();
     let compositions = null;
     let elementFilter = { elements: [], mode: 'and', count: 0 };
     const metaCache = new Map();
@@ -93,6 +95,63 @@
         const r = await fetch(instananoCredits.ajaxUrl, { method: 'POST', body: fd });
         return r.json();
     }
+    function normalizeRefPayload(refId, peaks, intensities, color) {
+        const rid = String(refId ?? '').trim();
+        if (!rid || !Array.isArray(peaks)) return null;
+        const outPeaks = [];
+        const outInts = [];
+        peaks.forEach((x, i) => {
+            const xv = Number(x);
+            if (!Number.isFinite(xv)) return;
+            outPeaks.push(xv);
+            const iv = Number(intensities?.[i]);
+            outInts.push(Number.isFinite(iv) && iv >= 0 ? iv : 100);
+        });
+        if (!outPeaks.length) return null;
+        return { refId: rid, peaks: outPeaks, intensities: outInts, color: color || '' };
+    }
+    function pickRefColor(preferred = '') {
+        const palette = Array.isArray(G.config.COLORS) && G.config.COLORS.length ? G.config.COLORS : ['#0000FF'];
+        if (typeof preferred === 'string' && /^#[0-9a-f]{3,8}$/i.test(preferred)) return preferred;
+        const used = new Set(Array.from(checkedRefs.values(), r => r.color));
+        const free = palette.find(c => !used.has(c));
+        return free || palette[checkedRefs.size % palette.length];
+    }
+    function drawRefPeaks(svg, refs, className, { color, strokeWidth, dash } = {}) {
+        const xMin = G.config.DIM.ML;
+        const xMax = G.config.DIM.W - G.config.DIM.MR;
+        refs.forEach(ref => {
+            const col = typeof color === 'function' ? color(ref) : (color || '#1f77b4');
+            ref.peaks.forEach((x, i) => {
+                const xp = G.state.lastXScale(x);
+                if (!Number.isFinite(xp) || xp < xMin || xp > xMax) return;
+                const h = 5 + ((ref.intensities?.[i] ?? 100) / 100) * 35;
+                const line = svg.append('line').attr('class', className).attr('data-refid', ref.refId)
+                    .attr('x1', xp).attr('x2', xp)
+                    .attr('y1', G.config.DIM.H - G.config.DIM.MB)
+                    .attr('y2', G.config.DIM.H - G.config.DIM.MB - h)
+                    .attr('stroke', col).attr('stroke-width', strokeWidth || 1)
+                    .style('pointer-events', 'none');
+                if (dash) line.attr('stroke-dasharray', dash);
+            });
+        });
+    }
+    function drawCheckedLegend(svg, refs) {
+        svg.selectAll('g.xrd-ref-legend-group').remove();
+        if (!refs.length) return;
+        const header = G.state.hot?.getData?.()?.[0] || [];
+        const baseCount = header.reduce((n, h, i) => n + (h === 'Y-axis' && G.state.colEnabled[i] !== false ? 1 : 0), 0);
+        const x = G.config.DIM.W - G.config.DIM.MR - 100;
+        const y = G.config.DIM.MT + 25 + (baseCount * 20);
+        const marker = 20;
+        refs.forEach((ref, i) => {
+            const g = svg.append('g').attr('class', 'xrd-ref-legend-group').attr('transform', `translate(${x},${y + (i * 20)})`);
+            g.append('line').attr('x1', 0).attr('x2', marker).attr('y1', 0).attr('y2', 0)
+                .attr('stroke', ref.color).attr('stroke-width', 2).attr('stroke-dasharray', '4,2');
+            g.append('text').attr('x', marker + 5).attr('y', 4).style('font-size', '12px').style('pointer-events', 'none')
+                .text(`Ref ${ref.refId}`);
+        });
+    }
 
     G.matchXRD = {
         lockActive: false,
@@ -106,8 +165,17 @@
         },
         render: () => {
             const svg = d3.select('#chart svg');
+            if (svg.empty() || !G.state.lastXScale) return;
             const tab = document.getElementById('icon5');
-            if (tab && !tab.checked) { svg.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); return; }
+            const panelOpen = !!(tab && tab.checked);
+            const pinned = Array.from(checkedRefs.values());
+            svg.selectAll('.xrd-ref-preview-peak,.xrd-ref-checked-peak,.xrd-ref-legend-group').remove();
+            if (pinned.length) {
+                drawRefPeaks(svg, pinned, 'xrd-ref-checked-peak', { color: r => r.color, strokeWidth: 1.2, dash: '4,2' });
+                drawCheckedLegend(svg, pinned);
+            }
+            if (!panelOpen) { svg.selectAll('.xrd-user-peak').remove(); return; }
+            if (previewRef) drawRefPeaks(svg, [previewRef], 'xrd-ref-preview-peak', { color: '#1f77b4', strokeWidth: 1, dash: '4,2' });
             svg.selectAll('.xrd-user-peak').remove();
             const peaks = G.matchXRD.lockActive ? G.matchXRD.lockedPeaks : selectedPeaks;
             const xMin = G.config.DIM.ML, xMax = G.config.DIM.W - G.config.DIM.MR;
@@ -126,25 +194,67 @@
                 }
             });
         },
-        showRef: (peaks, ints) => {
-            const svg = d3.select('#chart svg');
-            svg.selectAll('.xrd-ref-peak').remove();
-            peaks.forEach((x, i) => {
-                const xp = G.state.lastXScale(x);
-                if (xp < G.config.DIM.ML || xp > G.config.DIM.W - G.config.DIM.MR) return;
-                const h = 5 + ((ints?.[i] ?? 100) / 100) * 35;
-                svg.append('line').attr('class', 'xrd-ref-peak')
-                    .attr('x1', xp).attr('x2', xp)
-                    .attr('y1', G.config.DIM.H - G.config.DIM.MB)
-                    .attr('y2', G.config.DIM.H - G.config.DIM.MB - h)
-                    .attr('stroke', 'blue').attr('stroke-width', 1)
-                    .attr('stroke-dasharray', '4,2').style('pointer-events', 'none');
-            });
+        showRef: (peaks, ints, refId = 'preview') => {
+            const parsed = normalizeRefPayload(refId, peaks, ints);
+            previewRef = parsed ? { refId: parsed.refId, peaks: parsed.peaks, intensities: parsed.intensities } : null;
+            G.matchXRD.render();
         },
-        clear: () => {
+        clear: (opts = {}) => {
+            const keepChecked = !!opts.keepChecked;
             selectedPeaks = [];
-            d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove();
-            if (G.matchXRD.lockActive) { G.matchXRD.render(); return; }
+            previewRef = null;
+            d3.selectAll('.xrd-user-peak,.xrd-ref-preview-peak').remove();
+            if (!keepChecked) {
+                checkedRefs.clear();
+                d3.selectAll('.xrd-ref-checked-peak,.xrd-ref-legend-group').remove();
+            }
+            G.matchXRD.render();
+        },
+        toggleCheckedRef: (refId, peaks, ints, checked = true) => {
+            const rid = String(refId ?? '').trim();
+            if (!rid) return false;
+            if (!checked) {
+                checkedRefs.delete(rid);
+                G.matchXRD.render();
+                return true;
+            }
+            const parsed = normalizeRefPayload(rid, peaks, ints);
+            if (!parsed) return false;
+            parsed.color = checkedRefs.get(rid)?.color || pickRefColor(parsed.color);
+            checkedRefs.set(rid, parsed);
+            G.matchXRD.render();
+            return true;
+        },
+        updateCheckedRef: (refId, peaks, ints) => {
+            const rid = String(refId ?? '').trim();
+            const prev = checkedRefs.get(rid);
+            if (!prev) return false;
+            const parsed = normalizeRefPayload(rid, peaks, ints, prev.color);
+            if (!parsed) return false;
+            parsed.color = prev.color;
+            checkedRefs.set(rid, parsed);
+            G.matchXRD.render();
+            return true;
+        },
+        isRefChecked: (refId) => checkedRefs.has(String(refId ?? '').trim()),
+        getRefColor: (refId) => checkedRefs.get(String(refId ?? '').trim())?.color || '',
+        getCheckedRefs: () => Array.from(checkedRefs.values()).map(r => ({
+            refId: r.refId,
+            peaks: r.peaks.slice(),
+            intensities: r.intensities.slice(),
+            color: r.color
+        })),
+        setCheckedRefs: (refs) => {
+            checkedRefs.clear();
+            if (Array.isArray(refs)) {
+                refs.forEach(r => {
+                    const parsed = normalizeRefPayload(r?.refId ?? r?.id ?? r?.ref, r?.peaks, r?.intensities, r?.color);
+                    if (!parsed) return;
+                    parsed.color = pickRefColor(parsed.color);
+                    checkedRefs.set(parsed.refId, parsed);
+                });
+            }
+            G.matchXRD.render();
         },
         validate: (input) => {
             if (!input.trim()) return { valid: true, invalid: [] };
