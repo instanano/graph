@@ -1396,7 +1396,7 @@ window.GraphPlotter = window.GraphPlotter || {
         unlockBtn.style.display = show ? '' : 'none';
         if (!show) return;
         const needed = n || G.matchXRD?.getSampleCount?.() || 1;
-        unlockBtn.textContent = `🔓 Unlock Full XRD Match (${needed} required credit${needed > 1 ? 's' : ''})`;
+        unlockBtn.textContent = `Unlock Full XRD Match (${needed} Credit${needed > 1 ? 's' : ''})`;
     }
 
     function setPanelMessage(panel, message) {
