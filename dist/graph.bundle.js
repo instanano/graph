@@ -1415,6 +1415,34 @@ window.GraphPlotter = window.GraphPlotter || {
             updateCreditDisplay(0);
         }
     }
+    const parseJson = (raw, fallback) => {
+        if (!raw) return fallback;
+        try { return JSON.parse(raw); } catch (_) { return fallback; }
+    };
+    async function getRowData(rowEl, syncChecked = true) {
+        let peaks = parseJson(rowEl.dataset.peaks, []);
+        let ints = parseJson(rowEl.dataset.ints, []);
+        let fulldata = parseJson(rowEl.dataset.fulldata, null);
+        if (!fulldata && !G.matchXRD.isLocked() && rowEl.dataset.refid) {
+            try {
+                const rd = await G.matchXRD.fetchRef(rowEl.dataset.refid);
+                if (rd) {
+                    fulldata = rd.data;
+                    rowEl.dataset.fulldata = JSON.stringify(fulldata);
+                    if (fulldata.Peaks) {
+                        peaks = fulldata.Peaks.map(p => p.T);
+                        ints = fulldata.Peaks.map(p => p.I);
+                        rowEl.dataset.peaks = JSON.stringify(peaks);
+                        rowEl.dataset.ints = JSON.stringify(ints);
+                    }
+                }
+            } catch (err) { console.error('Ref fetch failed', err); }
+        }
+        if (syncChecked && rowEl.dataset.refid && G.matchXRD?.isRefChecked?.(rowEl.dataset.refid)) {
+            G.matchXRD.updateCheckedRef?.(rowEl.dataset.refid, peaks, ints);
+        }
+        return { peaks, ints, fulldata };
+    }
 
     function renderMatches(panel, matches, cols, lockedMatches = []) {
         const node = panel?.node();
@@ -1443,6 +1471,25 @@ window.GraphPlotter = window.GraphPlotter || {
                 if (ints) rowDiv.dataset.ints = JSON.stringify(ints);
                 if (fd) rowDiv.dataset.fulldata = JSON.stringify(fd);
             }
+            if (tag !== 'locked' && item.refId) {
+                const toggle = document.createElement("label");
+                toggle.className = 'xrd-ref-toggle';
+                toggle.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:11px;color:#333';
+                const check = document.createElement("input");
+                check.type = 'checkbox';
+                check.className = 'xrd-ref-check';
+                check.dataset.refid = item.refId;
+                check.checked = !!G.matchXRD?.isRefChecked?.(item.refId);
+                const color = G.matchXRD?.getRefColor?.(item.refId) || '#666';
+                const swatch = document.createElement("span");
+                swatch.className = 'xrd-ref-color';
+                swatch.style.cssText = `display:inline-block;width:10px;height:10px;border-radius:2px;border:1px solid #aaa;background:${check.checked ? color : 'transparent'}`;
+                const text = document.createElement("span");
+                text.textContent = 'Compare';
+                toggle.append(check, swatch, text);
+                rowDiv.appendChild(toggle);
+                rowDiv.style.borderLeft = check.checked ? `3px solid ${color}` : '';
+            }
             row.forEach((val, idx) => {
                 const cell = document.createElement("div");
                 const label = document.createElement("b");
@@ -1463,14 +1510,14 @@ window.GraphPlotter = window.GraphPlotter || {
 
     window.addEventListener('focus', refreshCredits);
     document.querySelectorAll('input[name="matchinstrument"]').forEach(inp => inp.addEventListener('change', () => setPanelMessage($std, STD_MSG)));
-    ['icon1', 'icon2', 'icon3', 'icon4'].forEach(id => document.getElementById(id)?.addEventListener('change', () => { G.matchXRD?.clear(); setUnlockVisible(false); }));
+    ['icon1', 'icon2', 'icon3', 'icon4'].forEach(id => document.getElementById(id)?.addEventListener('change', () => { G.matchXRD?.clear({ keepChecked: true }); setUnlockVisible(false); }));
     icon5?.addEventListener('change', () => {
         setPanelMessage($xrd, XRD_MSG);
         refreshCredits();
         setUnlockVisible(false);
         G.matchXRD?.render();
     });
-    icon6?.addEventListener('change', () => { G.matchXRD?.clear(); setUnlockVisible(false); setPanelMessage($std, STD_MSG); });
+    icon6?.addEventListener('change', () => { G.matchXRD?.clear({ keepChecked: true }); setUnlockVisible(false); setPanelMessage($std, STD_MSG); });
     ['click', 'mousedown', 'pointerdown', 'focusin', 'input', 'keydown', 'keyup'].forEach(ev => fs?.addEventListener(ev, e => { e.stopPropagation(); setTimeout(() => G.matchXRD?.render(), 10); }));
     ei?.addEventListener('input', () => {
         if (!G.matchXRD) return;
@@ -1535,11 +1582,25 @@ window.GraphPlotter = window.GraphPlotter || {
         }
     });
     document.getElementById('xrd-clear-peaks')?.addEventListener('click', function () {
-        G.matchXRD?.clear();
+        G.matchXRD?.clear({ keepChecked: false });
         setUnlockVisible(false);
         setPanelMessage($xrd, XRD_MSG);
     });
+    $xrd.on('change', async function (e) {
+        const check = e.target.closest('.xrd-ref-check');
+        if (!check) return;
+        const row = check.closest('.matchedrow');
+        if (!row || row.dataset.tag === 'locked') return;
+        const { peaks, ints } = await getRowData(row, false);
+        const ok = G.matchXRD?.toggleCheckedRef?.(row.dataset.refid, peaks, ints, check.checked);
+        if (!ok) check.checked = false;
+        const color = G.matchXRD?.getRefColor?.(row.dataset.refid) || '#666';
+        const swatch = row.querySelector('.xrd-ref-color');
+        if (swatch) swatch.style.background = check.checked ? color : 'transparent';
+        row.style.borderLeft = check.checked ? `3px solid ${color}` : '';
+    });
     $xrd.on('click', async function (e) {
+        if (e.target.closest('.xrd-ref-toggle')) return;
         const t = e.target.closest('.matchedrow');
         if (!t) return;
         if (t.dataset.tag === 'locked') return;
@@ -1547,28 +1608,8 @@ window.GraphPlotter = window.GraphPlotter || {
         box?.querySelectorAll('.matchedrow').forEach(r => { if (r !== t) { r.style.background = ''; const d = r.querySelector('.xrd-ref-detail'); if (d) d.remove(); } });
         t.style.background = '#f0f8ff';
 
-        let peaks = t.dataset.peaks ? JSON.parse(t.dataset.peaks) : [];
-        let ints = t.dataset.ints ? JSON.parse(t.dataset.ints) : [];
-        let fulldata = t.dataset.fulldata ? JSON.parse(t.dataset.fulldata) : null;
-
-        if (!fulldata && !G.matchXRD.isLocked() && t.dataset.refid) {
-            // Lazy load ONLY if unlocked
-            try {
-                const rd = await G.matchXRD.fetchRef(t.dataset.refid);
-                if (rd) {
-                    fulldata = rd.data; // The JSON blob from DB
-                    t.dataset.fulldata = JSON.stringify(fulldata);
-                    if (fulldata.Peaks) {
-                        peaks = fulldata.Peaks.map(p => p.T);
-                        ints = fulldata.Peaks.map(p => p.I);
-                        t.dataset.peaks = JSON.stringify(peaks);
-                        t.dataset.ints = JSON.stringify(ints);
-                    }
-                }
-            } catch (err) { console.error('Ref fetch failed', err); }
-        }
-
-        try { G.matchXRD.showRef(peaks, ints); } catch (_) { }
+        const { peaks, ints, fulldata } = await getRowData(t);
+        try { G.matchXRD.showRef(peaks, ints, t.dataset.refid || 'preview'); } catch (_) { }
         if (!fulldata) return;
 
         let det = t.querySelector('.xrd-ref-detail');
@@ -1652,6 +1693,8 @@ window.GraphPlotter = window.GraphPlotter || {
     const FREE_PREVIEW_PEAKS = 3;
     const MAX_RANKED_REFS = 25;
     let selectedPeaks = [];
+    let previewRef = null;
+    const checkedRefs = new Map();
     let compositions = null;
     let elementFilter = { elements: [], mode: 'and', count: 0 };
     const metaCache = new Map();
@@ -1734,6 +1777,63 @@ window.GraphPlotter = window.GraphPlotter || {
         const r = await fetch(instananoCredits.ajaxUrl, { method: 'POST', body: fd });
         return r.json();
     }
+    function normalizeRefPayload(refId, peaks, intensities, color) {
+        const rid = String(refId ?? '').trim();
+        if (!rid || !Array.isArray(peaks)) return null;
+        const outPeaks = [];
+        const outInts = [];
+        peaks.forEach((x, i) => {
+            const xv = Number(x);
+            if (!Number.isFinite(xv)) return;
+            outPeaks.push(xv);
+            const iv = Number(intensities?.[i]);
+            outInts.push(Number.isFinite(iv) && iv >= 0 ? iv : 100);
+        });
+        if (!outPeaks.length) return null;
+        return { refId: rid, peaks: outPeaks, intensities: outInts, color: color || '' };
+    }
+    function pickRefColor(preferred = '') {
+        const palette = Array.isArray(G.config.COLORS) && G.config.COLORS.length ? G.config.COLORS : ['#0000FF'];
+        if (typeof preferred === 'string' && /^#[0-9a-f]{3,8}$/i.test(preferred)) return preferred;
+        const used = new Set(Array.from(checkedRefs.values(), r => r.color));
+        const free = palette.find(c => !used.has(c));
+        return free || palette[checkedRefs.size % palette.length];
+    }
+    function drawRefPeaks(svg, refs, className, { color, strokeWidth, dash } = {}) {
+        const xMin = G.config.DIM.ML;
+        const xMax = G.config.DIM.W - G.config.DIM.MR;
+        refs.forEach(ref => {
+            const col = typeof color === 'function' ? color(ref) : (color || '#1f77b4');
+            ref.peaks.forEach((x, i) => {
+                const xp = G.state.lastXScale(x);
+                if (!Number.isFinite(xp) || xp < xMin || xp > xMax) return;
+                const h = 5 + ((ref.intensities?.[i] ?? 100) / 100) * 35;
+                const line = svg.append('line').attr('class', className).attr('data-refid', ref.refId)
+                    .attr('x1', xp).attr('x2', xp)
+                    .attr('y1', G.config.DIM.H - G.config.DIM.MB)
+                    .attr('y2', G.config.DIM.H - G.config.DIM.MB - h)
+                    .attr('stroke', col).attr('stroke-width', strokeWidth || 1)
+                    .style('pointer-events', 'none');
+                if (dash) line.attr('stroke-dasharray', dash);
+            });
+        });
+    }
+    function drawCheckedLegend(svg, refs) {
+        svg.selectAll('g.xrd-ref-legend-group').remove();
+        if (!refs.length) return;
+        const header = G.state.hot?.getData?.()?.[0] || [];
+        const baseCount = header.reduce((n, h, i) => n + (h === 'Y-axis' && G.state.colEnabled[i] !== false ? 1 : 0), 0);
+        const x = G.config.DIM.W - G.config.DIM.MR - 100;
+        const y = G.config.DIM.MT + 25 + (baseCount * 20);
+        const marker = 20;
+        refs.forEach((ref, i) => {
+            const g = svg.append('g').attr('class', 'xrd-ref-legend-group').attr('transform', `translate(${x},${y + (i * 20)})`);
+            g.append('line').attr('x1', 0).attr('x2', marker).attr('y1', 0).attr('y2', 0)
+                .attr('stroke', ref.color).attr('stroke-width', 2).attr('stroke-dasharray', '4,2');
+            g.append('text').attr('x', marker + 5).attr('y', 4).style('font-size', '12px').style('pointer-events', 'none')
+                .text(`Ref ${ref.refId}`);
+        });
+    }
 
     G.matchXRD = {
         lockActive: false,
@@ -1747,8 +1847,17 @@ window.GraphPlotter = window.GraphPlotter || {
         },
         render: () => {
             const svg = d3.select('#chart svg');
+            if (svg.empty() || !G.state.lastXScale) return;
             const tab = document.getElementById('icon5');
-            if (tab && !tab.checked) { svg.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); return; }
+            const panelOpen = !!(tab && tab.checked);
+            const pinned = Array.from(checkedRefs.values());
+            svg.selectAll('.xrd-ref-preview-peak,.xrd-ref-checked-peak,.xrd-ref-legend-group').remove();
+            if (pinned.length) {
+                drawRefPeaks(svg, pinned, 'xrd-ref-checked-peak', { color: r => r.color, strokeWidth: 1.2, dash: '4,2' });
+                drawCheckedLegend(svg, pinned);
+            }
+            if (!panelOpen) { svg.selectAll('.xrd-user-peak').remove(); return; }
+            if (previewRef) drawRefPeaks(svg, [previewRef], 'xrd-ref-preview-peak', { color: '#1f77b4', strokeWidth: 1, dash: '4,2' });
             svg.selectAll('.xrd-user-peak').remove();
             const peaks = G.matchXRD.lockActive ? G.matchXRD.lockedPeaks : selectedPeaks;
             const xMin = G.config.DIM.ML, xMax = G.config.DIM.W - G.config.DIM.MR;
@@ -1767,25 +1876,67 @@ window.GraphPlotter = window.GraphPlotter || {
                 }
             });
         },
-        showRef: (peaks, ints) => {
-            const svg = d3.select('#chart svg');
-            svg.selectAll('.xrd-ref-peak').remove();
-            peaks.forEach((x, i) => {
-                const xp = G.state.lastXScale(x);
-                if (xp < G.config.DIM.ML || xp > G.config.DIM.W - G.config.DIM.MR) return;
-                const h = 5 + ((ints?.[i] ?? 100) / 100) * 35;
-                svg.append('line').attr('class', 'xrd-ref-peak')
-                    .attr('x1', xp).attr('x2', xp)
-                    .attr('y1', G.config.DIM.H - G.config.DIM.MB)
-                    .attr('y2', G.config.DIM.H - G.config.DIM.MB - h)
-                    .attr('stroke', 'blue').attr('stroke-width', 1)
-                    .attr('stroke-dasharray', '4,2').style('pointer-events', 'none');
-            });
+        showRef: (peaks, ints, refId = 'preview') => {
+            const parsed = normalizeRefPayload(refId, peaks, ints);
+            previewRef = parsed ? { refId: parsed.refId, peaks: parsed.peaks, intensities: parsed.intensities } : null;
+            G.matchXRD.render();
         },
-        clear: () => {
+        clear: (opts = {}) => {
+            const keepChecked = !!opts.keepChecked;
             selectedPeaks = [];
-            d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove();
-            if (G.matchXRD.lockActive) { G.matchXRD.render(); return; }
+            previewRef = null;
+            d3.selectAll('.xrd-user-peak,.xrd-ref-preview-peak').remove();
+            if (!keepChecked) {
+                checkedRefs.clear();
+                d3.selectAll('.xrd-ref-checked-peak,.xrd-ref-legend-group').remove();
+            }
+            G.matchXRD.render();
+        },
+        toggleCheckedRef: (refId, peaks, ints, checked = true) => {
+            const rid = String(refId ?? '').trim();
+            if (!rid) return false;
+            if (!checked) {
+                checkedRefs.delete(rid);
+                G.matchXRD.render();
+                return true;
+            }
+            const parsed = normalizeRefPayload(rid, peaks, ints);
+            if (!parsed) return false;
+            parsed.color = checkedRefs.get(rid)?.color || pickRefColor(parsed.color);
+            checkedRefs.set(rid, parsed);
+            G.matchXRD.render();
+            return true;
+        },
+        updateCheckedRef: (refId, peaks, ints) => {
+            const rid = String(refId ?? '').trim();
+            const prev = checkedRefs.get(rid);
+            if (!prev) return false;
+            const parsed = normalizeRefPayload(rid, peaks, ints, prev.color);
+            if (!parsed) return false;
+            parsed.color = prev.color;
+            checkedRefs.set(rid, parsed);
+            G.matchXRD.render();
+            return true;
+        },
+        isRefChecked: (refId) => checkedRefs.has(String(refId ?? '').trim()),
+        getRefColor: (refId) => checkedRefs.get(String(refId ?? '').trim())?.color || '',
+        getCheckedRefs: () => Array.from(checkedRefs.values()).map(r => ({
+            refId: r.refId,
+            peaks: r.peaks.slice(),
+            intensities: r.intensities.slice(),
+            color: r.color
+        })),
+        setCheckedRefs: (refs) => {
+            checkedRefs.clear();
+            if (Array.isArray(refs)) {
+                refs.forEach(r => {
+                    const parsed = normalizeRefPayload(r?.refId ?? r?.id ?? r?.ref, r?.peaks, r?.intensities, r?.color);
+                    if (!parsed) return;
+                    parsed.color = pickRefColor(parsed.color);
+                    checkedRefs.set(parsed.refId, parsed);
+                });
+            }
+            G.matchXRD.render();
         },
         validate: (input) => {
             if (!input.trim()) return { valid: true, invalid: [] };
@@ -2033,6 +2184,7 @@ window.GraphPlotter = window.GraphPlotter || {
             xrd_table_hash: typeof raw.xrd_table_hash === "string" ? raw.xrd_table_hash : "",
             xrd_peaks_hash: typeof raw.xrd_peaks_hash === "string" ? raw.xrd_peaks_hash : "",
             xrd_peaks: Array.isArray(raw.xrd_peaks) ? raw.xrd_peaks : null,
+            xrd_checked_refs: Array.isArray(raw.xrd_checked_refs) ? raw.xrd_checked_refs : [],
             overrideX: raw.overrideX || null,
             overrideMultiY: raw.overrideMultiY && typeof raw.overrideMultiY === "object" ? raw.overrideMultiY : {},
             overrideXTicks: raw.overrideXTicks ?? null,
@@ -2091,7 +2243,7 @@ window.GraphPlotter = window.GraphPlotter || {
         const rawHtml = d3.select('#chart').html();
         const tmpl = document.createElement('template');
         tmpl.innerHTML = rawHtml;
-        tmpl.content.querySelectorAll('.xrd-user-peak,.xrd-ref-peak').forEach(n => n.remove());
+        tmpl.content.querySelectorAll('.xrd-user-peak,.xrd-ref-preview-peak,.xrd-ref-checked-peak,g.xrd-ref-legend-group').forEach(n => n.remove());
         const cleanedHtml = sanitizeChartHTML(tmpl.innerHTML);
         const payload={v:'v1.0', ts, table:G.state.hot.getData(), settings:G.getSettings(), col:G.state.colEnabled, html:cleanedHtml,
         overrideX:G.state.overrideX||null, overrideMultiY:G.state.overrideMultiY||{}, overrideXTicks:G.state.overrideXTicks||null,
@@ -2102,6 +2254,8 @@ window.GraphPlotter = window.GraphPlotter || {
         minorTickOn: G.state.minorTickOn || {}, useCustomTicksOn:G.state.useCustomTicksOn||{}};
         const lock = G.matchXRD?.lockInfo;
         const lpeaks = G.matchXRD?.lockedPeaks;
+        const checkedRefs = G.matchXRD?.getCheckedRefs?.();
+        if (Array.isArray(checkedRefs) && checkedRefs.length) payload.xrd_checked_refs = checkedRefs;
         if (lock?.verified && Array.isArray(lpeaks) && lpeaks.length) {
             payload.xrd_lock_version = lock.lock_version ?? null;
             payload.xrd_account_id = Number(lock.account_id || 0);
@@ -2137,9 +2291,9 @@ window.GraphPlotter = window.GraphPlotter || {
             const input = document.getElementById(k);
             if (input) input.value = v;
         });
-        d3.select('#chart').html(s.html); d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); G.features.prepareShapeLayer(); d3.selectAll('.shape-group').each(function(){G.features.makeShapeInteractive(d3.select(this))});
+        d3.select('#chart').html(s.html); d3.selectAll('.xrd-user-peak,.xrd-ref-preview-peak,.xrd-ref-checked-peak,.xrd-ref-legend-group').remove(); G.features.prepareShapeLayer(); d3.selectAll('.shape-group').each(function(){G.features.makeShapeInteractive(d3.select(this))});
         d3.selectAll('foreignObject.user-text,g.legend-group,g.axis-title').call(G.utils.applyDrag); G.axis.tickEditing(d3.select('#chart svg'));
-        if (G.matchXRD) { G.matchXRD.lockActive = false; G.matchXRD.lockedPeaks = []; G.matchXRD.lockInfo = null; }
+        if (G.matchXRD) { G.matchXRD.lockActive = false; G.matchXRD.lockedPeaks = []; G.matchXRD.lockInfo = null; G.matchXRD.setCheckedRefs?.(s.xrd_checked_refs || []); }
         if (s.xrd_lock_hash && s.xrd_signature && Array.isArray(s.xrd_peaks) && s.xrd_account_id > 0 && typeof instananoCredits !== 'undefined') {
             const peaks = s.xrd_peaks.map(p => ({ x: Number(p.x), intensity: Number(p.intensity ?? 0), normInt: 0 }));
             const maxInt = peaks.length ? Math.max(...peaks.map(p => p.intensity)) : 0;
