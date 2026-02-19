@@ -77,6 +77,17 @@
             if (tag) rowDiv.dataset.tag = tag;
             if (item.refId) rowDiv.dataset.refid = item.refId;
             if (tag !== 'locked') {
+                if (item.refId) {
+                    const pinWrap = document.createElement("label");
+                    pinWrap.className = "xrd-pin-wrap";
+                    pinWrap.style.cssText = "display:flex;align-items:center;gap:6px;margin:0 0 4px 0;font-size:11px;color:#555;cursor:pointer";
+                    const pin = document.createElement("input");
+                    pin.type = "checkbox";
+                    pin.className = "xrd-ref-pin";
+                    pin.checked = !!G.matchXRD?.isRefSelected?.(item.refId);
+                    pinWrap.append(pin, document.createTextNode("Keep on graph"));
+                    rowDiv.appendChild(pinWrap);
+                }
                 const fd = item.fullData?.data;
                 const peaks = fd?.Peaks ? fd.Peaks.map(p => p.T) : item.peaks;
                 const ints = fd?.Peaks ? fd.Peaks.map(p => p.I) : item.intensities;
@@ -100,6 +111,31 @@
             frag.appendChild(rowDiv);
         });
         node.appendChild(frag);
+    }
+    function parseJson(raw, fallback) {
+        if (!raw) return fallback;
+        try { return JSON.parse(raw); } catch (_) { return fallback; }
+    }
+    async function resolveRefData(row) {
+        let peaks = parseJson(row.dataset.peaks, []);
+        let ints = parseJson(row.dataset.ints, []);
+        let fulldata = parseJson(row.dataset.fulldata, null);
+        if (!fulldata && !G.matchXRD.isLocked() && row.dataset.refid) {
+            try {
+                const rd = await G.matchXRD.fetchRef(row.dataset.refid);
+                if (rd) {
+                    fulldata = rd.data;
+                    row.dataset.fulldata = JSON.stringify(fulldata);
+                    if (fulldata.Peaks) {
+                        peaks = fulldata.Peaks.map(p => p.T);
+                        ints = fulldata.Peaks.map(p => p.I);
+                        row.dataset.peaks = JSON.stringify(peaks);
+                        row.dataset.ints = JSON.stringify(ints);
+                    }
+                }
+            } catch (err) { console.error('Ref fetch failed', err); }
+        }
+        return { peaks, ints, fulldata };
     }
 
     window.addEventListener('focus', refreshCredits);
@@ -145,6 +181,7 @@
         const v = G.matchXRD.validate(val);
         if (!v.valid) { el.style.outline = '2px solid red'; el.title = 'Invalid: ' + v.invalid.join(', '); return; }
         G.matchXRD.setFilter(val.split(',').filter(e => e.trim()), lm?.value, parseInt(ec?.value) || 0);
+        G.matchXRD.clearRefs?.();
         setUnlockVisible(false);
         const result = await G.matchXRD.search();
         renderMatches($xrd, result.matches, result.cols, result.lockedMatches || []);
@@ -180,36 +217,28 @@
         setUnlockVisible(false);
         setPanelMessage($xrd, XRD_MSG);
     });
+    $xrd.on('change', async function (e) {
+        const pin = e.target.closest('.xrd-ref-pin');
+        if (!pin) return;
+        e.stopPropagation();
+        const row = pin.closest('.matchedrow');
+        if (!row || row.dataset.tag === 'locked' || !row.dataset.refid) return;
+        const { peaks, ints } = await resolveRefData(row);
+        G.matchXRD.setRefPinned(row.dataset.refid, peaks, ints, pin.checked);
+    });
     $xrd.on('click', async function (e) {
+        if (e.target.closest('.xrd-pin-wrap')) return;
         const t = e.target.closest('.matchedrow');
         if (!t) return;
         if (t.dataset.tag === 'locked') return;
         const box = $xrd.node();
         box?.querySelectorAll('.matchedrow').forEach(r => { if (r !== t) { r.style.background = ''; const d = r.querySelector('.xrd-ref-detail'); if (d) d.remove(); } });
         t.style.background = '#f0f8ff';
-
-        let peaks = t.dataset.peaks ? JSON.parse(t.dataset.peaks) : [];
-        let ints = t.dataset.ints ? JSON.parse(t.dataset.ints) : [];
-        let fulldata = t.dataset.fulldata ? JSON.parse(t.dataset.fulldata) : null;
-
-        if (!fulldata && !G.matchXRD.isLocked() && t.dataset.refid) {
-            // Lazy load ONLY if unlocked
-            try {
-                const rd = await G.matchXRD.fetchRef(t.dataset.refid);
-                if (rd) {
-                    fulldata = rd.data; // The JSON blob from DB
-                    t.dataset.fulldata = JSON.stringify(fulldata);
-                    if (fulldata.Peaks) {
-                        peaks = fulldata.Peaks.map(p => p.T);
-                        ints = fulldata.Peaks.map(p => p.I);
-                        t.dataset.peaks = JSON.stringify(peaks);
-                        t.dataset.ints = JSON.stringify(ints);
-                    }
-                }
-            } catch (err) { console.error('Ref fetch failed', err); }
-        }
-
-        try { G.matchXRD.showRef(peaks, ints); } catch (_) { }
+        const { peaks, ints, fulldata } = await resolveRefData(t);
+        try {
+            if (G.matchXRD.isRefSelected?.(t.dataset.refid)) G.matchXRD.setRefPinned(t.dataset.refid, peaks, ints, true);
+            else G.matchXRD.showRef(peaks, ints, t.dataset.refid);
+        } catch (_) { }
         if (!fulldata) return;
 
         let det = t.querySelector('.xrd-ref-detail');
