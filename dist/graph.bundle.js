@@ -1396,7 +1396,7 @@ window.GraphPlotter = window.GraphPlotter || {
         unlockBtn.style.display = show ? '' : 'none';
         if (!show) return;
         const n = G.matchXRD?.getSampleCount?.() || 1;
-        unlockBtn.textContent = `Unlock Full XRD Match (${n} Credit${n > 1 ? 's' : ''})`;
+        unlockBtn.textContent = `🔓 Unlock Full XRD Match (${n} required credit${n > 1 ? 's' : ''})`;
     }
 
     function setPanelMessage(panel, message) {
@@ -1433,6 +1433,7 @@ window.GraphPlotter = window.GraphPlotter || {
             const rowDiv = document.createElement("div");
             rowDiv.className = "matchedrow";
             if (tag) rowDiv.dataset.tag = tag;
+            else if (node.id === 'xrd-matchedData') rowDiv.style.borderLeft = '3px solid #22c55e';
             if (item.refId) rowDiv.dataset.refid = item.refId;
             if (tag === 'locked') {
                 rowDiv.dataset.locked = '1';
