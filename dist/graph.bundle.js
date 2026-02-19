@@ -1479,7 +1479,7 @@ window.GraphPlotter = window.GraphPlotter || {
 
     window.addEventListener('focus', refreshCredits);
     document.querySelectorAll('input[name="matchinstrument"]').forEach(inp => inp.addEventListener('change', () => setPanelMessage($std, STD_MSG)));
-    ['icon1', 'icon2', 'icon3', 'icon4'].forEach(id => document.getElementById(id)?.addEventListener('change', () => { G.matchXRD?.clear(); setUnlockVisible(false); }));
+    ['icon1', 'icon2', 'icon3', 'icon4'].forEach(id => document.getElementById(id)?.addEventListener('change', () => { G.matchXRD?.clearPreview?.(); setUnlockVisible(false); }));
     icon5?.addEventListener('change', () => {
         setPanelMessage($xrd, XRD_MSG);
         refreshCredits();
@@ -1923,6 +1923,10 @@ window.GraphPlotter = window.GraphPlotter || {
             };
             G.matchXRD.render();
         },
+        clearPreview: () => {
+            previewRef = null;
+            d3.selectAll('.xrd-ref-peak-preview').remove();
+        },
         clear: () => {
             selectedPeaks = [];
             previewRef = null;
@@ -2288,65 +2292,54 @@ window.GraphPlotter = window.GraphPlotter || {
             const peaks = s.xrd_peaks.map(p => ({ x: Number(p.x), intensity: Number(p.intensity ?? 0), normInt: 0 }));
             const maxInt = peaks.length ? Math.max(...peaks.map(p => p.intensity)) : 0;
             if (maxInt > 0) peaks.forEach(p => p.normInt = (p.intensity / maxInt) * 100);
-            const compute = G.matchXRD?.computeLockHash;
-            if (compute) {
-                compute(peaks).then(lock => {
-                    if (!lock || lock.lock_hash !== s.xrd_lock_hash) {
-                        if (!G.matchXRD) return;
+            const fd = new FormData();
+            fd.append('action', 'instanano_verify_lock');
+            fd.append('nonce', instananoCredits.nonce);
+            fd.append('lock_hash', s.xrd_lock_hash);
+            fd.append('signature', s.xrd_signature);
+            fd.append('account_id', s.xrd_account_id);
+            if (s.xrd_lock_version != null) fd.append('lock_version', s.xrd_lock_version);
+            if (Number(s.xrd_lock_version || 0) >= 2) {
+                fd.append('lock_payload', JSON.stringify({
+                    lock_version: s.xrd_lock_version,
+                    table_data: G.state.hot.getData(),
+                    col_enabled: G.state.colEnabled,
+                    peaks: peaks.map(p => ({ x: Number(p.x), intensity: Number(p.intensity ?? 0) }))
+                }));
+            }
+            fetch(instananoCredits.ajaxUrl, { method: 'POST', body: fd })
+                .then(r => r.json())
+                .then(res => {
+                    if (!G.matchXRD) return;
+                    if (res?.success && res.data?.valid) {
+                        G.matchXRD.lockActive = true;
+                        G.matchXRD.lockedPeaks = peaks;
+                        G.matchXRD.lockInfo = {
+                            lock_hash: s.xrd_lock_hash,
+                            signature: s.xrd_signature,
+                            lock_version: s.xrd_lock_version ?? null,
+                            account_id: Number(res.data.account_id || s.xrd_account_id || 0),
+                            table_hash: s.xrd_table_hash || "",
+                            peaks_hash: s.xrd_peaks_hash || "",
+                            fetch_token: res.data.fetch_token || "",
+                            fetch_token_expires: Number(res.data.fetch_token_expires || 0),
+                            verified: true
+                        };
+                        G.matchXRD.render();
+                    } else {
                         G.matchXRD.lockActive = false;
                         G.matchXRD.lockedPeaks = [];
                         G.matchXRD.lockInfo = null;
                         G.matchXRD.render();
-                        return;
                     }
-                    const fd = new FormData();
-                    fd.append('action', 'instanano_verify_lock');
-                    fd.append('nonce', instananoCredits.nonce);
-                    fd.append('lock_hash', s.xrd_lock_hash);
-                    fd.append('signature', s.xrd_signature);
-                    fd.append('account_id', s.xrd_account_id);
-                    if (s.xrd_lock_version != null) fd.append('lock_version', s.xrd_lock_version);
-                    fetch(instananoCredits.ajaxUrl, { method: 'POST', body: fd })
-                        .then(r => r.json())
-                        .then(res => {
-                            if (!G.matchXRD) return;
-                            if (res?.success && res.data?.valid) {
-                                G.matchXRD.lockActive = true;
-                                G.matchXRD.lockedPeaks = peaks;
-                                G.matchXRD.lockInfo = {
-                                    lock_hash: s.xrd_lock_hash,
-                                    signature: s.xrd_signature,
-                                    lock_version: s.xrd_lock_version ?? null,
-                                    account_id: Number(res.data.account_id || s.xrd_account_id || 0),
-                                    table_hash: lock.table_hash,
-                                    peaks_hash: lock.peaks_hash,
-                                    fetch_token: res.data.fetch_token || "",
-                                    fetch_token_expires: Number(res.data.fetch_token_expires || 0),
-                                    verified: true
-                                };
-                                G.matchXRD.render();
-                            } else {
-                                G.matchXRD.lockActive = false;
-                                G.matchXRD.lockedPeaks = [];
-                                G.matchXRD.lockInfo = null;
-                                G.matchXRD.render();
-                            }
-                        })
-                        .catch(() => {
-                            if (!G.matchXRD) return;
-                            G.matchXRD.lockActive = false;
-                            G.matchXRD.lockedPeaks = [];
-                            G.matchXRD.lockInfo = null;
-                            G.matchXRD.render();
-                        });
-                }).catch(() => {
+                })
+                .catch(() => {
                     if (!G.matchXRD) return;
                     G.matchXRD.lockActive = false;
                     G.matchXRD.lockedPeaks = [];
                     G.matchXRD.lockInfo = null;
                     G.matchXRD.render();
                 });
-            }
         }
     }
 })(window.GraphPlotter);
