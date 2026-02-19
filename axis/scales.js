@@ -64,7 +64,7 @@
             const w2 = this.scrollWidth + 5;
             d3.select(this.parentNode).attr('width', w2).attr('x', -w2 / 2);
         });
-        d3.selectAll('#chart svg g.legend-group foreignObject div').style('font-size', c.legendFs + 'px').each(function() {
+        d3.selectAll('#chart svg g.legend-group foreignObject div, #chart svg g.xrd-ref-legend-group foreignObject div').style('font-size', c.legendFs + 'px').each(function() {
             d3.select(this.parentNode).attr('width', this.scrollWidth + 5);
         });
     };
