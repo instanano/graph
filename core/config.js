@@ -4,7 +4,7 @@ window.GraphPlotter = window.GraphPlotter || {
         tickLabelStyles: {x:{},y:{},a:{},b:{},c:{}}, lastXScale: null, lastYScale: null, multiYScales: null, axisScales: null,
         overrideX: null, overrideMultiY: {}, overrideXTicks: null, overrideYTicks: {}, overrideTernary: {}, overrideTernaryTicks: {},
         overrideScaleformatX: null, overrideScaleformatY: {}, overrideCustomTicksX: null, overrideCustomTicksY: {}, overrideCustomTicksTernary: {},
-        minorTickOn: {}, useCustomTicksOn: {}, shapeMode: "none", drawing: false, drawStart: null, tempShape: null, arrowCount: 0
+        minorTickOn: {}, useCustomTicksOn: {}, xrdRefCols: {}, xrdRefSyncing: false, shapeMode: "none", drawing: false, drawStart: null, tempShape: null, arrowCount: 0
     },
     config: {}, utils: {}, ChartRegistry: null, parsers: {}, ui: { refs: {} }, axis: {}, features: {}, init: null, renderChart: null, getSeries: null, getSettings: null
 };
