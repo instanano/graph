@@ -4,7 +4,7 @@ window.GraphPlotter = window.GraphPlotter || {
         tickLabelStyles: {x:{},y:{},a:{},b:{},c:{}}, lastXScale: null, lastYScale: null, multiYScales: null, axisScales: null,
         overrideX: null, overrideMultiY: {}, overrideXTicks: null, overrideYTicks: {}, overrideTernary: {}, overrideTernaryTicks: {},
         overrideScaleformatX: null, overrideScaleformatY: {}, overrideCustomTicksX: null, overrideCustomTicksY: {}, overrideCustomTicksTernary: {},
-        minorTickOn: {}, useCustomTicksOn: {}, shapeMode: "none", drawing: false, drawStart: null, tempShape: null, arrowCount: 0
+        minorTickOn: {}, useCustomTicksOn: {}, xrdRefCols: {}, xrdRefSyncing: false, shapeMode: "none", drawing: false, drawStart: null, tempShape: null, arrowCount: 0
     },
     config: {}, utils: {}, ChartRegistry: null, parsers: {}, ui: { refs: {} }, axis: {}, features: {}, init: null, renderChart: null, getSeries: null, getSettings: null
 };
@@ -116,6 +116,11 @@ window.GraphPlotter = window.GraphPlotter || {
 })(window.GraphPlotter);
 (function(G) {
     "use strict";
+    function isXrdRefCol(col) {
+        const map = G.state.xrdRefCols || {};
+        const c = +col;
+        return Object.values(map).some(v => +v === c);
+    }
     G.initTable = function() {
         const container = document.getElementById("table");
         G.state.hot = new myTable(container, {
@@ -127,12 +132,37 @@ window.GraphPlotter = window.GraphPlotter || {
             rowHeaderWidth:60, colWidths:70,
             contextMenu: true, 
             afterRemoveRow: () => { G.axis.resetScales(true); G.renderChart(); },
-            afterRemoveCol: () => { G.axis.resetScales(true); G.renderChart(); },
+            afterRemoveCol: (start, count) => {
+                if (!G.state.xrdRefSyncing && count > 0) {
+                    const next = {};
+                    Object.entries(G.state.xrdRefCols || {}).forEach(([refId, col]) => {
+                        const c = Number(col);
+                        if (!Number.isInteger(c)) return;
+                        if (c < start) next[refId] = c;
+                        else if (c >= start + count) next[refId] = c - count;
+                    });
+                    G.state.xrdRefCols = next;
+                    G.matchXRD?.syncPinnedFromTable?.(false);
+                }
+                G.axis.resetScales(true); G.renderChart();
+            },
             afterChange: (changes) => {
                 if (!changes) return;
-                if (G.matchXRD) { G.matchXRD.invalidateLock?.(); G.matchXRD.render(); }
+                if (G.state.xrdRefSyncing) return;
+                const billableTouched = changes.some(ch => !isXrdRefCol(ch?.[1]));
+                if (billableTouched && G.matchXRD) { G.matchXRD.invalidateLock?.(); G.matchXRD.render(); }
             },
             afterCreateCol: (start, count) => {
+                if (!G.state.xrdRefSyncing && count > 0) {
+                    const shifted = {};
+                    Object.entries(G.state.xrdRefCols || {}).forEach(([refId, col]) => {
+                        const c = Number(col);
+                        if (!Number.isInteger(c)) return;
+                        shifted[refId] = c >= start ? c + count : c;
+                    });
+                    G.state.xrdRefCols = shifted;
+                    G.matchXRD?.syncPinnedFromTable?.(false);
+                }
                 for (let c = start; c < start + count; c++) {
                     G.state.hot.setDataAtCell(0, c, "Y-axis");
                     G.state.hot.setDataAtCell(1, c, G.config.COLORS[c % G.config.COLORS.length]);
@@ -145,6 +175,7 @@ window.GraphPlotter = window.GraphPlotter || {
                 inp.value = val || G.config.COLORS[c % G.config.COLORS.length]; inp.oninput = e => inst.setDataAtCell(r, c, e.target.value); td.appendChild(inp);}};}
                 if (row === 2) { props.renderer = (inst, td, r, c, prop, val) => { 
                 td.textContent = ["X-axis", "Z-axis"].includes(inst.getDataAtCell(0, c)) ? "" : (val || "Sample");};}
+                if (row >= 3 && isXrdRefCol(col)) props.readOnly = true;
                 const base = props.renderer || myTable.renderers.TextRenderer;
                 props.renderer = function(inst, td, r, c, prop, val) {
                     base.apply(this, arguments);
@@ -156,7 +187,7 @@ window.GraphPlotter = window.GraphPlotter || {
             if (e.target.matches('input[type="checkbox"][data-col]')) {
                 const col = +e.target.dataset.col;
                 G.state.colEnabled[col] = e.target.checked;
-                if (G.matchXRD) { G.matchXRD.invalidateLock?.(); G.matchXRD.render(); }
+                if (!isXrdRefCol(col) && G.matchXRD) { G.matchXRD.invalidateLock?.(); G.matchXRD.render(); }
                 G.state.hot.render();
                 G.axis.resetScales(false);
                 G.renderChart(); checkEmptyColumns();}});
@@ -1344,6 +1375,9 @@ window.GraphPlotter = window.GraphPlotter || {
             const n=Math.max(...rows.map(r=>r.length)), header=Array(n).fill().map((_,i)=>i===0?'X-axis':'Y-axis'),
             color=Array(n).fill().map((_,i)=>G.config.COLORS[i%G.config.COLORS.length]), name=Array(n).fill('Sample');
             G.state.hot.loadData([header,color,name,...rows]); G.state.colEnabled = {}; G.state.hot.getData()[0].forEach((_, c) => { G.state.colEnabled[c] = true; });
+            G.state.xrdRefCols = {};
+            G.state.xrdRefSyncing = false;
+            G.matchXRD?.syncPinnedFromTable?.(false);
             G.state.hot.render();
             setMode(detectModeFromData?.());
             d3.select('#chart').selectAll("g.axis-title, g.legend-group, g.shape-group, defs, foreignObject.user-text").remove();
@@ -1756,9 +1790,29 @@ window.GraphPlotter = window.GraphPlotter || {
         const raw = JSON.stringify(canonicalizePeaks(peaks));
         return sha256Hex(raw);
     }
+    function normalizeRefColMap() {
+        const data = G.state.hot?.getData?.() || [];
+        const width = data[0]?.length || 0;
+        const raw = (G.state.xrdRefCols && typeof G.state.xrdRefCols === 'object') ? G.state.xrdRefCols : {};
+        const next = {};
+        const used = new Set();
+        Object.entries(raw).forEach(([refId, col]) => {
+            const c = Number(col);
+            if (!Number.isInteger(c) || c < 0 || c >= width || used.has(c)) return;
+            next[String(refId)] = c;
+            used.add(c);
+        });
+        G.state.xrdRefCols = next;
+        return next;
+    }
+    function getRefColSet() {
+        const map = normalizeRefColMap();
+        return new Set(Object.values(map).map(v => +v).filter(v => Number.isInteger(v) && v >= 0));
+    }
     function getSampleCount() {
         const data = G.state.hot.getData();
-        return data[0].filter((h, i) => h === 'Y-axis' && G.state.colEnabled[i] !== false).length || 1;
+        const refCols = getRefColSet();
+        return data[0].filter((h, i) => !refCols.has(i) && h === 'Y-axis' && G.state.colEnabled[i] !== false).length || 1;
     }
     async function ajaxPost(action, extra = {}) {
         if (typeof instananoCredits === 'undefined') return null;
@@ -1774,6 +1828,130 @@ window.GraphPlotter = window.GraphPlotter || {
     }
     const normalizeRefId = (refId) => String(refId ?? '').trim();
     const toNumArray = (arr) => (Array.isArray(arr) ? arr.map(v => Number(v)).filter(v => Number.isFinite(v)) : []);
+    function primaryXCol(header) {
+        const idx = Array.isArray(header) ? header.findIndex(h => h === 'X-axis') : -1;
+        return idx >= 0 ? idx : 0;
+    }
+    function buildRefColumnValues(data, peaks, ints) {
+        if (!Array.isArray(data) || data.length < 4) return [];
+        const xCol = primaryXCol(data[0]);
+        const px = peaks.map((x, i) => ({ x: Number(x), i: Number(ints?.[i] ?? 100) }))
+            .filter(p => Number.isFinite(p.x) && Number.isFinite(p.i));
+        if (!px.length) return new Array(Math.max(0, data.length - 3)).fill(0);
+        const xVals = data.slice(3).map(r => Number(r?.[xCol]));
+        let minStep = Infinity;
+        for (let i = 1; i < xVals.length; i++) {
+            const d = Math.abs(xVals[i] - xVals[i - 1]);
+            if (Number.isFinite(d) && d > 0 && d < minStep) minStep = d;
+        }
+        const tol = Number.isFinite(minStep) ? Math.max(0.05, minStep * 0.6) : 0.1;
+        return xVals.map(x => {
+            if (!Number.isFinite(x)) return "";
+            let best = -1, bestDiff = Infinity;
+            for (let j = 0; j < px.length; j++) {
+                const d = Math.abs(x - px[j].x);
+                if (d < bestDiff) { bestDiff = d; best = j; }
+            }
+            return (best >= 0 && bestDiff <= tol) ? px[best].i : 0;
+        });
+    }
+    function syncHeaderChecks() {
+        d3.selectAll('input[type="checkbox"][data-col]').each(function () {
+            const col = +this.dataset.col;
+            this.checked = G.state.colEnabled[col] !== false;
+        });
+    }
+    function applyTableState(nextData, nextEnabled, nextRefCols) {
+        if (!G.state.hot) return;
+        G.state.xrdRefSyncing = true;
+        try {
+            G.state.hot.loadData(nextData);
+            G.state.colEnabled = nextEnabled;
+            G.state.xrdRefCols = nextRefCols;
+            G.state.hot.render();
+            syncHeaderChecks();
+        } finally {
+            G.state.xrdRefSyncing = false;
+        }
+        G.axis.resetScales(false);
+        G.renderChart();
+    }
+    function addRefColumnToTable(refId, peaks, ints, label) {
+        const hot = G.state.hot;
+        if (!hot) return null;
+        const id = normalizeRefId(refId);
+        const base = hot.getData().map(r => r.slice());
+        if (!base.length || !base[0]) return null;
+        const refMap = { ...normalizeRefColMap() };
+        const enabled = { ...G.state.colEnabled };
+        const values = buildRefColumnValues(base, peaks, ints);
+        let col = Number(refMap[id]);
+        let isNew = false;
+        if (!Number.isInteger(col) || col < 0 || col >= base[0].length) {
+            col = base[0].length;
+            base.forEach(r => r.push(""));
+            isNew = true;
+        }
+        base[0][col] = 'Y-axis';
+        if (isNew) {
+            base[1][col] = getPinnedColor(id);
+            base[2][col] = String(label || id);
+        } else {
+            if (!String(base[1][col] ?? '').trim()) base[1][col] = getPinnedColor(id);
+            if (!String(base[2][col] ?? '').trim()) base[2][col] = String(label || id);
+        }
+        for (let r = 3; r < base.length; r++) base[r][col] = values[r - 3] ?? 0;
+        enabled[col] = true;
+        refMap[id] = col;
+        applyTableState(base, enabled, refMap);
+        return col;
+    }
+    function removeRefColumnFromTable(refId) {
+        const hot = G.state.hot;
+        if (!hot) return false;
+        const id = normalizeRefId(refId);
+        const map = { ...normalizeRefColMap() };
+        const col = Number(map[id]);
+        if (!Number.isInteger(col) || col < 0) return false;
+        const base = hot.getData().map(r => r.slice());
+        if (!base[0] || col >= base[0].length) { delete map[id]; G.state.xrdRefCols = map; return false; }
+        base.forEach(r => r.splice(col, 1));
+        const oldEnabled = { ...G.state.colEnabled };
+        const nextEnabled = {};
+        const width = base[0].length;
+        for (let i = 0; i < width; i++) {
+            const src = i < col ? i : (i + 1);
+            nextEnabled[i] = oldEnabled[src] !== false;
+        }
+        delete map[id];
+        Object.keys(map).forEach(k => {
+            const c = Number(map[k]);
+            if (!Number.isInteger(c)) delete map[k];
+            else if (c > col) map[k] = c - 1;
+            else if (c === col) delete map[k];
+        });
+        applyTableState(base, nextEnabled, map);
+        return true;
+    }
+    function clearRefColumnsFromTable() {
+        const map = normalizeRefColMap();
+        const ids = Object.keys(map);
+        if (!ids.length) return;
+        const hot = G.state.hot;
+        if (!hot) return;
+        const removeSet = new Set(Object.values(map).map(v => +v).filter(v => Number.isInteger(v) && v >= 0));
+        const base = hot.getData().map(r => r.filter((_, i) => !removeSet.has(i)));
+        const nextEnabled = {};
+        const width = base[0]?.length || 0;
+        const old = { ...G.state.colEnabled };
+        let src = 0;
+        for (let i = 0; i < width; i++) {
+            while (removeSet.has(src)) src++;
+            nextEnabled[i] = old[src] !== false;
+            src++;
+        }
+        applyTableState(base, nextEnabled, {});
+    }
     function getPinnedColor(refId) {
         const id = normalizeRefId(refId);
         const keys = [...pinnedRefs.keys()];
@@ -1781,9 +1959,54 @@ window.GraphPlotter = window.GraphPlotter || {
         const offset = Math.max(0, getSampleCount());
         return G.config.COLORS[(offset + idx) % G.config.COLORS.length];
     }
+    function syncPinnedFromTableMap() {
+        const hot = G.state.hot;
+        const map = normalizeRefColMap();
+        const data = hot?.getData?.() || [];
+        const width = data[0]?.length || 0;
+        const xCol = primaryXCol(data[0]);
+        const offset = Math.max(0, getSampleCount());
+        const next = new Map();
+        Object.entries(map).forEach(([refId, colRaw], idx) => {
+            const col = Number(colRaw);
+            if (!Number.isInteger(col) || col < 0 || col >= width) return;
+            const peaks = [];
+            const ints = [];
+            for (let r = 3; r < data.length; r++) {
+                const x = Number(data[r]?.[xCol]);
+                const y = Number(data[r]?.[col]);
+                if (!Number.isFinite(x) || !Number.isFinite(y) || y <= 0) continue;
+                peaks.push(x);
+                ints.push(y);
+            }
+            const prev = pinnedRefs.get(refId);
+            const fallback = G.config.COLORS[(offset + idx) % G.config.COLORS.length];
+            next.set(refId, {
+                refId,
+                peaks,
+                ints,
+                color: String(data[1]?.[col] ?? prev?.color ?? fallback),
+                label: String(data[2]?.[col] ?? prev?.label ?? refId).trim() || refId,
+                customLabel: true
+            });
+        });
+        pinnedRefs.clear();
+        next.forEach((v, k) => pinnedRefs.set(k, v));
+    }
     function syncPinnedColors() {
+        const data = G.state.hot?.getData?.();
+        const map = normalizeRefColMap();
         pinnedRefs.forEach((ref, refId) => {
-            ref.color = getPinnedColor(refId);
+            const col = Number(map[refId]);
+            if (data?.[2] && Number.isInteger(col) && col >= 0 && col < data[2].length) {
+                const tableColor = String(data[1]?.[col] ?? '').trim();
+                if (tableColor) ref.color = tableColor;
+                else if (!ref.color) ref.color = getPinnedColor(refId);
+                const nm = String(data[2][col] ?? '').trim();
+                if (nm) ref.label = nm;
+            } else if (!ref.color) {
+                ref.color = getPinnedColor(refId);
+            }
         });
     }
     function drawRefPeaks(svg, peaks, ints, color, cls, strokeWidth = 1, dash = '4,2') {
@@ -1841,13 +2064,23 @@ window.GraphPlotter = window.GraphPlotter || {
         if (previewRef?.peaks?.length && !pinnedRefs.has(previewRef.refId)) {
             drawRefPeaks(svg, previewRef.peaks, previewRef.ints, '#1f77b4', 'xrd-ref-peak xrd-ref-peak-preview');
         }
-        drawPinnedLegend(svg);
+        svg.selectAll('g.xrd-ref-legend-group').remove();
     }
     function buildLockPayload(peaks) {
+        const data = G.state.hot.getData();
+        const refCols = getRefColSet();
+        const keep = data[0].map((_, i) => !refCols.has(i));
+        const tableData = refCols.size ? data.map(r => r.filter((_, i) => keep[i])) : data;
+        const colEnabled = {};
+        let ni = 0;
+        for (let i = 0; i < keep.length; i++) {
+            if (!keep[i]) continue;
+            colEnabled[ni++] = G.state.colEnabled[i] !== false;
+        }
         return {
             lock_version: LOCK_VERSION,
-            table_data: G.state.hot.getData(),
-            col_enabled: G.state.colEnabled,
+            table_data: tableData,
+            col_enabled: colEnabled,
             peaks: peaks.map(p => ({ x: Number(p.x), intensity: Number(p.intensity ?? 0) }))
         };
     }
@@ -1861,12 +2094,22 @@ window.GraphPlotter = window.GraphPlotter || {
             G.matchXRD.lockedPeaks = [];
             G.matchXRD.lockInfo = null;
         },
-        isPinned: (refId) => pinnedRefs.has(normalizeRefId(refId)),
+        isPinned: (refId) => {
+            const id = normalizeRefId(refId);
+            if (pinnedRefs.has(id)) return true;
+            const map = normalizeRefColMap();
+            return Object.prototype.hasOwnProperty.call(map, id);
+        },
+        syncPinnedFromTable: (rerender = true) => {
+            syncPinnedFromTableMap();
+            if (rerender) G.matchXRD.render();
+        },
         togglePinned: (refId, peaks, ints, checked, label) => {
             const id = normalizeRefId(refId);
             if (!id) return false;
             if (!checked) {
                 pinnedRefs.delete(id);
+                removeRefColumnFromTable(id);
                 G.matchXRD.render();
                 return true;
             }
@@ -1883,6 +2126,14 @@ window.GraphPlotter = window.GraphPlotter || {
                 customLabel: !!prev?.customLabel
             };
             pinnedRefs.set(id, item);
+            const col = addRefColumnToTable(id, item.peaks, item.ints, item.label);
+            if (Number.isInteger(col) && col >= 0) {
+                const data = G.state.hot?.getData?.();
+                const tableColor = String(data?.[1]?.[col] ?? '').trim();
+                const tableLabel = String(data?.[2]?.[col] ?? '').trim();
+                if (tableColor) item.color = tableColor;
+                if (tableLabel) item.label = tableLabel;
+            }
             G.matchXRD.render();
             return true;
         },
@@ -1931,6 +2182,7 @@ window.GraphPlotter = window.GraphPlotter || {
             selectedPeaks = [];
             previewRef = null;
             pinnedRefs.clear();
+            clearRefColumnsFromTable();
             d3.selectAll('.xrd-user-peak,.xrd-ref-peak,g.xrd-ref-legend-group').remove();
             if (G.matchXRD.lockActive) { G.matchXRD.render(); return; }
         },
@@ -2050,6 +2302,7 @@ window.GraphPlotter = window.GraphPlotter || {
         getSampleCount,
         getTableSHA,
         checkCredit: async () => { const r = await ajaxPost('instanano_check_credit'); return r?.success ? r.data : null; },
+        getLockPayload: (peaks) => buildLockPayload(peaks || (G.matchXRD.lockActive ? G.matchXRD.lockedPeaks : selectedPeaks)),
         computeLockHash: async (peaks) => {
             const tableHash = await getTableSHA();
             const peaksHash = await getPeaksHash(peaks);
@@ -2181,6 +2434,7 @@ window.GraphPlotter = window.GraphPlotter || {
             xrd_table_hash: typeof raw.xrd_table_hash === "string" ? raw.xrd_table_hash : "",
             xrd_peaks_hash: typeof raw.xrd_peaks_hash === "string" ? raw.xrd_peaks_hash : "",
             xrd_peaks: Array.isArray(raw.xrd_peaks) ? raw.xrd_peaks : null,
+            xrd_ref_cols: raw.xrd_ref_cols && typeof raw.xrd_ref_cols === "object" ? raw.xrd_ref_cols : {},
             overrideX: raw.overrideX || null,
             overrideMultiY: raw.overrideMultiY && typeof raw.overrideMultiY === "object" ? raw.overrideMultiY : {},
             overrideXTicks: raw.overrideXTicks ?? null,
@@ -2239,7 +2493,7 @@ window.GraphPlotter = window.GraphPlotter || {
         const rawHtml = d3.select('#chart').html();
         const tmpl = document.createElement('template');
         tmpl.innerHTML = rawHtml;
-        tmpl.content.querySelectorAll('.xrd-user-peak,.xrd-ref-peak').forEach(n => n.remove());
+        tmpl.content.querySelectorAll('.xrd-user-peak,.xrd-ref-peak,.xrd-ref-legend-group').forEach(n => n.remove());
         const cleanedHtml = sanitizeChartHTML(tmpl.innerHTML);
         const payload={v:'v1.0', ts, table:G.state.hot.getData(), settings:G.getSettings(), col:G.state.colEnabled, html:cleanedHtml,
         overrideX:G.state.overrideX||null, overrideMultiY:G.state.overrideMultiY||{}, overrideXTicks:G.state.overrideXTicks||null,
@@ -2259,17 +2513,29 @@ window.GraphPlotter = window.GraphPlotter || {
             if (lock.peaks_hash) payload.xrd_peaks_hash = lock.peaks_hash;
             payload.xrd_peaks = lpeaks.map(p => ({ x: p.x, intensity: p.intensity }));
         }
+        if (G.state.xrdRefCols && typeof G.state.xrdRefCols === "object") payload.xrd_ref_cols = G.state.xrdRefCols;
         const u=URL.createObjectURL(new Blob([JSON.stringify(payload)])), a=document.createElement('a'), name = await htmlPrompt( "Enter file name", `Project_${ts}`); if(!name) return; a.href=u; a.download=`${name}.instanano`; 
         document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(u);})
     G.importState = function(raw){ 
         const s = normalizeImportState(raw);
         if (!s) { alert("Invalid .instanano file."); return; }
-        G.state.hot.loadData(s.table); G.state.colEnabled=s.col; G.state.overrideX = s.overrideX; G.state.overrideMultiY = s.overrideMultiY;
+        const width = s.table?.[0]?.length || 0;
+        const nextEnabled = {};
+        for (let i = 0; i < width; i++) nextEnabled[i] = s.col?.[i] !== false;
+        G.state.hot.loadData(s.table); G.state.colEnabled=nextEnabled; G.state.overrideX = s.overrideX; G.state.overrideMultiY = s.overrideMultiY;
         G.state.overrideXTicks= s.overrideXTicks; G.state.overrideYTicks = s.overrideYTicks; G.state.overrideTernaryTicks = s.overrideTernaryTicks;
         G.state.overrideScaleformatX = s.overrideScaleformatX; G.state.overrideScaleformatY = s.overrideScaleformatY;
         G.state.overrideCustomTicksX = s.overrideCustomTicksX; G.state.overrideCustomTicksY = s.overrideCustomTicksY;
         G.state.overrideCustomTicksTernary = s.overrideCustomTicksTernary; G.state.overrideTernary = s.overrideTernary; 
         G.state.minorTickOn = s.minorTickOn || {}; G.state.useCustomTicksOn=s.useCustomTicksOn||{};
+        const refCols = {};
+        Object.entries(s.xrd_ref_cols || {}).forEach(([refId, col]) => {
+            const c = Number(col);
+            if (Number.isInteger(c) && c >= 0 && c < width) refCols[String(refId)] = c;
+        });
+        G.state.xrdRefCols = refCols;
+        G.state.xrdRefSyncing = false;
+        G.matchXRD?.syncPinnedFromTable?.(false);
         d3.selectAll('input[type="checkbox"][data-col]').each(function(){this.checked=G.state.colEnabled[this.dataset.col]});
         const typeRadio = s.settings.type ? document.getElementById(s.settings.type) : null;
         if (typeRadio) typeRadio.checked = true;
@@ -2285,8 +2551,14 @@ window.GraphPlotter = window.GraphPlotter || {
             const input = document.getElementById(k);
             if (input) input.value = v;
         });
-        d3.select('#chart').html(s.html); d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); G.features.prepareShapeLayer(); d3.selectAll('.shape-group').each(function(){G.features.makeShapeInteractive(d3.select(this))});
-        d3.selectAll('foreignObject.user-text,g.legend-group,g.axis-title').call(G.utils.applyDrag); G.axis.tickEditing(d3.select('#chart svg'));
+        if (s.html && s.html.includes('<svg')) {
+            d3.select('#chart').html(s.html);
+            d3.selectAll('.xrd-user-peak,.xrd-ref-peak,.xrd-ref-legend-group').remove();
+            G.features.prepareShapeLayer();
+            d3.selectAll('.shape-group').each(function(){G.features.makeShapeInteractive(d3.select(this))});
+            d3.selectAll('foreignObject.user-text,g.legend-group,g.axis-title').call(G.utils.applyDrag);
+            G.axis.tickEditing(d3.select('#chart svg'));
+        }
         if (G.matchXRD) { G.matchXRD.lockActive = false; G.matchXRD.lockedPeaks = []; G.matchXRD.lockInfo = null; }
         if (s.xrd_lock_hash && s.xrd_signature && Array.isArray(s.xrd_peaks) && s.xrd_account_id > 0 && typeof instananoCredits !== 'undefined') {
             const peaks = s.xrd_peaks.map(p => ({ x: Number(p.x), intensity: Number(p.intensity ?? 0), normInt: 0 }));
@@ -2300,12 +2572,8 @@ window.GraphPlotter = window.GraphPlotter || {
             fd.append('account_id', s.xrd_account_id);
             if (s.xrd_lock_version != null) fd.append('lock_version', s.xrd_lock_version);
             if (Number(s.xrd_lock_version || 0) >= 2) {
-                fd.append('lock_payload', JSON.stringify({
-                    lock_version: s.xrd_lock_version,
-                    table_data: G.state.hot.getData(),
-                    col_enabled: G.state.colEnabled,
-                    peaks: peaks.map(p => ({ x: Number(p.x), intensity: Number(p.intensity ?? 0) }))
-                }));
+                const lp = G.matchXRD?.getLockPayload?.(peaks);
+                if (lp) fd.append('lock_payload', JSON.stringify(lp));
             }
             fetch(instananoCredits.ajaxUrl, { method: 'POST', body: fd })
                 .then(r => r.json())
@@ -2431,7 +2699,7 @@ window.GraphPlotter = window.GraphPlotter || {
         });
     }
     function bindEvents(){
-        G.state.hot.addHook('afterPaste', () => { setTimeout(() => { G.state.colEnabled = {}; G.state.hot.getData()[0].forEach((_, c) => { G.state.colEnabled[c] = true; }); G.state.hot.render(); const mode = detectModeFromData(); if (mode) { 
+        G.state.hot.addHook('afterPaste', () => { setTimeout(() => { G.state.colEnabled = {}; G.state.xrdRefCols = {}; G.state.xrdRefSyncing = false; G.matchXRD?.syncPinnedFromTable?.(false); G.state.hot.getData()[0].forEach((_, c) => { G.state.colEnabled[c] = true; }); G.state.hot.render(); const mode = detectModeFromData(); if (mode) { 
         const radio = document.querySelector(`input[name="axistitles"][value="${mode}"]`); if (radio) radio.checked = true; openPanelForMode(mode);} G.axis.resetScales(true);
         const svg = d3.select("#chart svg"); if (!svg.empty()) { svg.selectAll(".shape-group").remove(); svg.selectAll("foreignObject.user-text").remove(); G.state.tickLabelStyles={x:{fontSize:null,color:null},y:{fontSize:null,color:null}};} G.renderChart();}, 0);});
         G.state.hot.addHook('afterChange', (changes, src)=>{ if(!changes) return; let h=false, d=false; for(const [r,,o,n] of changes){
