@@ -39,6 +39,9 @@
             const n=Math.max(...rows.map(r=>r.length)), header=Array(n).fill().map((_,i)=>i===0?'X-axis':'Y-axis'),
             color=Array(n).fill().map((_,i)=>G.config.COLORS[i%G.config.COLORS.length]), name=Array(n).fill('Sample');
             G.state.hot.loadData([header,color,name,...rows]); G.state.colEnabled = {}; G.state.hot.getData()[0].forEach((_, c) => { G.state.colEnabled[c] = true; });
+            G.state.xrdRefCols = {};
+            G.state.xrdRefSyncing = false;
+            G.matchXRD?.syncPinnedFromTable?.(false);
             G.state.hot.render();
             setMode(detectModeFromData?.());
             d3.select('#chart').selectAll("g.axis-title, g.legend-group, g.shape-group, defs, foreignObject.user-text").remove();
