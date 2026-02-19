@@ -79,9 +79,29 @@
         const raw = JSON.stringify(canonicalizePeaks(peaks));
         return sha256Hex(raw);
     }
+    function normalizeRefColMap() {
+        const data = G.state.hot?.getData?.() || [];
+        const width = data[0]?.length || 0;
+        const raw = (G.state.xrdRefCols && typeof G.state.xrdRefCols === 'object') ? G.state.xrdRefCols : {};
+        const next = {};
+        const used = new Set();
+        Object.entries(raw).forEach(([refId, col]) => {
+            const c = Number(col);
+            if (!Number.isInteger(c) || c < 0 || c >= width || used.has(c)) return;
+            next[String(refId)] = c;
+            used.add(c);
+        });
+        G.state.xrdRefCols = next;
+        return next;
+    }
+    function getRefColSet() {
+        const map = normalizeRefColMap();
+        return new Set(Object.values(map).map(v => +v).filter(v => Number.isInteger(v) && v >= 0));
+    }
     function getSampleCount() {
         const data = G.state.hot.getData();
-        return data[0].filter((h, i) => h === 'Y-axis' && G.state.colEnabled[i] !== false).length || 1;
+        const refCols = getRefColSet();
+        return data[0].filter((h, i) => !refCols.has(i) && h === 'Y-axis' && G.state.colEnabled[i] !== false).length || 1;
     }
     async function ajaxPost(action, extra = {}) {
         if (typeof instananoCredits === 'undefined') return null;
@@ -97,6 +117,130 @@
     }
     const normalizeRefId = (refId) => String(refId ?? '').trim();
     const toNumArray = (arr) => (Array.isArray(arr) ? arr.map(v => Number(v)).filter(v => Number.isFinite(v)) : []);
+    function primaryXCol(header) {
+        const idx = Array.isArray(header) ? header.findIndex(h => h === 'X-axis') : -1;
+        return idx >= 0 ? idx : 0;
+    }
+    function buildRefColumnValues(data, peaks, ints) {
+        if (!Array.isArray(data) || data.length < 4) return [];
+        const xCol = primaryXCol(data[0]);
+        const px = peaks.map((x, i) => ({ x: Number(x), i: Number(ints?.[i] ?? 100) }))
+            .filter(p => Number.isFinite(p.x) && Number.isFinite(p.i));
+        if (!px.length) return new Array(Math.max(0, data.length - 3)).fill(0);
+        const xVals = data.slice(3).map(r => Number(r?.[xCol]));
+        let minStep = Infinity;
+        for (let i = 1; i < xVals.length; i++) {
+            const d = Math.abs(xVals[i] - xVals[i - 1]);
+            if (Number.isFinite(d) && d > 0 && d < minStep) minStep = d;
+        }
+        const tol = Number.isFinite(minStep) ? Math.max(0.05, minStep * 0.6) : 0.1;
+        return xVals.map(x => {
+            if (!Number.isFinite(x)) return "";
+            let best = -1, bestDiff = Infinity;
+            for (let j = 0; j < px.length; j++) {
+                const d = Math.abs(x - px[j].x);
+                if (d < bestDiff) { bestDiff = d; best = j; }
+            }
+            return (best >= 0 && bestDiff <= tol) ? px[best].i : 0;
+        });
+    }
+    function syncHeaderChecks() {
+        d3.selectAll('input[type="checkbox"][data-col]').each(function () {
+            const col = +this.dataset.col;
+            this.checked = G.state.colEnabled[col] !== false;
+        });
+    }
+    function applyTableState(nextData, nextEnabled, nextRefCols) {
+        if (!G.state.hot) return;
+        G.state.xrdRefSyncing = true;
+        try {
+            G.state.hot.loadData(nextData);
+            G.state.colEnabled = nextEnabled;
+            G.state.xrdRefCols = nextRefCols;
+            G.state.hot.render();
+            syncHeaderChecks();
+        } finally {
+            G.state.xrdRefSyncing = false;
+        }
+        G.axis.resetScales(false);
+        G.renderChart();
+    }
+    function addRefColumnToTable(refId, peaks, ints, label) {
+        const hot = G.state.hot;
+        if (!hot) return null;
+        const id = normalizeRefId(refId);
+        const base = hot.getData().map(r => r.slice());
+        if (!base.length || !base[0]) return null;
+        const refMap = { ...normalizeRefColMap() };
+        const enabled = { ...G.state.colEnabled };
+        const values = buildRefColumnValues(base, peaks, ints);
+        let col = Number(refMap[id]);
+        let isNew = false;
+        if (!Number.isInteger(col) || col < 0 || col >= base[0].length) {
+            col = base[0].length;
+            base.forEach(r => r.push(""));
+            isNew = true;
+        }
+        base[0][col] = 'Y-axis';
+        if (isNew) {
+            base[1][col] = getPinnedColor(id);
+            base[2][col] = String(label || id);
+        } else {
+            if (!String(base[1][col] ?? '').trim()) base[1][col] = getPinnedColor(id);
+            if (!String(base[2][col] ?? '').trim()) base[2][col] = String(label || id);
+        }
+        for (let r = 3; r < base.length; r++) base[r][col] = values[r - 3] ?? 0;
+        enabled[col] = true;
+        refMap[id] = col;
+        applyTableState(base, enabled, refMap);
+        return col;
+    }
+    function removeRefColumnFromTable(refId) {
+        const hot = G.state.hot;
+        if (!hot) return false;
+        const id = normalizeRefId(refId);
+        const map = { ...normalizeRefColMap() };
+        const col = Number(map[id]);
+        if (!Number.isInteger(col) || col < 0) return false;
+        const base = hot.getData().map(r => r.slice());
+        if (!base[0] || col >= base[0].length) { delete map[id]; G.state.xrdRefCols = map; return false; }
+        base.forEach(r => r.splice(col, 1));
+        const oldEnabled = { ...G.state.colEnabled };
+        const nextEnabled = {};
+        const width = base[0].length;
+        for (let i = 0; i < width; i++) {
+            const src = i < col ? i : (i + 1);
+            nextEnabled[i] = oldEnabled[src] !== false;
+        }
+        delete map[id];
+        Object.keys(map).forEach(k => {
+            const c = Number(map[k]);
+            if (!Number.isInteger(c)) delete map[k];
+            else if (c > col) map[k] = c - 1;
+            else if (c === col) delete map[k];
+        });
+        applyTableState(base, nextEnabled, map);
+        return true;
+    }
+    function clearRefColumnsFromTable() {
+        const map = normalizeRefColMap();
+        const ids = Object.keys(map);
+        if (!ids.length) return;
+        const hot = G.state.hot;
+        if (!hot) return;
+        const removeSet = new Set(Object.values(map).map(v => +v).filter(v => Number.isInteger(v) && v >= 0));
+        const base = hot.getData().map(r => r.filter((_, i) => !removeSet.has(i)));
+        const nextEnabled = {};
+        const width = base[0]?.length || 0;
+        const old = { ...G.state.colEnabled };
+        let src = 0;
+        for (let i = 0; i < width; i++) {
+            while (removeSet.has(src)) src++;
+            nextEnabled[i] = old[src] !== false;
+            src++;
+        }
+        applyTableState(base, nextEnabled, {});
+    }
     function getPinnedColor(refId) {
         const id = normalizeRefId(refId);
         const keys = [...pinnedRefs.keys()];
@@ -104,9 +248,54 @@
         const offset = Math.max(0, getSampleCount());
         return G.config.COLORS[(offset + idx) % G.config.COLORS.length];
     }
+    function syncPinnedFromTableMap() {
+        const hot = G.state.hot;
+        const map = normalizeRefColMap();
+        const data = hot?.getData?.() || [];
+        const width = data[0]?.length || 0;
+        const xCol = primaryXCol(data[0]);
+        const offset = Math.max(0, getSampleCount());
+        const next = new Map();
+        Object.entries(map).forEach(([refId, colRaw], idx) => {
+            const col = Number(colRaw);
+            if (!Number.isInteger(col) || col < 0 || col >= width) return;
+            const peaks = [];
+            const ints = [];
+            for (let r = 3; r < data.length; r++) {
+                const x = Number(data[r]?.[xCol]);
+                const y = Number(data[r]?.[col]);
+                if (!Number.isFinite(x) || !Number.isFinite(y) || y <= 0) continue;
+                peaks.push(x);
+                ints.push(y);
+            }
+            const prev = pinnedRefs.get(refId);
+            const fallback = G.config.COLORS[(offset + idx) % G.config.COLORS.length];
+            next.set(refId, {
+                refId,
+                peaks,
+                ints,
+                color: String(data[1]?.[col] ?? prev?.color ?? fallback),
+                label: String(data[2]?.[col] ?? prev?.label ?? refId).trim() || refId,
+                customLabel: true
+            });
+        });
+        pinnedRefs.clear();
+        next.forEach((v, k) => pinnedRefs.set(k, v));
+    }
     function syncPinnedColors() {
+        const data = G.state.hot?.getData?.();
+        const map = normalizeRefColMap();
         pinnedRefs.forEach((ref, refId) => {
-            ref.color = getPinnedColor(refId);
+            const col = Number(map[refId]);
+            if (data?.[2] && Number.isInteger(col) && col >= 0 && col < data[2].length) {
+                const tableColor = String(data[1]?.[col] ?? '').trim();
+                if (tableColor) ref.color = tableColor;
+                else if (!ref.color) ref.color = getPinnedColor(refId);
+                const nm = String(data[2][col] ?? '').trim();
+                if (nm) ref.label = nm;
+            } else if (!ref.color) {
+                ref.color = getPinnedColor(refId);
+            }
         });
     }
     function drawRefPeaks(svg, peaks, ints, color, cls, strokeWidth = 1, dash = '4,2') {
@@ -164,13 +353,23 @@
         if (previewRef?.peaks?.length && !pinnedRefs.has(previewRef.refId)) {
             drawRefPeaks(svg, previewRef.peaks, previewRef.ints, '#1f77b4', 'xrd-ref-peak xrd-ref-peak-preview');
         }
-        drawPinnedLegend(svg);
+        svg.selectAll('g.xrd-ref-legend-group').remove();
     }
     function buildLockPayload(peaks) {
+        const data = G.state.hot.getData();
+        const refCols = getRefColSet();
+        const keep = data[0].map((_, i) => !refCols.has(i));
+        const tableData = refCols.size ? data.map(r => r.filter((_, i) => keep[i])) : data;
+        const colEnabled = {};
+        let ni = 0;
+        for (let i = 0; i < keep.length; i++) {
+            if (!keep[i]) continue;
+            colEnabled[ni++] = G.state.colEnabled[i] !== false;
+        }
         return {
             lock_version: LOCK_VERSION,
-            table_data: G.state.hot.getData(),
-            col_enabled: G.state.colEnabled,
+            table_data: tableData,
+            col_enabled: colEnabled,
             peaks: peaks.map(p => ({ x: Number(p.x), intensity: Number(p.intensity ?? 0) }))
         };
     }
@@ -184,12 +383,22 @@
             G.matchXRD.lockedPeaks = [];
             G.matchXRD.lockInfo = null;
         },
-        isPinned: (refId) => pinnedRefs.has(normalizeRefId(refId)),
+        isPinned: (refId) => {
+            const id = normalizeRefId(refId);
+            if (pinnedRefs.has(id)) return true;
+            const map = normalizeRefColMap();
+            return Object.prototype.hasOwnProperty.call(map, id);
+        },
+        syncPinnedFromTable: (rerender = true) => {
+            syncPinnedFromTableMap();
+            if (rerender) G.matchXRD.render();
+        },
         togglePinned: (refId, peaks, ints, checked, label) => {
             const id = normalizeRefId(refId);
             if (!id) return false;
             if (!checked) {
                 pinnedRefs.delete(id);
+                removeRefColumnFromTable(id);
                 G.matchXRD.render();
                 return true;
             }
@@ -206,6 +415,14 @@
                 customLabel: !!prev?.customLabel
             };
             pinnedRefs.set(id, item);
+            const col = addRefColumnToTable(id, item.peaks, item.ints, item.label);
+            if (Number.isInteger(col) && col >= 0) {
+                const data = G.state.hot?.getData?.();
+                const tableColor = String(data?.[1]?.[col] ?? '').trim();
+                const tableLabel = String(data?.[2]?.[col] ?? '').trim();
+                if (tableColor) item.color = tableColor;
+                if (tableLabel) item.label = tableLabel;
+            }
             G.matchXRD.render();
             return true;
         },
@@ -254,6 +471,7 @@
             selectedPeaks = [];
             previewRef = null;
             pinnedRefs.clear();
+            clearRefColumnsFromTable();
             d3.selectAll('.xrd-user-peak,.xrd-ref-peak,g.xrd-ref-legend-group').remove();
             if (G.matchXRD.lockActive) { G.matchXRD.render(); return; }
         },
@@ -373,6 +591,7 @@
         getSampleCount,
         getTableSHA,
         checkCredit: async () => { const r = await ajaxPost('instanano_check_credit'); return r?.success ? r.data : null; },
+        getLockPayload: (peaks) => buildLockPayload(peaks || (G.matchXRD.lockActive ? G.matchXRD.lockedPeaks : selectedPeaks)),
         computeLockHash: async (peaks) => {
             const tableHash = await getTableSHA();
             const peaksHash = await getPeaksHash(peaks);
