@@ -49,6 +49,7 @@
             xrd_table_hash: typeof raw.xrd_table_hash === "string" ? raw.xrd_table_hash : "",
             xrd_peaks_hash: typeof raw.xrd_peaks_hash === "string" ? raw.xrd_peaks_hash : "",
             xrd_peaks: Array.isArray(raw.xrd_peaks) ? raw.xrd_peaks : null,
+            xrd_checked_refs: Array.isArray(raw.xrd_checked_refs) ? raw.xrd_checked_refs : [],
             overrideX: raw.overrideX || null,
             overrideMultiY: raw.overrideMultiY && typeof raw.overrideMultiY === "object" ? raw.overrideMultiY : {},
             overrideXTicks: raw.overrideXTicks ?? null,
@@ -107,7 +108,7 @@
         const rawHtml = d3.select('#chart').html();
         const tmpl = document.createElement('template');
         tmpl.innerHTML = rawHtml;
-        tmpl.content.querySelectorAll('.xrd-user-peak,.xrd-ref-peak').forEach(n => n.remove());
+        tmpl.content.querySelectorAll('.xrd-user-peak,.xrd-ref-preview-peak,.xrd-ref-checked-peak,g.xrd-ref-legend-group').forEach(n => n.remove());
         const cleanedHtml = sanitizeChartHTML(tmpl.innerHTML);
         const payload={v:'v1.0', ts, table:G.state.hot.getData(), settings:G.getSettings(), col:G.state.colEnabled, html:cleanedHtml,
         overrideX:G.state.overrideX||null, overrideMultiY:G.state.overrideMultiY||{}, overrideXTicks:G.state.overrideXTicks||null,
@@ -118,6 +119,8 @@
         minorTickOn: G.state.minorTickOn || {}, useCustomTicksOn:G.state.useCustomTicksOn||{}};
         const lock = G.matchXRD?.lockInfo;
         const lpeaks = G.matchXRD?.lockedPeaks;
+        const checkedRefs = G.matchXRD?.getCheckedRefs?.();
+        if (Array.isArray(checkedRefs) && checkedRefs.length) payload.xrd_checked_refs = checkedRefs;
         if (lock?.verified && Array.isArray(lpeaks) && lpeaks.length) {
             payload.xrd_lock_version = lock.lock_version ?? null;
             payload.xrd_account_id = Number(lock.account_id || 0);
@@ -153,9 +156,9 @@
             const input = document.getElementById(k);
             if (input) input.value = v;
         });
-        d3.select('#chart').html(s.html); d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); G.features.prepareShapeLayer(); d3.selectAll('.shape-group').each(function(){G.features.makeShapeInteractive(d3.select(this))});
+        d3.select('#chart').html(s.html); d3.selectAll('.xrd-user-peak,.xrd-ref-preview-peak,.xrd-ref-checked-peak,.xrd-ref-legend-group').remove(); G.features.prepareShapeLayer(); d3.selectAll('.shape-group').each(function(){G.features.makeShapeInteractive(d3.select(this))});
         d3.selectAll('foreignObject.user-text,g.legend-group,g.axis-title').call(G.utils.applyDrag); G.axis.tickEditing(d3.select('#chart svg'));
-        if (G.matchXRD) { G.matchXRD.lockActive = false; G.matchXRD.lockedPeaks = []; G.matchXRD.lockInfo = null; }
+        if (G.matchXRD) { G.matchXRD.lockActive = false; G.matchXRD.lockedPeaks = []; G.matchXRD.lockInfo = null; G.matchXRD.setCheckedRefs?.(s.xrd_checked_refs || []); }
         if (s.xrd_lock_hash && s.xrd_signature && Array.isArray(s.xrd_peaks) && s.xrd_account_id > 0 && typeof instananoCredits !== 'undefined') {
             const peaks = s.xrd_peaks.map(p => ({ x: Number(p.x), intensity: Number(p.intensity ?? 0), normInt: 0 }));
             const maxInt = peaks.length ? Math.max(...peaks.map(p => p.intensity)) : 0;
