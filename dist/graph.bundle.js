@@ -1390,13 +1390,13 @@ window.GraphPlotter = window.GraphPlotter || {
         }
     }
 
-    function setUnlockVisible(show) {
+    function setUnlockVisible(show, n) {
         if (unlockSection) unlockSection.style.display = show ? '' : 'none';
         if (!unlockBtn) return;
         unlockBtn.style.display = show ? '' : 'none';
         if (!show) return;
-        const n = G.matchXRD?.getSampleCount?.() || 1;
-        unlockBtn.textContent = `🔓 Unlock Full XRD Match (${n} required credit${n > 1 ? 's' : ''})`;
+        const needed = n || G.matchXRD?.getSampleCount?.() || 1;
+        unlockBtn.textContent = `🔓 Unlock Full XRD Match (${needed} required credit${needed > 1 ? 's' : ''})`;
     }
 
     function setPanelMessage(panel, message) {
@@ -1416,7 +1416,7 @@ window.GraphPlotter = window.GraphPlotter || {
         }
     }
 
-    function renderMatches(panel, matches, cols, lockedMatches = [], showLimited = false) {
+    function renderMatches(panel, matches, cols, lockedMatches = []) {
         const node = panel?.node();
         if (!node) return;
         node.replaceChildren();
@@ -1427,16 +1427,15 @@ window.GraphPlotter = window.GraphPlotter || {
             return;
         }
         const frag = document.createDocumentFragment();
-        const rows = matches.map(m => [m, showLimited ? 'limited' : '']).concat(lockedMatches.map(m => [m, 'locked']));
+        const limitedTag = lockedMatches.length ? 'limited' : '';
+        const rows = matches.map(m => [m, limitedTag]).concat(lockedMatches.map(m => [m, 'locked']));
         rows.forEach(([item, tag]) => {
             const row = item.row || item;
             const rowDiv = document.createElement("div");
             rowDiv.className = "matchedrow";
             if (tag) rowDiv.dataset.tag = tag;
             if (item.refId) rowDiv.dataset.refid = item.refId;
-            if (tag === 'locked') {
-                rowDiv.dataset.locked = '1';
-            } else {
+            if (tag !== 'locked') {
                 const fd = item.fullData?.data;
                 const peaks = fd?.Peaks ? fd.Peaks.map(p => p.T) : item.peaks;
                 const ints = fd?.Peaks ? fd.Peaks.map(p => p.I) : item.intensities;
@@ -1507,10 +1506,10 @@ window.GraphPlotter = window.GraphPlotter || {
         G.matchXRD.setFilter(val.split(',').filter(e => e.trim()), lm?.value, parseInt(ec?.value) || 0);
         setUnlockVisible(false);
         const result = await G.matchXRD.search();
-        renderMatches($xrd, result.matches, result.cols, result.lockedMatches || [], result.locked);
+        renderMatches($xrd, result.matches, result.cols, result.lockedMatches || []);
         if (!result.matches.length && !(result.lockedMatches || []).length) return;
         if (result.locked) {
-            setUnlockVisible(true);
+            setUnlockVisible(true, G.matchXRD.getSampleCount());
         }
     });
     unlockBtn?.addEventListener('click', async function () {
@@ -1543,7 +1542,7 @@ window.GraphPlotter = window.GraphPlotter || {
     $xrd.on('click', async function (e) {
         const t = e.target.closest('.matchedrow');
         if (!t) return;
-        if (t.dataset.locked === '1') return;
+        if (t.dataset.tag === 'locked') return;
         const box = $xrd.node();
         box?.querySelectorAll('.matchedrow').forEach(r => { if (r !== t) { r.style.background = ''; const d = r.querySelector('.xrd-ref-detail'); if (d) d.remove(); } });
         t.style.background = '#f0f8ff';
