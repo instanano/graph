@@ -2,7 +2,7 @@
     "use strict";
     const XRD_BASE = 'https://cdn.jsdelivr.net/gh/instanano/graph_static@v1.0.0/match/xrd/';
     const BIN_WIDTH = 0.5;
-    const LOCK_VERSION = 1;
+    const LOCK_VERSION = 2;
     const PRECISION = 100;
     const TOLERANCE = 0.5;
     const MIN_TOLERANCE = 0.25;
@@ -11,6 +11,8 @@
     const FREE_PREVIEW_PEAKS = 3;
     const MAX_RANKED_REFS = 25;
     let selectedPeaks = [];
+    let previewRef = null;
+    const pinnedRefs = new Map();
     let compositions = null;
     let elementFilter = { elements: [], mode: 'and', count: 0 };
     const metaCache = new Map();
@@ -93,11 +95,120 @@
         const r = await fetch(instananoCredits.ajaxUrl, { method: 'POST', body: fd });
         return r.json();
     }
+    const normalizeRefId = (refId) => String(refId ?? '').trim();
+    const toNumArray = (arr) => (Array.isArray(arr) ? arr.map(v => Number(v)).filter(v => Number.isFinite(v)) : []);
+    function getPinnedColor(refId) {
+        const id = normalizeRefId(refId);
+        const keys = [...pinnedRefs.keys()];
+        const idx = Math.max(0, keys.indexOf(id));
+        const offset = Math.max(0, getSampleCount());
+        return G.config.COLORS[(offset + idx) % G.config.COLORS.length];
+    }
+    function syncPinnedColors() {
+        pinnedRefs.forEach((ref, refId) => {
+            ref.color = getPinnedColor(refId);
+        });
+    }
+    function drawRefPeaks(svg, peaks, ints, color, cls, strokeWidth = 1, dash = '4,2') {
+        const xMin = G.config.DIM.ML, xMax = G.config.DIM.W - G.config.DIM.MR;
+        peaks.forEach((x, i) => {
+            const xp = G.state.lastXScale(x);
+            if (xp < xMin || xp > xMax) return;
+            const h = 5 + ((ints?.[i] ?? 100) / 100) * 35;
+            svg.append('line').attr('class', cls)
+                .attr('x1', xp).attr('x2', xp)
+                .attr('y1', G.config.DIM.H - G.config.DIM.MB)
+                .attr('y2', G.config.DIM.H - G.config.DIM.MB - h)
+                .attr('stroke', color).attr('stroke-width', strokeWidth)
+                .attr('stroke-dasharray', dash).style('pointer-events', 'none');
+        });
+    }
+    function drawPinnedLegend(svg) {
+        const items = [...pinnedRefs.values()];
+        const lg = svg.selectAll('g.xrd-ref-legend-group').data(items, d => d.refId);
+        lg.exit().remove();
+        if (!items.length) return;
+        const baseCount = G.state.hot.getData()[0].filter((v, i) => v === 'Y-axis' && G.state.colEnabled[i] !== false).length;
+        const X = G.config.DIM.W - G.config.DIM.MR - 100, Y = G.config.DIM.MT + 25 + (baseCount * 20) + 6, S = 20, M = 20;
+        lg.attr('transform', function (d, idx) { return d.savedTransform || this.dataset.savedTransform || `translate(${X},${Y + idx * S})`; });
+        const enter = lg.enter().append('g').classed('xrd-ref-legend-group', 1).attr('transform', (d, idx) => `translate(${X},${Y + idx * S})`).call(G.utils.applyDrag);
+        enter.each(function (d) {
+            const g = d3.select(this);
+            g.append('line').classed('xrd-ref-legend-marker', true).attr('x2', M).attr('y1', 0).attr('y2', 0).attr('stroke-width', 1.5).attr('stroke-dasharray', '4,2');
+            const fo = G.utils.editableText(g, { x: M + 5, y: -10, text: d.label || d.refId });
+            fo.fo.attr('width', fo.div.node().scrollWidth + fo.pad);
+            const div = fo.div.node();
+            div.addEventListener('click', e => { e.stopPropagation(); div.focus(); });
+            div.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); div.blur(); } });
+            div.addEventListener('blur', function () {
+                const text = (div.textContent || '').trim();
+                const safe = text || d.refId;
+                d.label = safe;
+                d.customLabel = true;
+                d3.select(div).text(safe).attr('contenteditable', false).style('outline', 'none').style('cursor', 'move');
+            });
+        });
+        const all = lg.merge(enter);
+        all.each(function (d) {
+            const g = d3.select(this);
+            g.select('line.xrd-ref-legend-marker').attr('stroke', d.color || getPinnedColor(d.refId));
+            g.select('foreignObject div').text(d.label || d.refId);
+        });
+    }
+    function renderReferenceOverlays(svg) {
+        syncPinnedColors();
+        svg.selectAll('.xrd-ref-peak').remove();
+        pinnedRefs.forEach((ref) => {
+            drawRefPeaks(svg, ref.peaks, ref.ints, ref.color || getPinnedColor(ref.refId), 'xrd-ref-peak xrd-ref-peak-pinned');
+        });
+        if (previewRef?.peaks?.length && !pinnedRefs.has(previewRef.refId)) {
+            drawRefPeaks(svg, previewRef.peaks, previewRef.ints, '#1f77b4', 'xrd-ref-peak xrd-ref-peak-preview');
+        }
+        drawPinnedLegend(svg);
+    }
+    function buildLockPayload(peaks) {
+        return {
+            lock_version: LOCK_VERSION,
+            table_data: G.state.hot.getData(),
+            col_enabled: G.state.colEnabled,
+            peaks: peaks.map(p => ({ x: Number(p.x), intensity: Number(p.intensity ?? 0) }))
+        };
+    }
 
     G.matchXRD = {
         lockActive: false,
         lockInfo: null,
         lockedPeaks: [],
+        invalidateLock: () => {
+            G.matchXRD.lockActive = false;
+            G.matchXRD.lockedPeaks = [];
+            G.matchXRD.lockInfo = null;
+        },
+        isPinned: (refId) => pinnedRefs.has(normalizeRefId(refId)),
+        togglePinned: (refId, peaks, ints, checked, label) => {
+            const id = normalizeRefId(refId);
+            if (!id) return false;
+            if (!checked) {
+                pinnedRefs.delete(id);
+                G.matchXRD.render();
+                return true;
+            }
+            const px = toNumArray(peaks);
+            if (!px.length) return false;
+            const pi = toNumArray(ints);
+            const prev = pinnedRefs.get(id);
+            const item = {
+                refId: id,
+                peaks: px,
+                ints: pi,
+                color: prev?.color || getPinnedColor(id),
+                label: prev?.customLabel ? prev.label : (String(label || id)),
+                customLabel: !!prev?.customLabel
+            };
+            pinnedRefs.set(id, item);
+            G.matchXRD.render();
+            return true;
+        },
         addPeak: (x, intensity) => {
             if (G.matchXRD.lockActive) return;
             selectedPeaks.push({ x, intensity, normInt: 0 });
@@ -107,7 +218,7 @@
         render: () => {
             const svg = d3.select('#chart svg');
             const tab = document.getElementById('icon5');
-            if (tab && !tab.checked) { svg.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); return; }
+            if (tab && !tab.checked) { svg.selectAll('.xrd-user-peak,.xrd-ref-peak,g.xrd-ref-legend-group').remove(); return; }
             svg.selectAll('.xrd-user-peak').remove();
             const peaks = G.matchXRD.lockActive ? G.matchXRD.lockedPeaks : selectedPeaks;
             const xMin = G.config.DIM.ML, xMax = G.config.DIM.W - G.config.DIM.MR;
@@ -125,25 +236,21 @@
                     line.style('cursor', 'default');
                 }
             });
+            renderReferenceOverlays(svg);
         },
-        showRef: (peaks, ints) => {
-            const svg = d3.select('#chart svg');
-            svg.selectAll('.xrd-ref-peak').remove();
-            peaks.forEach((x, i) => {
-                const xp = G.state.lastXScale(x);
-                if (xp < G.config.DIM.ML || xp > G.config.DIM.W - G.config.DIM.MR) return;
-                const h = 5 + ((ints?.[i] ?? 100) / 100) * 35;
-                svg.append('line').attr('class', 'xrd-ref-peak')
-                    .attr('x1', xp).attr('x2', xp)
-                    .attr('y1', G.config.DIM.H - G.config.DIM.MB)
-                    .attr('y2', G.config.DIM.H - G.config.DIM.MB - h)
-                    .attr('stroke', 'blue').attr('stroke-width', 1)
-                    .attr('stroke-dasharray', '4,2').style('pointer-events', 'none');
-            });
+        showRef: (peaks, ints, refId) => {
+            previewRef = {
+                refId: normalizeRefId(refId),
+                peaks: toNumArray(peaks),
+                ints: toNumArray(ints)
+            };
+            G.matchXRD.render();
         },
         clear: () => {
             selectedPeaks = [];
-            d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove();
+            previewRef = null;
+            pinnedRefs.clear();
+            d3.selectAll('.xrd-user-peak,.xrd-ref-peak,g.xrd-ref-legend-group').remove();
             if (G.matchXRD.lockActive) { G.matchXRD.render(); return; }
         },
         validate: (input) => {
@@ -271,20 +378,21 @@
         },
         unlock: async () => {
             if (!selectedPeaks.length) return { ok: false, message: 'No peaks selected.' };
-            const n = getSampleCount();
-            const lock = await G.matchXRD.computeLockHash(selectedPeaks);
-            const r = await ajaxPost('instanano_use_credit', { lock_hash: lock.lock_hash, lock_version: lock.lock_version, sample_count: n });
+            const payload = buildLockPayload(selectedPeaks);
+            const r = await ajaxPost('instanano_use_credit', { lock_payload: JSON.stringify(payload) });
             if (!r?.success || !r?.data?.signature) return { ok: false, message: r?.data?.message || 'Failed.', remaining: r?.data?.remaining };
             const accountId = Number(r.data.account_id || 0);
+            const lockHash = String(r.data.lock_hash || '');
+            const lockVersion = Number(r.data.lock_version || LOCK_VERSION);
             G.matchXRD.lockActive = true;
             G.matchXRD.lockedPeaks = selectedPeaks.map(p => ({ x: p.x, intensity: p.intensity, normInt: p.normInt }));
             G.matchXRD.lockInfo = {
-                lock_hash: lock.lock_hash,
+                lock_hash: lockHash,
                 signature: r.data.signature,
-                lock_version: lock.lock_version,
+                lock_version: lockVersion,
                 account_id: accountId,
-                table_hash: lock.table_hash,
-                peaks_hash: lock.peaks_hash,
+                table_hash: String(r.data.table_hash || ''),
+                peaks_hash: String(r.data.peaks_hash || ''),
                 fetch_token: r.data.fetch_token || "",
                 fetch_token_expires: Number(r.data.fetch_token_expires || 0),
                 verified: true
@@ -295,7 +403,7 @@
                 matches: full.matches || [],
                 remaining: Number(r.data.remaining_total ?? r.data.remaining ?? 0),
                 current_remaining: Number(r.data.current_remaining ?? 0),
-                already_done: false
+                already_done: !!r.data.already_done
             };
         },
         refreshFetchToken: async () => {
