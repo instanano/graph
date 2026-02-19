@@ -61,7 +61,13 @@
     document.addEventListener('selectionchange',setActiveButtons);
     document.addEventListener('mouseup',setActiveButtons);
     document.addEventListener('keyup',setActiveButtons);
-    G.ui.refs.rmBtn.on("click", () => { if (G.state.activeGroup) { G.state.activeGroup.style("display", "none"); G.state.activeGroup = null;}
+    G.ui.refs.rmBtn.on("click", () => {
+        if (G.matchXRD?.removeActiveLegend?.()) {
+            G.state.activeFo = G.state.activeDiv = G.state.activeText = null;
+            G.ui.refs.rmBtn.classed("disabled", true);
+            return;
+        }
+        if (G.state.activeGroup) { G.state.activeGroup.style("display", "none"); G.state.activeGroup = null;}
         else if (G.state.activeFo) { const parentG = G.state.activeFo.node().parentNode; if (parentG.classList.contains("legend-group")) { d3.select(parentG).style("display", "none"); } else { d3.select(G.state.activeFo.node()).style("display", "none");}} 
         G.state.activeFo = G.state.activeDiv = null; G.ui.refs.rmBtn.classed("disabled", true);}); 
 })(window.GraphPlotter);
