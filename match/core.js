@@ -76,6 +76,7 @@
             rowDiv.className = "matchedrow";
             if (tag) rowDiv.dataset.tag = tag;
             if (item.refId) rowDiv.dataset.refid = item.refId;
+            if (row?.[0] != null) rowDiv.dataset.reflabel = String(row[0]);
             if (tag !== 'locked') {
                 const fd = item.fullData?.data;
                 const peaks = fd?.Peaks ? fd.Peaks.map(p => p.T) : item.peaks;
@@ -83,6 +84,21 @@
                 if (peaks) rowDiv.dataset.peaks = JSON.stringify(peaks);
                 if (ints) rowDiv.dataset.ints = JSON.stringify(ints);
                 if (fd) rowDiv.dataset.fulldata = JSON.stringify(fd);
+            }
+            if (tag !== 'locked' && item.refId) {
+                const pinWrap = document.createElement("div");
+                pinWrap.className = 'xrd-pin-wrap';
+                pinWrap.style.cssText = 'display:flex;justify-content:flex-end;align-items:center;font-size:11px;margin-bottom:2px;color:#333';
+                const pinLabel = document.createElement("label");
+                pinLabel.style.cssText = 'display:flex;align-items:center;gap:4px;cursor:pointer';
+                const pin = document.createElement("input");
+                pin.type = 'checkbox';
+                pin.className = 'xrd-pin-ref';
+                pin.dataset.refid = item.refId;
+                pin.checked = !!G.matchXRD?.isPinned?.(item.refId);
+                pinLabel.append(pin, document.createTextNode('Keep on graph'));
+                pinWrap.appendChild(pinLabel);
+                rowDiv.appendChild(pinWrap);
             }
             row.forEach((val, idx) => {
                 const cell = document.createElement("div");
@@ -180,24 +196,15 @@
         setUnlockVisible(false);
         setPanelMessage($xrd, XRD_MSG);
     });
-    $xrd.on('click', async function (e) {
-        const t = e.target.closest('.matchedrow');
-        if (!t) return;
-        if (t.dataset.tag === 'locked') return;
-        const box = $xrd.node();
-        box?.querySelectorAll('.matchedrow').forEach(r => { if (r !== t) { r.style.background = ''; const d = r.querySelector('.xrd-ref-detail'); if (d) d.remove(); } });
-        t.style.background = '#f0f8ff';
-
+    async function ensureRowPeakData(t) {
         let peaks = t.dataset.peaks ? JSON.parse(t.dataset.peaks) : [];
         let ints = t.dataset.ints ? JSON.parse(t.dataset.ints) : [];
         let fulldata = t.dataset.fulldata ? JSON.parse(t.dataset.fulldata) : null;
-
         if (!fulldata && !G.matchXRD.isLocked() && t.dataset.refid) {
-            // Lazy load ONLY if unlocked
             try {
                 const rd = await G.matchXRD.fetchRef(t.dataset.refid);
                 if (rd) {
-                    fulldata = rd.data; // The JSON blob from DB
+                    fulldata = rd.data;
                     t.dataset.fulldata = JSON.stringify(fulldata);
                     if (fulldata.Peaks) {
                         peaks = fulldata.Peaks.map(p => p.T);
@@ -208,8 +215,37 @@
                 }
             } catch (err) { console.error('Ref fetch failed', err); }
         }
-
-        try { G.matchXRD.showRef(peaks, ints); } catch (_) { }
+        return { peaks, ints, fulldata };
+    }
+    $xrd.on('change', async function (e) {
+        const pin = e.target.closest('input.xrd-pin-ref');
+        if (!pin) return;
+        e.stopPropagation();
+        const t = pin.closest('.matchedrow');
+        if (!t || t.dataset.tag === 'locked') { pin.checked = false; return; }
+        pin.disabled = true;
+        try {
+            const { peaks, ints } = await ensureRowPeakData(t);
+            const ok = G.matchXRD?.togglePinned?.(t.dataset.refid, peaks, ints, pin.checked, t.dataset.reflabel || t.dataset.refid);
+            if (!ok) pin.checked = false;
+        } finally {
+            pin.disabled = false;
+        }
+    });
+    $xrd.on('click', async function (e) {
+        if (e.target.closest('.xrd-pin-wrap')) return;
+        const t = e.target.closest('.matchedrow');
+        if (!t) return;
+        if (t.dataset.tag === 'locked') return;
+        const box = $xrd.node();
+        box?.querySelectorAll('.matchedrow').forEach(r => { if (r !== t) { r.style.background = ''; const d = r.querySelector('.xrd-ref-detail'); if (d) d.remove(); } });
+        t.style.background = '#f0f8ff';
+        const { peaks, ints, fulldata } = await ensureRowPeakData(t);
+        try { G.matchXRD.showRef(peaks, ints, t.dataset.refid); } catch (_) { }
+        const pin = t.querySelector('input.xrd-pin-ref');
+        if (pin?.checked) {
+            try { G.matchXRD.togglePinned(t.dataset.refid, peaks, ints, true, t.dataset.reflabel || t.dataset.refid); } catch (_) { }
+        }
         if (!fulldata) return;
 
         let det = t.querySelector('.xrd-ref-detail');
