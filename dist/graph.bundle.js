@@ -1433,7 +1433,6 @@ window.GraphPlotter = window.GraphPlotter || {
             const rowDiv = document.createElement("div");
             rowDiv.className = "matchedrow";
             if (tag) rowDiv.dataset.tag = tag;
-            else if (node.id === 'xrd-matchedData') rowDiv.style.borderLeft = '3px solid #22c55e';
             if (item.refId) rowDiv.dataset.refid = item.refId;
             if (tag === 'locked') {
                 rowDiv.dataset.locked = '1';
