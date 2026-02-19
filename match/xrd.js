@@ -246,6 +246,10 @@
             };
             G.matchXRD.render();
         },
+        clearPreview: () => {
+            previewRef = null;
+            d3.selectAll('.xrd-ref-peak-preview').remove();
+        },
         clear: () => {
             selectedPeaks = [];
             previewRef = null;
