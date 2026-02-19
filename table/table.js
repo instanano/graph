@@ -14,7 +14,7 @@
             afterRemoveCol: () => { G.axis.resetScales(true); G.renderChart(); },
             afterChange: (changes) => {
                 if (!changes) return;
-                if (G.matchXRD) { G.matchXRD.lockActive = false; G.matchXRD.lockedPeaks = []; G.matchXRD.lockInfo = null; G.matchXRD.render(); }
+                if (G.matchXRD) { G.matchXRD.invalidateLock?.(); G.matchXRD.render(); }
             },
             afterCreateCol: (start, count) => {
                 for (let c = start; c < start + count; c++) {
@@ -40,7 +40,7 @@
             if (e.target.matches('input[type="checkbox"][data-col]')) {
                 const col = +e.target.dataset.col;
                 G.state.colEnabled[col] = e.target.checked;
-                if (G.matchXRD) { G.matchXRD.lockActive = false; G.matchXRD.lockedPeaks = []; G.matchXRD.lockInfo = null; G.matchXRD.render(); }
+                if (G.matchXRD) { G.matchXRD.invalidateLock?.(); G.matchXRD.render(); }
                 G.state.hot.render();
                 G.axis.resetScales(false);
                 G.renderChart(); checkEmptyColumns();}});
