@@ -379,7 +379,7 @@
                 return {
                     matches: preview,
                     lockedMatches,
-                    cols: ['Ref ID', 'Formula', 'Match (%)'],
+                    cols: ['Reference ID', 'Empirical Formula', 'Match Score (%)'],
                     locked: true
                 };
             }
