@@ -1455,8 +1455,7 @@ window.GraphPlotter = window.GraphPlotter || {
             return;
         }
         const frag = document.createDocumentFragment();
-        const limitedTag = lockedMatches.length ? 'limited' : '';
-        const rows = matches.map(m => [m, limitedTag]).concat(lockedMatches.map(m => [m, 'locked']));
+        const rows = matches.map(m => [m, '']).concat(lockedMatches.map(m => [m, 'locked']));
         rows.forEach(([item, tag]) => {
             const row = item.row || item;
             const rowDiv = document.createElement("div");
