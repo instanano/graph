@@ -46,8 +46,6 @@
             xrd_account_id: Number(raw.xrd_account_id || 0),
             xrd_lock_hash: typeof raw.xrd_lock_hash === "string" ? raw.xrd_lock_hash : "",
             xrd_signature: typeof raw.xrd_signature === "string" ? raw.xrd_signature : "",
-            xrd_table_hash: typeof raw.xrd_table_hash === "string" ? raw.xrd_table_hash : "",
-            xrd_peaks_hash: typeof raw.xrd_peaks_hash === "string" ? raw.xrd_peaks_hash : "",
             xrd_peaks: Array.isArray(raw.xrd_peaks) ? raw.xrd_peaks : null,
             overrideX: raw.overrideX || null,
             overrideMultiY: raw.overrideMultiY && typeof raw.overrideMultiY === "object" ? raw.overrideMultiY : {},
@@ -124,8 +122,6 @@
             payload.xrd_account_id = Number(lock.account_id || 0);
             payload.xrd_lock_hash = lock.lock_hash || "";
             payload.xrd_signature = lock.signature || "";
-            if (lock.table_hash) payload.xrd_table_hash = lock.table_hash;
-            if (lock.peaks_hash) payload.xrd_peaks_hash = lock.peaks_hash;
             payload.xrd_peaks = lpeaks.map(p => ({ x: p.x, intensity: p.intensity }));
         }
         const u=URL.createObjectURL(new Blob([JSON.stringify(payload)])), a=document.createElement('a'), name = await htmlPrompt( "Enter file name", `Project_${ts}`); if(!name) return; a.href=u; a.download=`${name}.instanano`; 
@@ -156,70 +152,23 @@
         });
         d3.select('#chart').html(s.html); d3.selectAll('.xrd-user-peak,.xrd-ref-peak,.xrd-ref-preview-peak,g.xrd-ref-legend').remove(); G.features.prepareShapeLayer(); d3.selectAll('.shape-group').each(function(){G.features.makeShapeInteractive(d3.select(this))});
         d3.selectAll('foreignObject.user-text,g.legend-group,g.axis-title').call(G.utils.applyDrag); G.axis.tickEditing(d3.select('#chart svg'));
-        if (G.matchXRD) { G.matchXRD.lockActive = false; G.matchXRD.lockedPeaks = []; G.matchXRD.lockInfo = null; }
-        if (s.xrd_lock_hash && s.xrd_signature && Array.isArray(s.xrd_peaks) && s.xrd_account_id > 0 && typeof instananoCredits !== 'undefined') {
+        if (G.matchXRD) {
+            G.matchXRD.lockActive = false;
+            G.matchXRD.lockedPeaks = [];
+            G.matchXRD.lockInfo = null;
+            G.matchXRD.setImportedLockCandidate?.(null);
+        }
+        if (s.xrd_lock_hash && s.xrd_signature && Array.isArray(s.xrd_peaks) && s.xrd_account_id > 0) {
             const peaks = s.xrd_peaks.map(p => ({ x: Number(p.x), intensity: Number(p.intensity ?? 0), normInt: 0 }));
             const maxInt = peaks.length ? Math.max(...peaks.map(p => p.intensity)) : 0;
             if (maxInt > 0) peaks.forEach(p => p.normInt = (p.intensity / maxInt) * 100);
-            const compute = G.matchXRD?.computeLockHash;
-            if (compute) {
-                compute(peaks).then(lock => {
-                    if (!lock || lock.lock_hash !== s.xrd_lock_hash) {
-                        if (!G.matchXRD) return;
-                        G.matchXRD.lockActive = false;
-                        G.matchXRD.lockedPeaks = [];
-                        G.matchXRD.lockInfo = null;
-                        G.matchXRD.render();
-                        return;
-                    }
-                    const fd = new FormData();
-                    fd.append('action', 'instanano_verify_lock');
-                    fd.append('nonce', instananoCredits.nonce);
-                    fd.append('lock_hash', s.xrd_lock_hash);
-                    fd.append('signature', s.xrd_signature);
-                    fd.append('account_id', s.xrd_account_id);
-                    if (s.xrd_lock_version != null) fd.append('lock_version', s.xrd_lock_version);
-                    fetch(instananoCredits.ajaxUrl, { method: 'POST', body: fd })
-                        .then(r => r.json())
-                        .then(res => {
-                            if (!G.matchXRD) return;
-                            if (res?.success && res.data?.valid) {
-                                G.matchXRD.lockActive = true;
-                                G.matchXRD.lockedPeaks = peaks;
-                                G.matchXRD.lockInfo = {
-                                    lock_hash: s.xrd_lock_hash,
-                                    signature: s.xrd_signature,
-                                    lock_version: s.xrd_lock_version ?? null,
-                                    account_id: Number(res.data.account_id || s.xrd_account_id || 0),
-                                    table_hash: lock.table_hash,
-                                    peaks_hash: lock.peaks_hash,
-                                    fetch_token: res.data.fetch_token || "",
-                                    fetch_token_expires: Number(res.data.fetch_token_expires || 0),
-                                    verified: true
-                                };
-                                G.matchXRD.render();
-                            } else {
-                                G.matchXRD.lockActive = false;
-                                G.matchXRD.lockedPeaks = [];
-                                G.matchXRD.lockInfo = null;
-                                G.matchXRD.render();
-                            }
-                        })
-                        .catch(() => {
-                            if (!G.matchXRD) return;
-                            G.matchXRD.lockActive = false;
-                            G.matchXRD.lockedPeaks = [];
-                            G.matchXRD.lockInfo = null;
-                            G.matchXRD.render();
-                        });
-                }).catch(() => {
-                    if (!G.matchXRD) return;
-                    G.matchXRD.lockActive = false;
-                    G.matchXRD.lockedPeaks = [];
-                    G.matchXRD.lockInfo = null;
-                    G.matchXRD.render();
-                });
-            }
+            G.matchXRD?.setImportedLockCandidate?.({
+                lock_hash: s.xrd_lock_hash,
+                signature: s.xrd_signature,
+                lock_version: s.xrd_lock_version ?? null,
+                account_id: Number(s.xrd_account_id || 0),
+                peaks
+            });
         }
     }
 })(window.GraphPlotter);
