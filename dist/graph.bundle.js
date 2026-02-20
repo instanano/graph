@@ -2222,6 +2222,7 @@ window.GraphPlotter = window.GraphPlotter || {
         const svg=document.querySelector("#chart svg");
         if(!svg)return;
         const clone=svg.cloneNode(true);
+        clone.querySelectorAll('.xrd-user-peak').forEach(n => n.remove());
         clone.querySelectorAll("foreignObject div[contenteditable]").forEach(d=>d.style.border="none");
         clone.querySelectorAll(".outline[visibility='visible']").forEach(e=>e.setAttribute("visibility","hidden"));
         clone.querySelectorAll("text[contenteditable='true']").forEach(t => { t.removeAttribute("contenteditable"); t.style.outline = "none";});
