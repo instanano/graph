@@ -1369,9 +1369,9 @@ window.GraphPlotter = window.GraphPlotter || {
     const fs = document.getElementById('xrd-filter-section');
     const ei = document.getElementById('xrd-elements');
     const unlockBtn = document.getElementById('xrd-unlock-btn');
+    const unlockSection = document.getElementById('xrd-unlock-section');
     const creditBar = document.getElementById('xrd-credit-bar');
     const creditCount = document.getElementById('xrd-credit-count');
-    const matchLabel = document.getElementById('xrd-match-label');
     let currentCredits = 0;
 
     function updateCreditDisplay(data) {
@@ -1382,8 +1382,21 @@ window.GraphPlotter = window.GraphPlotter || {
         if (creditCount) {
             const currentSafe = Number.isFinite(current) ? Math.max(0, current) : 0;
             const other = Math.max(0, currentCredits - currentSafe);
-            creditCount.textContent = other > 0 ? `${currentCredits} (Current: ${currentSafe}, Other: ${other})` : `${currentCredits}`;
+            if (currentCredits <= 0) {
+                creditCount.innerHTML = `0 (<a href="${PRICING_URL}" target="_blank" rel="noopener noreferrer">Click to buy credits</a>)`;
+            } else {
+                creditCount.textContent = other > 0 ? `${currentCredits} (Current: ${currentSafe}, Other: ${other})` : `${currentCredits}`;
+            }
         }
+    }
+
+    function setUnlockVisible(show, n) {
+        if (unlockSection) unlockSection.style.display = show ? '' : 'none';
+        if (!unlockBtn) return;
+        unlockBtn.style.display = show ? '' : 'none';
+        if (!show) return;
+        const needed = n || G.matchXRD?.getSampleCount?.() || 1;
+        unlockBtn.textContent = `Unlock Full XRD Match (${needed} Credit${needed > 1 ? 's' : ''})`;
     }
 
     function setPanelMessage(panel, message) {
@@ -1392,51 +1405,6 @@ window.GraphPlotter = window.GraphPlotter || {
         const p = document.createElement("p");
         p.textContent = message;
         node.replaceChildren(p);
-    }
-
-    function renderMatches(panel, matches, cols) {
-        const node = panel?.node();
-        if (!node) return;
-        node.replaceChildren();
-        if (!matches.length) {
-            const p = document.createElement("p");
-            p.textContent = "No matching peaks found.";
-            node.appendChild(p);
-            return;
-        }
-        const frag = document.createDocumentFragment();
-        matches.forEach(item => {
-            const row = item.row || item;
-            const rowDiv = document.createElement("div");
-            rowDiv.className = "matchedrow";
-            if (item.refId) rowDiv.dataset.refid = item.refId;
-            const fd = item.fullData?.data;
-            if (fd?.Peaks) {
-                rowDiv.dataset.peaks = JSON.stringify(fd.Peaks.map(p => p.T));
-                rowDiv.dataset.ints = JSON.stringify(fd.Peaks.map(p => p.I));
-                rowDiv.dataset.fulldata = JSON.stringify(fd);
-            } else {
-                if (item.peaks) rowDiv.dataset.peaks = JSON.stringify(item.peaks);
-                if (item.intensities) rowDiv.dataset.ints = JSON.stringify(item.intensities);
-            }
-            if (item.fullData?.mineral) rowDiv.dataset.mineral = item.fullData.mineral;
-            if (item.fullData?.formula) rowDiv.dataset.formula = item.fullData.formula;
-            row.forEach((val, idx) => {
-                const cell = document.createElement("div");
-                const label = document.createElement("b");
-                label.textContent = `${cols[idx]}:`;
-                cell.append(label, document.createTextNode(` ${val}`));
-                rowDiv.appendChild(cell);
-            });
-            if (item.fullData?.mineral) {
-                const mn = document.createElement("div");
-                mn.style.cssText = 'font-size:11px;color:#555;margin-top:2px';
-                mn.textContent = `Mineral: ${item.fullData.mineral}`;
-                rowDiv.appendChild(mn);
-            }
-            frag.appendChild(rowDiv);
-        });
-        node.appendChild(frag);
     }
 
     async function refreshCredits() {
@@ -1448,16 +1416,81 @@ window.GraphPlotter = window.GraphPlotter || {
         }
     }
 
-    window.addEventListener('focus', refreshCredits);
+    function renderMatches(panel, matches, cols, lockedMatches = []) {
+        const node = panel?.node();
+        if (!node) return;
+        node.replaceChildren();
+        const useCols = Array.isArray(cols) && cols.length ? cols : ['Ref ID', 'Formula', 'Match (%)'];
+        if (!matches.length && !lockedMatches.length) {
+            const p = document.createElement("p");
+            p.textContent = "No matching peaks found.";
+            node.appendChild(p);
+            return;
+        }
+        const frag = document.createDocumentFragment();
+        const rows = matches.map(m => [m, '']).concat(lockedMatches.map(m => [m, 'locked']));
+        rows.forEach(([item, tag]) => {
+            const row = item.row || item;
+            const rowDiv = document.createElement("div");
+            rowDiv.className = "matchedrow";
+            if (tag) rowDiv.dataset.tag = tag;
+            if (item.refId) rowDiv.dataset.refid = item.refId;
+            if (tag !== 'locked') {
+                const pinCell = document.createElement("div");
+                const pin = document.createElement("input");
+                pin.type = "checkbox";
+                pin.className = 'xrd-ref-pin';
+                pin.checked = !!G.matchXRD?.isRefPinned?.(item.refId);
+                pin.title = 'Pin reference';
+                pin.addEventListener('click', ev => ev.stopPropagation());
+                pinCell.appendChild(pin);
+                rowDiv.appendChild(pinCell);
+                const fd = item.fullData?.data;
+                const peaks = fd?.Peaks ? fd.Peaks.map(p => p.T) : item.peaks;
+                const ints = fd?.Peaks ? fd.Peaks.map(p => p.I) : item.intensities;
+                if (peaks) rowDiv.dataset.peaks = JSON.stringify(peaks);
+                if (ints) rowDiv.dataset.ints = JSON.stringify(ints);
+                if (fd) rowDiv.dataset.fulldata = JSON.stringify(fd);
+            }
+            row.forEach((val, idx) => {
+                const cell = document.createElement("div");
+                const label = document.createElement("b");
+                label.textContent = `${useCols[idx]}:`;
+                cell.append(label, document.createTextNode(` ${val}`));
+                rowDiv.appendChild(cell);
+            });
+            if (tag !== 'locked' && item.fullData?.mineral) {
+                const mn = document.createElement("div");
+                mn.className = 'xrd-row-mineral';
+                mn.textContent = `Mineral: ${item.fullData.mineral}`;
+                rowDiv.appendChild(mn);
+            }
+            frag.appendChild(rowDiv);
+        });
+        node.appendChild(frag);
+    }
+    function renderXRDPanelState(state) {
+        const st = state || G.matchXRD?.getPanelState?.();
+        if (!st) {
+            setPanelMessage($xrd, XRD_MSG);
+            setUnlockVisible(false);
+            return;
+        }
+        renderMatches($xrd, st.matches || [], st.cols || ['Ref ID', 'Formula', 'Match (%)'], st.lockedMatches || []);
+        if (st.locked && ((st.matches || []).length || (st.lockedMatches || []).length)) setUnlockVisible(true, G.matchXRD?.getSampleCount?.());
+        else setUnlockVisible(false);
+    }
 
+    window.addEventListener('focus', refreshCredits);
     document.querySelectorAll('input[name="matchinstrument"]').forEach(inp => inp.addEventListener('change', () => setPanelMessage($std, STD_MSG)));
-    ['icon1', 'icon2', 'icon3', 'icon4'].forEach(id => document.getElementById(id)?.addEventListener('change', () => G.matchXRD?.clear()));
-    icon5?.addEventListener('change', async () => {
-        setPanelMessage($xrd, XRD_MSG);
+    ['icon1', 'icon2', 'icon3', 'icon4'].forEach(id => document.getElementById(id)?.addEventListener('change', () => { G.matchXRD?.leavePanel?.(); setUnlockVisible(false); }));
+    icon5?.addEventListener('change', () => {
+        if (!icon5.checked) return;
         refreshCredits();
+        renderXRDPanelState();
         G.matchXRD?.render();
     });
-    icon6?.addEventListener('change', () => { G.matchXRD?.clear(); setPanelMessage($std, STD_MSG); });
+    icon6?.addEventListener('change', () => { G.matchXRD?.leavePanel?.(); setUnlockVisible(false); setPanelMessage($std, STD_MSG); });
     ['click', 'mousedown', 'pointerdown', 'focusin', 'input', 'keydown', 'keyup'].forEach(ev => fs?.addEventListener(ev, e => { e.stopPropagation(); setTimeout(() => G.matchXRD?.render(), 10); }));
     ei?.addEventListener('input', () => {
         if (!G.matchXRD) return;
@@ -1491,43 +1524,52 @@ window.GraphPlotter = window.GraphPlotter || {
         const v = G.matchXRD.validate(val);
         if (!v.valid) { el.style.outline = '2px solid red'; el.title = 'Invalid: ' + v.invalid.join(', '); return; }
         G.matchXRD.setFilter(val.split(',').filter(e => e.trim()), lm?.value, parseInt(ec?.value) || 0);
-        if (unlockBtn) unlockBtn.style.display = 'none';
-        const { matches, cols, locked } = await G.matchXRD.search();
-        renderMatches($xrd, matches, cols);
-        if (!matches.length) return;
-        if (locked && unlockBtn) {
-            unlockBtn.style.display = '';
-            const n = G.matchXRD.getSampleCount();
-            unlockBtn.textContent = `🔓 Unlock (${n} credit${n > 1 ? 's' : ''})`;
-        }
+        const result = await G.matchXRD.search();
+        renderXRDPanelState(result);
     });
     unlockBtn?.addEventListener('click', async function () {
-        if (currentCredits <= 0 || typeof instananoCredits === 'undefined') {
+        if (typeof instananoCredits === 'undefined') {
             window.open(PRICING_URL, '_blank');
             return;
         }
-        unlockBtn.textContent = '⏳ Unlocking...';
         unlockBtn.style.pointerEvents = 'none';
-        const result = await G.matchXRD.unlock();
-        unlockBtn.style.pointerEvents = '';
-        if (result.ok) {
-            unlockBtn.style.display = 'none';
-            updateCreditDisplay({ remaining_total: result.remaining, current_remaining: result.current_remaining });
-            if (matchLabel) matchLabel.textContent = result.already_done ? 'Already analyzed — no credit deducted' : `Unlocked! ${result.remaining} credits left`;
-            renderMatches($xrd, result.matches, result.matches.length > 0 && result.matches[0].fullData ? ['Ref ID', 'Formula', 'Match (%)'] : ['Ref ID', 'Formula', 'Match (%)']);
-        } else {
-            unlockBtn.textContent = '🔓 Unlock';
-            if (matchLabel) matchLabel.textContent = result.message || 'Unlock failed';
+        try {
+            await refreshCredits();
+            if (currentCredits <= 0) {
+                window.open(PRICING_URL, '_blank');
+                return;
+            }
+            const result = await G.matchXRD.unlock();
+            if (result.ok) {
+                updateCreditDisplay({ remaining_total: result.remaining, current_remaining: result.current_remaining });
+                renderXRDPanelState(G.matchXRD.getPanelState?.() || { matches: result.matches || [], cols: ['Ref ID', 'Formula', 'Match (%)'], lockedMatches: [], locked: false });
+            }
+        } finally {
+            unlockBtn.style.pointerEvents = '';
         }
     });
     document.getElementById('xrd-clear-peaks')?.addEventListener('click', function () {
         G.matchXRD?.clear();
-        if (unlockBtn) unlockBtn.style.display = 'none';
+        setUnlockVisible(false);
         setPanelMessage($xrd, XRD_MSG);
     });
+    $xrd.on('change', function (e) {
+        const pin = e.target.closest('.xrd-ref-pin');
+        if (!pin) return;
+        e.stopPropagation();
+        const row = pin.closest('.matchedrow');
+        if (!row || row.dataset.tag === 'locked') return;
+        let peaks = [];
+        let ints = [];
+        try { peaks = row.dataset.peaks ? JSON.parse(row.dataset.peaks) : []; } catch (_) { peaks = []; }
+        try { ints = row.dataset.ints ? JSON.parse(row.dataset.ints) : []; } catch (_) { ints = []; }
+        G.matchXRD?.setPinnedRef?.(row.dataset.refid, peaks, ints, pin.checked);
+    });
     $xrd.on('click', async function (e) {
+        if (e.target.closest('.xrd-ref-pin')) return;
         const t = e.target.closest('.matchedrow');
         if (!t) return;
+        if (t.dataset.tag === 'locked') return;
         const box = $xrd.node();
         box?.querySelectorAll('.matchedrow').forEach(r => { if (r !== t) { r.style.background = ''; const d = r.querySelector('.xrd-ref-detail'); if (d) d.remove(); } });
         t.style.background = '#f0f8ff';
@@ -1543,7 +1585,6 @@ window.GraphPlotter = window.GraphPlotter || {
                 if (rd) {
                     fulldata = rd.data; // The JSON blob from DB
                     t.dataset.fulldata = JSON.stringify(fulldata);
-                    if (fulldata.mineral) t.dataset.mineral = fulldata.mineral;
                     if (fulldata.Peaks) {
                         peaks = fulldata.Peaks.map(p => p.T);
                         ints = fulldata.Peaks.map(p => p.I);
@@ -1555,6 +1596,7 @@ window.GraphPlotter = window.GraphPlotter || {
         }
 
         try { G.matchXRD.showRef(peaks, ints); } catch (_) { }
+        if (t.querySelector('.xrd-ref-pin')?.checked) G.matchXRD?.updatePinnedRefData?.(t.dataset.refid, peaks, ints);
         if (!fulldata) return;
 
         let det = t.querySelector('.xrd-ref-detail');
@@ -1584,6 +1626,7 @@ window.GraphPlotter = window.GraphPlotter || {
             t.appendChild(det);
         } catch (_) { }
     });
+    setUnlockVisible(false);
     setPanelMessage($xrd, XRD_MSG);
     setPanelMessage($std, STD_MSG);
 })(window.GraphPlotter);
@@ -1633,15 +1676,19 @@ window.GraphPlotter = window.GraphPlotter || {
     const TOLERANCE = 0.5;
     const MIN_TOLERANCE = 0.25;
     const FETCH_CONCURRENCY = 8;
+    const FREE_PREVIEW_REFS = 3;
+    const FREE_PREVIEW_PEAKS = 3;
+    const MAX_RANKED_REFS = 25;
     let selectedPeaks = [];
+    let previewRef = null;
+    let pinnedRefs = [];
+    let panelState = null;
     let compositions = null;
     let elementFilter = { elements: [], mode: 'and', count: 0 };
-    let lastSearchResults = null;
     const metaCache = new Map();
     const indexCache = new Map();
     const chunkCache = new Map();
     const PERIODIC_TABLE = { 'H': 1, 'He': 2, 'Li': 3, 'Be': 4, 'B': 5, 'C': 6, 'N': 7, 'O': 8, 'F': 9, 'Ne': 10, 'Na': 11, 'Mg': 12, 'Al': 13, 'Si': 14, 'P': 15, 'S': 16, 'Cl': 17, 'Ar': 18, 'K': 19, 'Ca': 20, 'Sc': 21, 'Ti': 22, 'V': 23, 'Cr': 24, 'Mn': 25, 'Fe': 26, 'Co': 27, 'Ni': 28, 'Cu': 29, 'Zn': 30, 'Ga': 31, 'Ge': 32, 'As': 33, 'Se': 34, 'Br': 35, 'Kr': 36, 'Rb': 37, 'Sr': 38, 'Y': 39, 'Zr': 40, 'Nb': 41, 'Mo': 42, 'Tc': 43, 'Ru': 44, 'Rh': 45, 'Pd': 46, 'Ag': 47, 'Cd': 48, 'In': 49, 'Sn': 50, 'Sb': 51, 'Te': 52, 'I': 53, 'Xe': 54, 'Cs': 55, 'Ba': 56, 'La': 57, 'Ce': 58, 'Pr': 59, 'Nd': 60, 'Pm': 61, 'Sm': 62, 'Eu': 63, 'Gd': 64, 'Tb': 65, 'Dy': 66, 'Ho': 67, 'Er': 68, 'Tm': 69, 'Yb': 70, 'Lu': 71, 'Hf': 72, 'Ta': 73, 'W': 74, 'Re': 75, 'Os': 76, 'Ir': 77, 'Pt': 78, 'Au': 79, 'Hg': 80, 'Tl': 81, 'Pb': 82, 'Bi': 83, 'Po': 84, 'At': 85, 'Rn': 86, 'Fr': 87, 'Ra': 88, 'Ac': 89, 'Th': 90, 'Pa': 91, 'U': 92, 'Np': 93, 'Pu': 94, 'Am': 95, 'Cm': 96, 'Bk': 97, 'Cf': 98, 'Es': 99, 'Fm': 100, 'Md': 101, 'No': 102, 'Lr': 103, 'Rf': 104, 'Db': 105, 'Sg': 106, 'Bh': 107, 'Hs': 108, 'Mt': 109, 'Ds': 110, 'Rg': 111, 'Cn': 112, 'Nh': 113, 'Fl': 114, 'Mc': 115, 'Lv': 116, 'Ts': 117, 'Og': 118 };
-    const updateLabel = (t) => { const l = document.getElementById('xrd-match-label'); if (l) l.textContent = t; };
     const setProgress = (p) => { const b = document.getElementById('xrd-search-btn'); if (!b) return; if (p === 'done') b.classList.add('progress-done'); else { b.classList.contains('progress-done') && (b.classList.add('no-anim'), void b.offsetHeight); b.classList.remove('progress-done', 'no-anim'); b.style.setProperty('--progress', p + '%'); } };
     const setStatusMessage = (msg) => {
         const box = document.getElementById('xrd-matchedData');
@@ -1684,6 +1731,24 @@ window.GraphPlotter = window.GraphPlotter || {
         const anchor = vals[Math.min(2, vals.length - 1)] || vals[0];
         peaks.forEach(p => p.normInt = anchor > 0 ? Math.max(0, Math.min(100, (Number(p.intensity) || 0) / anchor * 100)) : 0);
     };
+    const toNumArr = (arr) => (Array.isArray(arr) ? arr.map(v => Number(v)).filter(v => Number.isFinite(v)) : []);
+    const toIntArr = (arr) => (Array.isArray(arr) ? arr.map(v => Number(v)).map(v => Number.isFinite(v) ? v : 0) : []);
+    const getBlackColor = () => {
+        const colors = G.config.COLORS || [];
+        const black = colors.find(c => String(c).toLowerCase() === '#000000');
+        return black || '#000000';
+    };
+    const nextPinnedColor = () => {
+        const colors = (G.config.COLORS || []).map(c => String(c));
+        const black = getBlackColor();
+        if (!pinnedRefs.length) return black;
+        const rest = colors.filter(c => c.toLowerCase() !== black.toLowerCase());
+        if (!rest.length) return black;
+        const used = new Set(pinnedRefs.map(r => String(r.color || '').toLowerCase()));
+        const unused = rest.find(c => !used.has(c.toLowerCase()));
+        if (unused) return unused;
+        return rest[(pinnedRefs.length - 1) % rest.length];
+    };
     const getTolerance = (twoTheta) => Math.max(MIN_TOLERANCE, Math.min(TOLERANCE, 0.18 + ((Number(twoTheta) || 0) * 0.0065)));
     async function getTableSHA() {
         const raw = JSON.stringify({ t: G.state.hot.getData(), c: G.state.colEnabled });
@@ -1718,6 +1783,74 @@ window.GraphPlotter = window.GraphPlotter || {
         const r = await fetch(instananoCredits.ajaxUrl, { method: 'POST', body: fd });
         return r.json();
     }
+    const clonePanelState = (state) => {
+        if (!state || typeof state !== 'object') return null;
+        const rows = Array.isArray(state.matches) ? state.matches.map(m => ({
+            row: Array.isArray(m?.row) ? m.row.slice(0, 3) : [],
+            refId: m?.refId,
+            peaks: toNumArr(m?.peaks),
+            intensities: toIntArr(m?.intensities),
+            score: Number(m?.score || 0)
+        })).filter(m => m.refId != null) : [];
+        const lockedRows = Array.isArray(state.lockedMatches) ? state.lockedMatches.map(m => ({
+            row: Array.isArray(m?.row) ? m.row.slice(0, 3) : [],
+            refId: m?.refId
+        })).filter(m => m.refId != null) : [];
+        const cols = Array.isArray(state.cols) ? state.cols.slice(0, 3) : ['Ref ID', 'Formula', 'Match (%)'];
+        return { matches: rows, lockedMatches: lockedRows, cols, locked: !!state.locked };
+    };
+    const drawRefPeaks = (svg, peaks, ints, color, cls) => {
+        peaks.forEach((x, i) => {
+            const xp = G.state.lastXScale(x);
+            if (xp < G.config.DIM.ML || xp > G.config.DIM.W - G.config.DIM.MR) return;
+            const h = 5 + ((ints?.[i] ?? 100) / 100) * 35;
+            svg.append('line').attr('class', `xrd-ref-peak ${cls || ''}`.trim())
+                .attr('x1', xp).attr('x2', xp)
+                .attr('y1', G.config.DIM.H - G.config.DIM.MB)
+                .attr('y2', G.config.DIM.H - G.config.DIM.MB - h)
+                .attr('stroke', color).attr('stroke-width', 1)
+                .attr('stroke-dasharray', '4,2').style('pointer-events', 'none');
+        });
+    };
+    const renderPinnedLegends = (svg) => {
+        const data = G.state.hot.getData();
+        const header = Array.isArray(data?.[0]) ? data[0] : [];
+        const yCount = header.filter((h, i) => h === 'Y-axis' && G.state.colEnabled[i] !== false).length;
+        const X = G.config.DIM.W - G.config.DIM.MR - 100;
+        const Y = G.config.DIM.MT + 25 + (yCount * 20);
+        const S = 20;
+        const M = 20;
+        const legends = svg.selectAll('g.xrd-ref-legend').data(pinnedRefs, d => String(d.refId));
+        legends.exit().remove();
+        const enter = legends.enter().append('g').classed('legend-group', 1).classed('xrd-ref-legend', 1)
+            .attr('data-refid', d => d.refId)
+            .attr('transform', (d, idx) => d.legendTransform || `translate(${X},${Y + idx * S})`)
+            .call(G.utils.applyDrag);
+        enter.each(function (d) {
+            const g = d3.select(this);
+            g.append('line').classed('legend-marker', true).attr('x2', M).attr('stroke-width', 1.4);
+            const fo = G.utils.editableText(g, { x: M + 5, y: -10, text: d.label || String(d.refId) });
+            fo.fo.attr('width', fo.div.node().scrollWidth + fo.pad);
+            const div = fo.div.node();
+            div.addEventListener('click', e => { e.stopPropagation(); div.focus(); });
+            div.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); div.blur(); } });
+            div.addEventListener('blur', () => {
+                const txt = div.textContent.trim() || String(d.refId);
+                d.label = txt;
+                div.textContent = txt;
+                d3.select(div).attr('contenteditable', false).style('outline', 'none').style('cursor', 'move');
+            });
+        });
+        legends.merge(enter).attr('transform', function (d, idx) {
+            d.legendTransform = this.dataset.savedTransform || d.legendTransform || `translate(${X},${Y + idx * S})`;
+            return d.legendTransform;
+        }).each(function (d) {
+            const g = d3.select(this);
+            g.selectAll('.legend-marker').remove();
+            g.append('line').classed('legend-marker', true).attr('x2', M).attr('stroke', d.color || getBlackColor()).attr('stroke-width', 1.4);
+            g.select('foreignObject div').text(d.label || String(d.refId));
+        });
+    };
 
     G.matchXRD = {
         lockActive: false,
@@ -1728,49 +1861,44 @@ window.GraphPlotter = window.GraphPlotter || {
             selectedPeaks.push({ x, intensity, normInt: 0 });
             normalizeIntensity(selectedPeaks);
             G.matchXRD.render();
-            updateLabel("Search Database");
         },
         render: () => {
             const svg = d3.select('#chart svg');
             const tab = document.getElementById('icon5');
-            if (tab && !tab.checked) { svg.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); return; }
-            svg.selectAll('.xrd-user-peak').remove();
+            if (tab && !tab.checked) { svg.selectAll('.xrd-user-peak,.xrd-ref-peak,g.xrd-ref-legend').remove(); return; }
+            svg.selectAll('.xrd-user-peak,.xrd-ref-peak').remove();
             const peaks = G.matchXRD.lockActive ? G.matchXRD.lockedPeaks : selectedPeaks;
+            const xMin = G.config.DIM.ML, xMax = G.config.DIM.W - G.config.DIM.MR;
             peaks.forEach((p, i) => {
                 const xp = G.state.lastXScale(p.x);
+                if (xp < xMin || xp > xMax) return;
                 const line = svg.append('line').attr('class', 'xrd-user-peak')
                     .attr('x1', xp).attr('x2', xp)
                     .attr('y1', G.config.DIM.H - G.config.DIM.MB)
                     .attr('y2', G.config.DIM.H - G.config.DIM.MB - 7)
                     .attr('stroke', 'red').attr('stroke-width', 3);
                 if (!G.matchXRD.lockActive) {
-                    line.style('cursor', 'pointer').on('click', (e) => { e.stopPropagation(); selectedPeaks.splice(i, 1); normalizeIntensity(selectedPeaks); if (!selectedPeaks.length) updateLabel("Select Peak"); G.matchXRD.render(); });
+                    line.style('cursor', 'pointer').on('click', (e) => { e.stopPropagation(); selectedPeaks.splice(i, 1); normalizeIntensity(selectedPeaks); G.matchXRD.render(); });
                 } else {
                     line.style('cursor', 'default');
                 }
             });
+            pinnedRefs.forEach(ref => drawRefPeaks(svg, ref.peaks || [], ref.intensities || [], ref.color || getBlackColor(), 'xrd-ref-peak-pinned'));
+            if (previewRef?.peaks?.length) drawRefPeaks(svg, previewRef.peaks, previewRef.intensities || [], getBlackColor(), 'xrd-ref-peak-preview');
+            renderPinnedLegends(svg);
         },
         showRef: (peaks, ints) => {
-            const svg = d3.select('#chart svg');
-            svg.selectAll('.xrd-ref-peak').remove();
-            peaks.forEach((x, i) => {
-                const xp = G.state.lastXScale(x);
-                if (xp < G.config.DIM.ML || xp > G.config.DIM.W - G.config.DIM.MR) return;
-                const h = 5 + ((ints?.[i] ?? 100) / 100) * 35;
-                svg.append('line').attr('class', 'xrd-ref-peak')
-                    .attr('x1', xp).attr('x2', xp)
-                    .attr('y1', G.config.DIM.H - G.config.DIM.MB)
-                    .attr('y2', G.config.DIM.H - G.config.DIM.MB - h)
-                    .attr('stroke', 'blue').attr('stroke-width', 1)
-                    .attr('stroke-dasharray', '4,2').style('pointer-events', 'none');
-            });
+            const p = toNumArr(peaks);
+            previewRef = p.length ? { peaks: p, intensities: toIntArr(ints) } : null;
+            G.matchXRD.render();
         },
         clear: () => {
             selectedPeaks = [];
-            lastSearchResults = null;
-            d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove();
+            previewRef = null;
+            pinnedRefs = [];
+            panelState = null;
+            d3.selectAll('.xrd-user-peak,.xrd-ref-peak,g.xrd-ref-legend').remove();
             if (G.matchXRD.lockActive) { G.matchXRD.render(); return; }
-            updateLabel("Select Peak");
         },
         validate: (input) => {
             if (!input.trim()) return { valid: true, invalid: [] };
@@ -1778,21 +1906,66 @@ window.GraphPlotter = window.GraphPlotter || {
             const invalid = parts.filter(e => !PERIODIC_TABLE[e]);
             return { valid: invalid.length === 0, invalid };
         },
+        leavePanel: () => {
+            previewRef = null;
+            d3.selectAll('.xrd-user-peak,.xrd-ref-peak,g.xrd-ref-legend').remove();
+        },
+        isRefPinned: (refId) => pinnedRefs.some(r => String(r.refId) === String(refId)),
+        setPinnedRef: (refId, peaks, intensities, checked) => {
+            const id = String(refId || '').trim();
+            if (!id) return;
+            const idx = pinnedRefs.findIndex(r => String(r.refId) === id);
+            if (!checked) {
+                if (idx >= 0) pinnedRefs.splice(idx, 1);
+                G.matchXRD.render();
+                return;
+            }
+            const p = toNumArr(peaks);
+            const ints = toIntArr(intensities);
+            if (!p.length) return;
+            if (idx >= 0) {
+                pinnedRefs[idx].peaks = p;
+                pinnedRefs[idx].intensities = ints;
+            } else {
+                pinnedRefs.push({ refId: id, peaks: p, intensities: ints, color: nextPinnedColor(), label: id, legendTransform: '' });
+            }
+            G.matchXRD.render();
+        },
+        updatePinnedRefData: (refId, peaks, intensities) => {
+            const id = String(refId || '').trim();
+            const idx = pinnedRefs.findIndex(r => String(r.refId) === id);
+            if (idx < 0) return;
+            const p = toNumArr(peaks);
+            if (!p.length) return;
+            pinnedRefs[idx].peaks = p;
+            pinnedRefs[idx].intensities = toIntArr(intensities);
+            G.matchXRD.render();
+        },
         setFilter: (els, mode, count) => {
             const nums = [];
             for (const e of els) { const t = e.trim(); if (PERIODIC_TABLE[t]) nums.push(PERIODIC_TABLE[t]); }
-            elementFilter = { elements: nums, mode: mode || 'and', count: count || 0 };
+            elementFilter = { elements: nums, mode: mode || 'and', count: Number(count) || 0 };
         },
         clearFilter: () => { elementFilter = { elements: [], mode: 'and', count: 0 }; },
         search: async () => {
             const peaks = G.matchXRD.lockActive ? G.matchXRD.lockedPeaks : selectedPeaks;
-            if (!peaks.length) { updateLabel('Select Peak'); return { matches: [], cols: [] }; }
+            if (!peaks.length) {
+                const empty = { matches: [], lockedMatches: [], cols: ['Ref ID', 'Formula', 'Match (%)'], locked: false };
+                panelState = clonePanelState(empty);
+                return empty;
+            }
             normalizeIntensity(peaks);
             setProgress(0);
             setStatusMessage('Searching and matching from ~1 million references...');
             if (!compositions) {
                 compositions = await fetchJsonWithCache(metaCache, `${XRD_BASE}meta/compositions.json`);
-                if (!compositions) { setProgress(0); setStatusMessage('Error loading.'); return { matches: [], cols: [] }; }
+                if (!compositions) {
+                    setProgress(0);
+                    setStatusMessage('Error loading.');
+                    const empty = { matches: [], lockedMatches: [], cols: ['Ref ID', 'Formula', 'Match (%)'], locked: false };
+                    panelState = clonePanelState(empty);
+                    return empty;
+                }
             }
             setProgress(10);
             const candidates = new Map();
@@ -1825,8 +1998,13 @@ window.GraphPlotter = window.GraphPlotter || {
                     }
                 }
             }
-            const sorted = [...candidates.entries()].sort((a, b) => b[1].length - a[1].length).slice(0, 25);
-            if (!sorted.length) { setProgress(0); updateLabel('No matches'); return { matches: [], cols: [] }; }
+            const sorted = [...candidates.entries()].sort((a, b) => b[1].length - a[1].length).slice(0, MAX_RANKED_REFS);
+            if (!sorted.length) {
+                setProgress(0);
+                const empty = { matches: [], lockedMatches: [], cols: ['Ref ID', 'Formula', 'Match (%)'], locked: false };
+                panelState = clonePanelState(empty);
+                return empty;
+            }
             const chunks = {};
             const cids = [...new Set(sorted.map(([r]) => Math.floor(r / 1000)))];
             let chunkDone = 0;
@@ -1867,20 +2045,90 @@ window.GraphPlotter = window.GraphPlotter || {
             }
             final.sort((a, b) => b.score - a.score);
             setProgress('done');
-            lastSearchResults = final;
             const locked = !G.matchXRD.lockActive;
             if (locked) {
-                updateLabel(`Found ${final.length}`);
-                const preview = final.slice(0, 5).map(m => ({
+                const preview = final.slice(0, FREE_PREVIEW_REFS).map(m => ({
                     ...m,
-                    peaks: m.peaks.slice(0, 3),
-                    intensities: m.intensities.slice(0, 3)
+                    peaks: m.peaks.slice(0, FREE_PREVIEW_PEAKS),
+                    intensities: m.intensities.slice(0, FREE_PREVIEW_PEAKS)
                 }));
-                return { matches: preview, cols: ['Ref ID', 'Formula', 'Match (%)'], locked: true };
+                const lockedMatches = final.slice(FREE_PREVIEW_REFS).map(({ row, refId }) => ({ row, refId }));
+                const result = {
+                    matches: preview,
+                    lockedMatches,
+                    cols: ['Ref ID', 'Formula', 'Match (%)'],
+                    locked: true
+                };
+                panelState = clonePanelState(result);
+                return result;
             }
-
-            updateLabel(`Found ${final.length} (already unlocked)`);
-            return { matches: final, cols: ['Ref ID', 'Formula', 'Match (%)'], locked: false };
+            const result = { matches: final, lockedMatches: [], cols: ['Ref ID', 'Formula', 'Match (%)'], locked: false };
+            panelState = clonePanelState(result);
+            return result;
+        },
+        getPanelState: () => clonePanelState(panelState),
+        setPanelState: (state) => { panelState = clonePanelState(state); },
+        getExportState: () => ({
+            selected_peaks: selectedPeaks.map(p => ({ x: Number(p.x), intensity: Number(p.intensity ?? 0) })),
+            checked_refs: pinnedRefs.map(r => ({
+                refId: r.refId,
+                peaks: toNumArr(r.peaks),
+                intensities: toIntArr(r.intensities),
+                color: r.color || getBlackColor(),
+                label: r.label || String(r.refId),
+                legendTransform: r.legendTransform || ''
+            })),
+            element_filter: {
+                elements: elementFilter.elements.slice(),
+                mode: document.getElementById('xrd-logic-mode')?.value || elementFilter.mode || 'and',
+                count: Number(document.getElementById('xrd-element-count')?.value || elementFilter.count || 0),
+                input: document.getElementById('xrd-elements')?.value || ''
+            },
+            panel_state: clonePanelState(panelState),
+            panel_open: !!document.getElementById('icon5')?.checked
+        }),
+        loadExportState: (state) => {
+            if (!state || typeof state !== 'object') return;
+            const picked = Array.isArray(state.selected_peaks) ? state.selected_peaks : [];
+            selectedPeaks = picked.map(p => ({ x: Number(p.x), intensity: Number(p.intensity ?? 0), normInt: 0 }))
+                .filter(p => Number.isFinite(p.x) && Number.isFinite(p.intensity));
+            normalizeIntensity(selectedPeaks);
+            const ef = state.element_filter && typeof state.element_filter === 'object' ? state.element_filter : {};
+            let nums = Array.isArray(ef.elements) ? ef.elements.map(v => Number(v)).filter(v => Number.isFinite(v) && v > 0) : [];
+            if (!nums.length && typeof ef.input === 'string') {
+                nums = ef.input.split(',').map(e => PERIODIC_TABLE[e.trim()]).filter(v => Number.isFinite(v) && v > 0);
+            }
+            const mode = ['and', 'or', 'only'].includes(ef.mode) ? ef.mode : 'and';
+            const count = Number(ef.count) || 0;
+            elementFilter = { elements: nums, mode, count };
+            const refs = Array.isArray(state.checked_refs) ? state.checked_refs : [];
+            pinnedRefs = [];
+            refs.forEach(raw => {
+                const id = String(raw?.refId || '').trim();
+                if (!id || pinnedRefs.some(r => String(r.refId) === id)) return;
+                const peaks = toNumArr(raw?.peaks);
+                if (!peaks.length) return;
+                pinnedRefs.push({
+                    refId: id,
+                    peaks,
+                    intensities: toIntArr(raw?.intensities),
+                    color: raw?.color ? String(raw.color) : nextPinnedColor(),
+                    label: typeof raw?.label === 'string' && raw.label.trim() ? raw.label.trim() : id,
+                    legendTransform: typeof raw?.legendTransform === 'string' ? raw.legendTransform : ''
+                });
+            });
+            previewRef = null;
+            panelState = clonePanelState(state.panel_state);
+            const inputEl = document.getElementById('xrd-elements');
+            const modeEl = document.getElementById('xrd-logic-mode');
+            const countEl = document.getElementById('xrd-element-count');
+            if (inputEl && typeof ef.input === 'string') inputEl.value = ef.input;
+            if (modeEl && modeEl.querySelector(`option[value="${mode}"]`)) modeEl.value = mode;
+            if (countEl) {
+                const cv = String(Number.isFinite(count) ? count : 0);
+                countEl.value = countEl.querySelector(`option[value="${cv}"]`) ? cv : '0';
+            }
+            G.matchXRD.render();
         },
         getSampleCount,
         getTableSHA,
@@ -1912,9 +2160,10 @@ window.GraphPlotter = window.GraphPlotter || {
                 fetch_token_expires: Number(r.data.fetch_token_expires || 0),
                 verified: true
             };
+            const full = await G.matchXRD.search();
             return {
                 ok: true,
-                matches: lastSearchResults,
+                matches: full.matches || [],
                 remaining: Number(r.data.remaining_total ?? r.data.remaining ?? 0),
                 current_remaining: Number(r.data.current_remaining ?? 0),
                 already_done: false
@@ -2014,6 +2263,7 @@ window.GraphPlotter = window.GraphPlotter || {
             xrd_table_hash: typeof raw.xrd_table_hash === "string" ? raw.xrd_table_hash : "",
             xrd_peaks_hash: typeof raw.xrd_peaks_hash === "string" ? raw.xrd_peaks_hash : "",
             xrd_peaks: Array.isArray(raw.xrd_peaks) ? raw.xrd_peaks : null,
+            xrd_state: raw.xrd_state && typeof raw.xrd_state === "object" ? raw.xrd_state : null,
             overrideX: raw.overrideX || null,
             overrideMultiY: raw.overrideMultiY && typeof raw.overrideMultiY === "object" ? raw.overrideMultiY : {},
             overrideXTicks: raw.overrideXTicks ?? null,
@@ -2072,7 +2322,7 @@ window.GraphPlotter = window.GraphPlotter || {
         const rawHtml = d3.select('#chart').html();
         const tmpl = document.createElement('template');
         tmpl.innerHTML = rawHtml;
-        tmpl.content.querySelectorAll('.xrd-user-peak,.xrd-ref-peak').forEach(n => n.remove());
+        tmpl.content.querySelectorAll('.xrd-user-peak,.xrd-ref-peak,g.xrd-ref-legend').forEach(n => n.remove());
         const cleanedHtml = sanitizeChartHTML(tmpl.innerHTML);
         const payload={v:'v1.0', ts, table:G.state.hot.getData(), settings:G.getSettings(), col:G.state.colEnabled, html:cleanedHtml,
         overrideX:G.state.overrideX||null, overrideMultiY:G.state.overrideMultiY||{}, overrideXTicks:G.state.overrideXTicks||null,
@@ -2092,6 +2342,8 @@ window.GraphPlotter = window.GraphPlotter || {
             if (lock.peaks_hash) payload.xrd_peaks_hash = lock.peaks_hash;
             payload.xrd_peaks = lpeaks.map(p => ({ x: p.x, intensity: p.intensity }));
         }
+        const xrdState = G.matchXRD?.getExportState?.();
+        if (xrdState) payload.xrd_state = xrdState;
         const u=URL.createObjectURL(new Blob([JSON.stringify(payload)])), a=document.createElement('a'), name = await htmlPrompt( "Enter file name", `Project_${ts}`); if(!name) return; a.href=u; a.download=`${name}.instanano`; 
         document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(u);})
     G.importState = function(raw){ 
@@ -2118,9 +2370,17 @@ window.GraphPlotter = window.GraphPlotter || {
             const input = document.getElementById(k);
             if (input) input.value = v;
         });
-        d3.select('#chart').html(s.html); d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); G.features.prepareShapeLayer(); d3.selectAll('.shape-group').each(function(){G.features.makeShapeInteractive(d3.select(this))});
+        d3.select('#chart').html(s.html); d3.selectAll('.xrd-user-peak,.xrd-ref-peak,g.xrd-ref-legend').remove(); G.features.prepareShapeLayer(); d3.selectAll('.shape-group').each(function(){G.features.makeShapeInteractive(d3.select(this))});
         d3.selectAll('foreignObject.user-text,g.legend-group,g.axis-title').call(G.utils.applyDrag); G.axis.tickEditing(d3.select('#chart svg'));
         if (G.matchXRD) { G.matchXRD.lockActive = false; G.matchXRD.lockedPeaks = []; G.matchXRD.lockInfo = null; }
+        if (G.matchXRD?.loadExportState) G.matchXRD.loadExportState(s.xrd_state || null);
+        if (s.xrd_state?.panel_open) {
+            const panel = document.getElementById('icon5');
+            if (panel) {
+                panel.checked = true;
+                panel.dispatchEvent(new Event('change'));
+            }
+        }
         if (s.xrd_lock_hash && s.xrd_signature && Array.isArray(s.xrd_peaks) && s.xrd_account_id > 0 && typeof instananoCredits !== 'undefined') {
             const peaks = s.xrd_peaks.map(p => ({ x: Number(p.x), intensity: Number(p.intensity ?? 0), normInt: 0 }));
             const maxInt = peaks.length ? Math.max(...peaks.map(p => p.intensity)) : 0;
@@ -2247,6 +2507,7 @@ window.GraphPlotter = window.GraphPlotter || {
         G.axis.drawAxis(svg, scales, titles, s, series); G.ui.drawLegend(); G.ui.toolTip(svg, { xScale, yScale });
         G.features.prepareShapeLayer(); 
         G.axis.tickEditing(d3.select('#chart svg'));
+        G.matchXRD?.render();
     }
     function detectModeFromData() {
         const series = G.getSeries();
