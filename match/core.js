@@ -205,6 +205,13 @@
                 setUnlockVisible(false);
                 updateCreditDisplay({ remaining_total: result.remaining, current_remaining: result.current_remaining });
                 renderMatches($xrd, result.matches, ['Ref ID', 'Formula', 'Match (%)']);
+                $xrd.node()?.querySelectorAll('input.xrd-ref-toggle:checked').forEach(cb => {
+                    const row = cb.closest('.matchedrow');
+                    if (!row?.dataset.refid) return;
+                    const peaks = parseJsonData(row.dataset.peaks, []);
+                    if (!Array.isArray(peaks) || !peaks.length) return;
+                    G.matchXRD?.setReference?.(row.dataset.refid, peaks, parseJsonData(row.dataset.ints, []), true);
+                });
             }
         } finally {
             unlockBtn.style.pointerEvents = '';
