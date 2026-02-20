@@ -120,10 +120,8 @@
                 check.className = 'xrd-ref-check';
                 check.dataset.refid = item.refId;
                 check.checked = !!G.matchXRD?.isRefChecked?.(item.refId);
-                const color = G.matchXRD?.getRefColor?.(item.refId) || '#666';
                 toggle.append(check);
                 rowDiv.appendChild(toggle);
-                rowDiv.style.borderLeft = check.checked ? `3px solid ${color}` : '';
             }
             row.forEach((val, idx) => {
                 const cell = document.createElement("div");
@@ -228,8 +226,6 @@
         const { peaks, ints } = await getRowData(row, false);
         const ok = G.matchXRD?.toggleCheckedRef?.(row.dataset.refid, peaks, ints, check.checked);
         if (!ok) check.checked = false;
-        const color = G.matchXRD?.getRefColor?.(row.dataset.refid) || '#666';
-        row.style.borderLeft = check.checked ? `3px solid ${color}` : '';
     });
     $xrd.on('click', async function (e) {
         if (e.target.closest('.xrd-ref-toggle')) return;
