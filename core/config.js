@@ -10,7 +10,7 @@ window.GraphPlotter = window.GraphPlotter || {
 };
 (function(G) {
     "use strict";
-    G.config.COLORS = ["#000000","#000000","#0000FF","#FF0000","#008000","#00FFFF","#FF00FF","#FFA500","#800080","#A52A2A"];
+    G.config.COLORS = ["#FFFF00","#000000","#0000FF","#FF0000","#008000","#00FFFF","#FF00FF","#FFA500","#800080","#A52A2A"];
     G.config.DIM = { W: 600, H: 300, MT: 30, MB: 60, ML: 70, MR: 80 };
     G.config.SYMBOL_TYPES = [d3.symbolCircle, d3.symbolTriangle, d3.symbolSquare, d3.symbolDiamond, d3.symbolStar, d3.symbolCross];
     G.config.ratioPresets = {
