@@ -126,13 +126,16 @@ window.GraphPlotter = window.GraphPlotter || {
             rowHeaders: rowIndex => ["Axis", "Color", "Name"][rowIndex] || rowIndex - 2,
             rowHeaderWidth:60, colWidths:70,
             contextMenu: true, 
-            afterRemoveRow: () => { G.axis.resetScales(true); G.renderChart(); },
-            afterRemoveCol: () => { G.axis.resetScales(true); G.renderChart(); },
-            afterChange: (changes) => {
+            afterRemoveRow: () => { G.matchXRD?.invalidateLock?.(); G.axis.resetScales(true); G.renderChart(); },
+            afterRemoveCol: () => { G.matchXRD?.invalidateLock?.(); G.axis.resetScales(true); G.renderChart(); },
+            afterChange: (changes, source) => {
                 if (!changes) return;
-                if (G.matchXRD) { G.matchXRD.lockActive = false; G.matchXRD.lockedPeaks = []; G.matchXRD.lockInfo = null; G.matchXRD.render(); }
+                if (source === 'loadData') return;
+                const shouldInvalidate = changes.some(([row]) => Number(row) === 0 || Number(row) >= 3);
+                if (shouldInvalidate) G.matchXRD?.invalidateLock?.();
             },
             afterCreateCol: (start, count) => {
+                G.matchXRD?.invalidateLock?.();
                 for (let c = start; c < start + count; c++) {
                     G.state.hot.setDataAtCell(0, c, "Y-axis");
                     G.state.hot.setDataAtCell(1, c, G.config.COLORS[c % G.config.COLORS.length]);
@@ -156,7 +159,7 @@ window.GraphPlotter = window.GraphPlotter || {
             if (e.target.matches('input[type="checkbox"][data-col]')) {
                 const col = +e.target.dataset.col;
                 G.state.colEnabled[col] = e.target.checked;
-                if (G.matchXRD) { G.matchXRD.lockActive = false; G.matchXRD.lockedPeaks = []; G.matchXRD.lockInfo = null; G.matchXRD.render(); }
+                G.matchXRD?.invalidateLock?.();
                 G.state.hot.render();
                 G.axis.resetScales(false);
                 G.renderChart(); checkEmptyColumns();}});
@@ -1500,8 +1503,9 @@ window.GraphPlotter = window.GraphPlotter || {
     window.addEventListener('focus', refreshCredits);
     document.querySelectorAll('input[name="matchinstrument"]').forEach(inp => inp.addEventListener('change', () => setPanelMessage($std, STD_MSG)));
     ['icon1', 'icon2', 'icon3', 'icon4'].forEach(id => document.getElementById(id)?.addEventListener('change', () => { G.matchXRD?.render(); }));
-    icon5?.addEventListener('change', () => {
+    icon5?.addEventListener('change', async () => {
         if (!icon5.checked) return;
+        await G.matchXRD?.verifyImportedLockIfNeeded?.();
         if (!G.matchXRD?.hasResultsOnPanel?.()) setPanelMessage($xrd, XRD_MSG);
         refreshCredits();
         G.matchXRD?.render();
@@ -1689,6 +1693,7 @@ window.GraphPlotter = window.GraphPlotter || {
     const MAX_RANKED_REFS = 25;
     let selectedPeaks = [];
     let previewRef = null;
+    let pendingImportedLock = null;
     let compositions = null;
     let elementFilter = { elements: [], mode: 'and', count: 0 };
     const selectedRefs = new Map();
@@ -1739,26 +1744,21 @@ window.GraphPlotter = window.GraphPlotter || {
         peaks.forEach(p => p.normInt = anchor > 0 ? Math.max(0, Math.min(100, (Number(p.intensity) || 0) / anchor * 100)) : 0);
     };
     const getTolerance = (twoTheta) => Math.max(MIN_TOLERANCE, Math.min(TOLERANCE, 0.18 + ((Number(twoTheta) || 0) * 0.0065)));
-    async function getTableSHA() {
-        const raw = JSON.stringify({ t: G.state.hot.getData(), c: G.state.colEnabled });
-        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
-        return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-    }
-    async function sha256Hex(raw) {
-        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
-        return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-    }
-    function canonicalizePeaks(peaks) {
-        return peaks.map(p => [Number(p.x).toFixed(4), Number(p.intensity ?? 0).toFixed(4)])
-            .sort((a, b) => a[0] === b[0] ? (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0) : a[0] < b[0] ? -1 : 1);
-    }
-    async function getPeaksHash(peaks) {
-        const raw = JSON.stringify(canonicalizePeaks(peaks));
-        return sha256Hex(raw);
-    }
     function getSampleCount() {
         const data = G.state.hot.getData();
         return data[0].filter((h, i) => h === 'Y-axis' && G.state.colEnabled[i] !== false).length || 1;
+    }
+    function getLockPayload(peaks) {
+        return {
+            table: G.state.hot?.getData?.() || [],
+            col: G.state.colEnabled || {},
+            peaks: (Array.isArray(peaks) ? peaks : []).map(p => ({ x: p.x, intensity: p.intensity }))
+        };
+    }
+    function clearLockState() {
+        G.matchXRD.lockActive = false;
+        G.matchXRD.lockedPeaks = [];
+        G.matchXRD.lockInfo = null;
     }
     async function ajaxPost(action, extra = {}) {
         if (typeof instananoCredits === 'undefined') return null;
@@ -1858,6 +1858,56 @@ window.GraphPlotter = window.GraphPlotter || {
         lockActive: false,
         lockInfo: null,
         lockedPeaks: [],
+        invalidateLock: () => {
+            pendingImportedLock = null;
+            clearLockState();
+            G.matchXRD.render();
+        },
+        setImportedLockCandidate: (candidate) => {
+            pendingImportedLock = null;
+            if (!candidate || !candidate.lock_hash || !candidate.signature || !candidate.account_id || !Array.isArray(candidate.peaks) || !candidate.peaks.length)
+                return false;
+            const peaks = candidate.peaks.map(p => ({ x: Number(p.x), intensity: Number(p.intensity ?? 0), normInt: 0 }));
+            normalizeIntensity(peaks);
+            pendingImportedLock = {
+                lock_hash: String(candidate.lock_hash || ''),
+                signature: String(candidate.signature || ''),
+                lock_version: candidate.lock_version ?? null,
+                account_id: Number(candidate.account_id || 0),
+                peaks
+            };
+            return true;
+        },
+        verifyImportedLockIfNeeded: async () => {
+            const lock = pendingImportedLock;
+            if (!lock || typeof instananoCredits === 'undefined') return false;
+            pendingImportedLock = null;
+            const r = await ajaxPost('instanano_verify_lock', {
+                lock_hash: lock.lock_hash,
+                signature: lock.signature,
+                lock_version: lock.lock_version,
+                account_id: lock.account_id,
+                lock_payload: JSON.stringify(getLockPayload(lock.peaks))
+            });
+            if (!r?.success || !r?.data?.valid) {
+                clearLockState();
+                G.matchXRD.render();
+                return false;
+            }
+            G.matchXRD.lockActive = true;
+            G.matchXRD.lockedPeaks = lock.peaks.map(p => ({ x: p.x, intensity: p.intensity, normInt: p.normInt }));
+            G.matchXRD.lockInfo = {
+                lock_hash: lock.lock_hash,
+                signature: lock.signature,
+                lock_version: lock.lock_version,
+                account_id: Number(r.data.account_id || lock.account_id || 0),
+                fetch_token: r.data.fetch_token || "",
+                fetch_token_expires: Number(r.data.fetch_token_expires || 0),
+                verified: true
+            };
+            G.matchXRD.render();
+            return true;
+        },
         addPeak: (x, intensity) => {
             if (G.matchXRD.lockActive) return;
             selectedPeaks.push({ x, intensity, normInt: 0 });
@@ -1943,6 +1993,7 @@ window.GraphPlotter = window.GraphPlotter || {
             return !!node && node.childElementCount > 0;
         },
         clear: () => {
+            pendingImportedLock = null;
             selectedPeaks = [];
             previewRef = null;
             selectedRefs.clear();
@@ -2064,31 +2115,23 @@ window.GraphPlotter = window.GraphPlotter || {
             return { matches: final, cols: ['Reference ID', 'Empirical Formula', 'Match Score (%)'], locked: false };
         },
         getSampleCount,
-        getTableSHA,
         checkCredit: async () => { const r = await ajaxPost('instanano_check_credit'); return r?.success ? r.data : null; },
-        computeLockHash: async (peaks) => {
-            const tableHash = await getTableSHA();
-            const peaksHash = await getPeaksHash(peaks);
-            const lockRaw = `${LOCK_VERSION}|${tableHash}|${peaksHash}`;
-            const lockHash = await sha256Hex(lockRaw);
-            return { lock_hash: lockHash, table_hash: tableHash, peaks_hash: peaksHash, lock_version: LOCK_VERSION };
-        },
         unlock: async () => {
             if (!selectedPeaks.length) return { ok: false, message: 'No peaks selected.' };
-            const n = getSampleCount();
-            const lock = await G.matchXRD.computeLockHash(selectedPeaks);
-            const r = await ajaxPost('instanano_use_credit', { lock_hash: lock.lock_hash, lock_version: lock.lock_version, sample_count: n });
-            if (!r?.success || !r?.data?.signature) return { ok: false, message: r?.data?.message || 'Failed.', remaining: r?.data?.remaining };
+            pendingImportedLock = null;
+            const r = await ajaxPost('instanano_use_credit', {
+                lock_payload: JSON.stringify(getLockPayload(selectedPeaks))
+            });
+            if (!r?.success || !r?.data?.signature || !r?.data?.lock_hash) return { ok: false, message: r?.data?.message || 'Failed.', remaining: r?.data?.remaining };
             const accountId = Number(r.data.account_id || 0);
+            const lockHash = String(r.data.lock_hash || "");
             G.matchXRD.lockActive = true;
             G.matchXRD.lockedPeaks = selectedPeaks.map(p => ({ x: p.x, intensity: p.intensity, normInt: p.normInt }));
             G.matchXRD.lockInfo = {
-                lock_hash: lock.lock_hash,
+                lock_hash: lockHash,
                 signature: r.data.signature,
-                lock_version: lock.lock_version,
+                lock_version: Number(r.data.lock_version || LOCK_VERSION),
                 account_id: accountId,
-                table_hash: lock.table_hash,
-                peaks_hash: lock.peaks_hash,
                 fetch_token: r.data.fetch_token || "",
                 fetch_token_expires: Number(r.data.fetch_token_expires || 0),
                 verified: true
@@ -2099,7 +2142,7 @@ window.GraphPlotter = window.GraphPlotter || {
                 matches: full.matches || [],
                 remaining: Number(r.data.remaining_total ?? r.data.remaining ?? 0),
                 current_remaining: Number(r.data.current_remaining ?? 0),
-                already_done: false
+                already_done: !!r.data.already_done
             };
         },
         refreshFetchToken: async () => {
@@ -2193,8 +2236,6 @@ window.GraphPlotter = window.GraphPlotter || {
             xrd_account_id: Number(raw.xrd_account_id || 0),
             xrd_lock_hash: typeof raw.xrd_lock_hash === "string" ? raw.xrd_lock_hash : "",
             xrd_signature: typeof raw.xrd_signature === "string" ? raw.xrd_signature : "",
-            xrd_table_hash: typeof raw.xrd_table_hash === "string" ? raw.xrd_table_hash : "",
-            xrd_peaks_hash: typeof raw.xrd_peaks_hash === "string" ? raw.xrd_peaks_hash : "",
             xrd_peaks: Array.isArray(raw.xrd_peaks) ? raw.xrd_peaks : null,
             overrideX: raw.overrideX || null,
             overrideMultiY: raw.overrideMultiY && typeof raw.overrideMultiY === "object" ? raw.overrideMultiY : {},
@@ -2271,8 +2312,6 @@ window.GraphPlotter = window.GraphPlotter || {
             payload.xrd_account_id = Number(lock.account_id || 0);
             payload.xrd_lock_hash = lock.lock_hash || "";
             payload.xrd_signature = lock.signature || "";
-            if (lock.table_hash) payload.xrd_table_hash = lock.table_hash;
-            if (lock.peaks_hash) payload.xrd_peaks_hash = lock.peaks_hash;
             payload.xrd_peaks = lpeaks.map(p => ({ x: p.x, intensity: p.intensity }));
         }
         const u=URL.createObjectURL(new Blob([JSON.stringify(payload)])), a=document.createElement('a'), name = await htmlPrompt( "Enter file name", `Project_${ts}`); if(!name) return; a.href=u; a.download=`${name}.instanano`; 
@@ -2303,70 +2342,23 @@ window.GraphPlotter = window.GraphPlotter || {
         });
         d3.select('#chart').html(s.html); d3.selectAll('.xrd-user-peak,.xrd-ref-peak,.xrd-ref-preview-peak,g.xrd-ref-legend').remove(); G.features.prepareShapeLayer(); d3.selectAll('.shape-group').each(function(){G.features.makeShapeInteractive(d3.select(this))});
         d3.selectAll('foreignObject.user-text,g.legend-group,g.axis-title').call(G.utils.applyDrag); G.axis.tickEditing(d3.select('#chart svg'));
-        if (G.matchXRD) { G.matchXRD.lockActive = false; G.matchXRD.lockedPeaks = []; G.matchXRD.lockInfo = null; }
-        if (s.xrd_lock_hash && s.xrd_signature && Array.isArray(s.xrd_peaks) && s.xrd_account_id > 0 && typeof instananoCredits !== 'undefined') {
+        if (G.matchXRD) {
+            G.matchXRD.lockActive = false;
+            G.matchXRD.lockedPeaks = [];
+            G.matchXRD.lockInfo = null;
+            G.matchXRD.setImportedLockCandidate?.(null);
+        }
+        if (s.xrd_lock_hash && s.xrd_signature && Array.isArray(s.xrd_peaks) && s.xrd_account_id > 0) {
             const peaks = s.xrd_peaks.map(p => ({ x: Number(p.x), intensity: Number(p.intensity ?? 0), normInt: 0 }));
             const maxInt = peaks.length ? Math.max(...peaks.map(p => p.intensity)) : 0;
             if (maxInt > 0) peaks.forEach(p => p.normInt = (p.intensity / maxInt) * 100);
-            const compute = G.matchXRD?.computeLockHash;
-            if (compute) {
-                compute(peaks).then(lock => {
-                    if (!lock || lock.lock_hash !== s.xrd_lock_hash) {
-                        if (!G.matchXRD) return;
-                        G.matchXRD.lockActive = false;
-                        G.matchXRD.lockedPeaks = [];
-                        G.matchXRD.lockInfo = null;
-                        G.matchXRD.render();
-                        return;
-                    }
-                    const fd = new FormData();
-                    fd.append('action', 'instanano_verify_lock');
-                    fd.append('nonce', instananoCredits.nonce);
-                    fd.append('lock_hash', s.xrd_lock_hash);
-                    fd.append('signature', s.xrd_signature);
-                    fd.append('account_id', s.xrd_account_id);
-                    if (s.xrd_lock_version != null) fd.append('lock_version', s.xrd_lock_version);
-                    fetch(instananoCredits.ajaxUrl, { method: 'POST', body: fd })
-                        .then(r => r.json())
-                        .then(res => {
-                            if (!G.matchXRD) return;
-                            if (res?.success && res.data?.valid) {
-                                G.matchXRD.lockActive = true;
-                                G.matchXRD.lockedPeaks = peaks;
-                                G.matchXRD.lockInfo = {
-                                    lock_hash: s.xrd_lock_hash,
-                                    signature: s.xrd_signature,
-                                    lock_version: s.xrd_lock_version ?? null,
-                                    account_id: Number(res.data.account_id || s.xrd_account_id || 0),
-                                    table_hash: lock.table_hash,
-                                    peaks_hash: lock.peaks_hash,
-                                    fetch_token: res.data.fetch_token || "",
-                                    fetch_token_expires: Number(res.data.fetch_token_expires || 0),
-                                    verified: true
-                                };
-                                G.matchXRD.render();
-                            } else {
-                                G.matchXRD.lockActive = false;
-                                G.matchXRD.lockedPeaks = [];
-                                G.matchXRD.lockInfo = null;
-                                G.matchXRD.render();
-                            }
-                        })
-                        .catch(() => {
-                            if (!G.matchXRD) return;
-                            G.matchXRD.lockActive = false;
-                            G.matchXRD.lockedPeaks = [];
-                            G.matchXRD.lockInfo = null;
-                            G.matchXRD.render();
-                        });
-                }).catch(() => {
-                    if (!G.matchXRD) return;
-                    G.matchXRD.lockActive = false;
-                    G.matchXRD.lockedPeaks = [];
-                    G.matchXRD.lockInfo = null;
-                    G.matchXRD.render();
-                });
-            }
+            G.matchXRD?.setImportedLockCandidate?.({
+                lock_hash: s.xrd_lock_hash,
+                signature: s.xrd_signature,
+                lock_version: s.xrd_lock_version ?? null,
+                account_id: Number(s.xrd_account_id || 0),
+                peaks
+            });
         }
     }
 })(window.GraphPlotter);
