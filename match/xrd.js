@@ -201,7 +201,8 @@
         },
         clear: (opts = {}) => {
             const keepChecked = !!opts.keepChecked;
-            selectedPeaks = [];
+            const keepSelected = !!opts.keepSelected;
+            if (!keepSelected) selectedPeaks = [];
             previewRef = null;
             d3.selectAll('.xrd-user-peak,.xrd-ref-preview-peak').remove();
             if (!keepChecked) {
@@ -244,6 +245,21 @@
             intensities: r.intensities.slice(),
             color: r.color
         })),
+        getSelectedPeaks: () => selectedPeaks.map(p => ({ x: Number(p.x), intensity: Number(p.intensity) || 0 })),
+        setSelectedPeaks: (peaks) => {
+            const next = [];
+            if (Array.isArray(peaks)) {
+                peaks.forEach(p => {
+                    const x = Number(p?.x);
+                    if (!Number.isFinite(x)) return;
+                    const intensity = Number(p?.intensity) || 0;
+                    next.push({ x, intensity, normInt: 0 });
+                });
+            }
+            selectedPeaks = next;
+            normalizeIntensity(selectedPeaks);
+            G.matchXRD.render();
+        },
         setCheckedRefs: (refs) => {
             checkedRefs.clear();
             if (Array.isArray(refs)) {
