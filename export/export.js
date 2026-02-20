@@ -107,7 +107,7 @@
         const rawHtml = d3.select('#chart').html();
         const tmpl = document.createElement('template');
         tmpl.innerHTML = rawHtml;
-        tmpl.content.querySelectorAll('.xrd-user-peak,.xrd-ref-peak').forEach(n => n.remove());
+        tmpl.content.querySelectorAll('.xrd-user-peak,.xrd-ref-peak,.xrd-ref-preview-peak,g.xrd-ref-legend').forEach(n => n.remove());
         const cleanedHtml = sanitizeChartHTML(tmpl.innerHTML);
         const payload={v:'v1.0', ts, table:G.state.hot.getData(), settings:G.getSettings(), col:G.state.colEnabled, html:cleanedHtml,
         overrideX:G.state.overrideX||null, overrideMultiY:G.state.overrideMultiY||{}, overrideXTicks:G.state.overrideXTicks||null,
@@ -153,7 +153,7 @@
             const input = document.getElementById(k);
             if (input) input.value = v;
         });
-        d3.select('#chart').html(s.html); d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); G.features.prepareShapeLayer(); d3.selectAll('.shape-group').each(function(){G.features.makeShapeInteractive(d3.select(this))});
+        d3.select('#chart').html(s.html); d3.selectAll('.xrd-user-peak,.xrd-ref-peak,.xrd-ref-preview-peak,g.xrd-ref-legend').remove(); G.features.prepareShapeLayer(); d3.selectAll('.shape-group').each(function(){G.features.makeShapeInteractive(d3.select(this))});
         d3.selectAll('foreignObject.user-text,g.legend-group,g.axis-title').call(G.utils.applyDrag); G.axis.tickEditing(d3.select('#chart svg'));
         if (G.matchXRD) { G.matchXRD.lockActive = false; G.matchXRD.lockedPeaks = []; G.matchXRD.lockInfo = null; }
         if (s.xrd_lock_hash && s.xrd_signature && Array.isArray(s.xrd_peaks) && s.xrd_account_id > 0 && typeof instananoCredits !== 'undefined') {
