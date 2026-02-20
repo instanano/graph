@@ -1564,7 +1564,7 @@ window.GraphPlotter = window.GraphPlotter || {
             if (result.ok) {
                 setUnlockVisible(false);
                 updateCreditDisplay({ remaining_total: result.remaining, current_remaining: result.current_remaining });
-                renderMatches($xrd, result.matches, ['Ref ID', 'Formula', 'Match (%)']);
+                renderMatches($xrd, result.matches, ['Reference ID', 'Empirical Formula', 'Match Score (%)']);
                 $xrd.node()?.querySelectorAll('input.xrd-ref-toggle:checked').forEach(cb => { cb.click(); cb.click(); });
             }
         } finally {
