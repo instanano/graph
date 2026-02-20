@@ -258,7 +258,6 @@
             return true;
         },
         isRefChecked: (refId) => checkedRefs.has(String(refId ?? '').trim()),
-        getRefColor: (refId) => checkedRefs.get(String(refId ?? '').trim())?.color || '',
         getCheckedRefs: () => Array.from(checkedRefs.values()).map(r => ({
             refId: r.refId,
             peaks: r.peaks.slice(),
