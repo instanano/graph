@@ -115,19 +115,14 @@
             if (tag !== 'locked' && item.refId) {
                 const toggle = document.createElement("label");
                 toggle.className = 'xrd-ref-toggle';
-                toggle.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:11px;color:#333';
+                toggle.style.cssText = 'display:inline-flex;align-items:center;margin-bottom:4px';
                 const check = document.createElement("input");
                 check.type = 'checkbox';
                 check.className = 'xrd-ref-check';
                 check.dataset.refid = item.refId;
                 check.checked = !!G.matchXRD?.isRefChecked?.(item.refId);
                 const color = G.matchXRD?.getRefColor?.(item.refId) || '#666';
-                const swatch = document.createElement("span");
-                swatch.className = 'xrd-ref-color';
-                swatch.style.cssText = `display:inline-block;width:10px;height:10px;border-radius:2px;border:1px solid #aaa;background:${check.checked ? color : 'transparent'}`;
-                const text = document.createElement("span");
-                text.textContent = 'Compare';
-                toggle.append(check, swatch, text);
+                toggle.append(check);
                 rowDiv.appendChild(toggle);
                 rowDiv.style.borderLeft = check.checked ? `3px solid ${color}` : '';
             }
@@ -151,14 +146,13 @@
 
     window.addEventListener('focus', refreshCredits);
     document.querySelectorAll('input[name="matchinstrument"]').forEach(inp => inp.addEventListener('change', () => setPanelMessage($std, STD_MSG)));
-    ['icon1', 'icon2', 'icon3', 'icon4'].forEach(id => document.getElementById(id)?.addEventListener('change', () => { G.matchXRD?.clear({ keepChecked: true }); setUnlockVisible(false); }));
+    ['icon1', 'icon2', 'icon3', 'icon4'].forEach(id => document.getElementById(id)?.addEventListener('change', () => { G.matchXRD?.clear({ keepChecked: true, keepSelected: true }); }));
     icon5?.addEventListener('change', () => {
-        setPanelMessage($xrd, XRD_MSG);
         refreshCredits();
-        setUnlockVisible(false);
+        if (!$xrd.node()?.children?.length) setPanelMessage($xrd, XRD_MSG);
         G.matchXRD?.render();
     });
-    icon6?.addEventListener('change', () => { G.matchXRD?.clear({ keepChecked: true }); setUnlockVisible(false); setPanelMessage($std, STD_MSG); });
+    icon6?.addEventListener('change', () => { G.matchXRD?.clear({ keepChecked: true, keepSelected: true }); setPanelMessage($std, STD_MSG); });
     ['click', 'mousedown', 'pointerdown', 'focusin', 'input', 'keydown', 'keyup'].forEach(ev => fs?.addEventListener(ev, e => { e.stopPropagation(); setTimeout(() => G.matchXRD?.render(), 10); }));
     ei?.addEventListener('input', () => {
         if (!G.matchXRD) return;
@@ -236,8 +230,6 @@
         const ok = G.matchXRD?.toggleCheckedRef?.(row.dataset.refid, peaks, ints, check.checked);
         if (!ok) check.checked = false;
         const color = G.matchXRD?.getRefColor?.(row.dataset.refid) || '#666';
-        const swatch = row.querySelector('.xrd-ref-color');
-        if (swatch) swatch.style.background = check.checked ? color : 'transparent';
         row.style.borderLeft = check.checked ? `3px solid ${color}` : '';
     });
     $xrd.on('click', async function (e) {
