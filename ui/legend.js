@@ -13,7 +13,7 @@
     G.ui.drawLegend = function() {
         const svg = d3.select('#chart svg'); const data = G.state.hot.getData(), header = data[0], series = G.getSeries(), s = G.getSettings();
         const cols = header.map((v,i) => v === 'Y-axis' && G.state.colEnabled[i] ? i : -1).filter(i => i >= 0);
-        const X = G.config.DIM.W - G.config.DIM.MR - 100, Y = G.config.DIM.MT + 25, S = 20, M = 20; const legends = svg.selectAll('g.legend-group').data(cols, d => d);
+        const X = G.config.DIM.W - G.config.DIM.MR - 100, Y = G.config.DIM.MT + 25, S = 20, M = 20; const legends = svg.selectAll('g.legend-group:not(.xrd-ref-legend)').data(cols, d => d);
         legends.exit().remove(); legends.attr('transform', function(d, idx) { return this.dataset.savedTransform || `translate(${X},${Y + idx * S})`;}); const legendsEnter = legends.enter().append('g').classed('legend-group', 1).attr('data-col', d => d).attr('transform', (d, idx) => `translate(${X},${Y + idx * S})`).call(G.utils.applyDrag);
         legendsEnter.each(function (d, idx) { drawLegendMarker(d3.select(this), s.type, s, series[idx], idx, M);
         const fo = G.utils.editableText(d3.select(this), { x: M + 5, y: -10, text: data[2][d]});
