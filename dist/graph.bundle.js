@@ -2060,7 +2060,7 @@ window.GraphPlotter = window.GraphPlotter || {
                 };
             }
 
-            return { matches: final, cols: ['Ref ID', 'Formula', 'Match (%)'], locked: false };
+            return { matches: final, cols: ['Reference ID', 'Empirical Formula', 'Match Score (%)'], locked: false };
         },
         getSampleCount,
         getTableSHA,
