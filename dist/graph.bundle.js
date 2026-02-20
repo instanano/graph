@@ -1474,19 +1474,14 @@ window.GraphPlotter = window.GraphPlotter || {
             if (tag !== 'locked' && item.refId) {
                 const toggle = document.createElement("label");
                 toggle.className = 'xrd-ref-toggle';
-                toggle.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:11px;color:#333';
+                toggle.style.cssText = 'display:inline-flex;align-items:center;margin-bottom:4px';
                 const check = document.createElement("input");
                 check.type = 'checkbox';
                 check.className = 'xrd-ref-check';
                 check.dataset.refid = item.refId;
                 check.checked = !!G.matchXRD?.isRefChecked?.(item.refId);
                 const color = G.matchXRD?.getRefColor?.(item.refId) || '#666';
-                const swatch = document.createElement("span");
-                swatch.className = 'xrd-ref-color';
-                swatch.style.cssText = `display:inline-block;width:10px;height:10px;border-radius:2px;border:1px solid #aaa;background:${check.checked ? color : 'transparent'}`;
-                const text = document.createElement("span");
-                text.textContent = 'Compare';
-                toggle.append(check, swatch, text);
+                toggle.append(check);
                 rowDiv.appendChild(toggle);
                 rowDiv.style.borderLeft = check.checked ? `3px solid ${color}` : '';
             }
@@ -1510,14 +1505,13 @@ window.GraphPlotter = window.GraphPlotter || {
 
     window.addEventListener('focus', refreshCredits);
     document.querySelectorAll('input[name="matchinstrument"]').forEach(inp => inp.addEventListener('change', () => setPanelMessage($std, STD_MSG)));
-    ['icon1', 'icon2', 'icon3', 'icon4'].forEach(id => document.getElementById(id)?.addEventListener('change', () => { G.matchXRD?.clear({ keepChecked: true }); setUnlockVisible(false); }));
+    ['icon1', 'icon2', 'icon3', 'icon4'].forEach(id => document.getElementById(id)?.addEventListener('change', () => { G.matchXRD?.clear({ keepChecked: true, keepSelected: true }); }));
     icon5?.addEventListener('change', () => {
-        setPanelMessage($xrd, XRD_MSG);
         refreshCredits();
-        setUnlockVisible(false);
+        if (!$xrd.node()?.children?.length) setPanelMessage($xrd, XRD_MSG);
         G.matchXRD?.render();
     });
-    icon6?.addEventListener('change', () => { G.matchXRD?.clear({ keepChecked: true }); setUnlockVisible(false); setPanelMessage($std, STD_MSG); });
+    icon6?.addEventListener('change', () => { G.matchXRD?.clear({ keepChecked: true, keepSelected: true }); setPanelMessage($std, STD_MSG); });
     ['click', 'mousedown', 'pointerdown', 'focusin', 'input', 'keydown', 'keyup'].forEach(ev => fs?.addEventListener(ev, e => { e.stopPropagation(); setTimeout(() => G.matchXRD?.render(), 10); }));
     ei?.addEventListener('input', () => {
         if (!G.matchXRD) return;
@@ -1595,8 +1589,6 @@ window.GraphPlotter = window.GraphPlotter || {
         const ok = G.matchXRD?.toggleCheckedRef?.(row.dataset.refid, peaks, ints, check.checked);
         if (!ok) check.checked = false;
         const color = G.matchXRD?.getRefColor?.(row.dataset.refid) || '#666';
-        const swatch = row.querySelector('.xrd-ref-color');
-        if (swatch) swatch.style.background = check.checked ? color : 'transparent';
         row.style.borderLeft = check.checked ? `3px solid ${color}` : '';
     });
     $xrd.on('click', async function (e) {
@@ -1883,7 +1875,8 @@ window.GraphPlotter = window.GraphPlotter || {
         },
         clear: (opts = {}) => {
             const keepChecked = !!opts.keepChecked;
-            selectedPeaks = [];
+            const keepSelected = !!opts.keepSelected;
+            if (!keepSelected) selectedPeaks = [];
             previewRef = null;
             d3.selectAll('.xrd-user-peak,.xrd-ref-preview-peak').remove();
             if (!keepChecked) {
@@ -1926,6 +1919,21 @@ window.GraphPlotter = window.GraphPlotter || {
             intensities: r.intensities.slice(),
             color: r.color
         })),
+        getSelectedPeaks: () => selectedPeaks.map(p => ({ x: Number(p.x), intensity: Number(p.intensity) || 0 })),
+        setSelectedPeaks: (peaks) => {
+            const next = [];
+            if (Array.isArray(peaks)) {
+                peaks.forEach(p => {
+                    const x = Number(p?.x);
+                    if (!Number.isFinite(x)) return;
+                    const intensity = Number(p?.intensity) || 0;
+                    next.push({ x, intensity, normInt: 0 });
+                });
+            }
+            selectedPeaks = next;
+            normalizeIntensity(selectedPeaks);
+            G.matchXRD.render();
+        },
         setCheckedRefs: (refs) => {
             checkedRefs.clear();
             if (Array.isArray(refs)) {
@@ -2184,7 +2192,11 @@ window.GraphPlotter = window.GraphPlotter || {
             xrd_table_hash: typeof raw.xrd_table_hash === "string" ? raw.xrd_table_hash : "",
             xrd_peaks_hash: typeof raw.xrd_peaks_hash === "string" ? raw.xrd_peaks_hash : "",
             xrd_peaks: Array.isArray(raw.xrd_peaks) ? raw.xrd_peaks : null,
+            xrd_selected_peaks: Array.isArray(raw.xrd_selected_peaks) ? raw.xrd_selected_peaks : [],
             xrd_checked_refs: Array.isArray(raw.xrd_checked_refs) ? raw.xrd_checked_refs : [],
+            xrd_filter: raw.xrd_filter && typeof raw.xrd_filter === "object" ? raw.xrd_filter : {},
+            xrd_panel_html: sanitizeChartHTML(raw.xrd_panel_html || ""),
+            xrd_unlock_visible: !!raw.xrd_unlock_visible,
             overrideX: raw.overrideX || null,
             overrideMultiY: raw.overrideMultiY && typeof raw.overrideMultiY === "object" ? raw.overrideMultiY : {},
             overrideXTicks: raw.overrideXTicks ?? null,
@@ -2243,7 +2255,7 @@ window.GraphPlotter = window.GraphPlotter || {
         const rawHtml = d3.select('#chart').html();
         const tmpl = document.createElement('template');
         tmpl.innerHTML = rawHtml;
-        tmpl.content.querySelectorAll('.xrd-user-peak,.xrd-ref-preview-peak,.xrd-ref-checked-peak,g.xrd-ref-legend-group').forEach(n => n.remove());
+        tmpl.content.querySelectorAll('.xrd-user-peak,.xrd-ref-peak,.xrd-ref-preview-peak,.xrd-ref-checked-peak,g.xrd-ref-legend-group').forEach(n => n.remove());
         const cleanedHtml = sanitizeChartHTML(tmpl.innerHTML);
         const payload={v:'v1.0', ts, table:G.state.hot.getData(), settings:G.getSettings(), col:G.state.colEnabled, html:cleanedHtml,
         overrideX:G.state.overrideX||null, overrideMultiY:G.state.overrideMultiY||{}, overrideXTicks:G.state.overrideXTicks||null,
@@ -2252,9 +2264,21 @@ window.GraphPlotter = window.GraphPlotter || {
         overrideCustomTicksX:G.state.overrideCustomTicksX||null, overrideCustomTicksY:G.state.overrideCustomTicksY||{},
         overrideCustomTicksTernary:G.state.overrideCustomTicksTernary||{}, overrideTernary:G.state.overrideTernary||{}, 
         minorTickOn: G.state.minorTickOn || {}, useCustomTicksOn:G.state.useCustomTicksOn||{}};
+        const xrdElements = document.getElementById('xrd-elements');
+        const xrdMode = document.getElementById('xrd-logic-mode');
+        const xrdCount = document.getElementById('xrd-element-count');
+        payload.xrd_filter = {
+            elements: xrdElements?.value || "",
+            mode: xrdMode?.value || "and",
+            count: parseInt(xrdCount?.value) || 0
+        };
+        payload.xrd_panel_html = sanitizeChartHTML(document.getElementById('xrd-matchedData')?.innerHTML || "");
+        payload.xrd_unlock_visible = (document.getElementById('xrd-unlock-section')?.style.display || "") !== "none";
         const lock = G.matchXRD?.lockInfo;
         const lpeaks = G.matchXRD?.lockedPeaks;
+        const selectedPeaks = G.matchXRD?.getSelectedPeaks?.();
         const checkedRefs = G.matchXRD?.getCheckedRefs?.();
+        if (Array.isArray(selectedPeaks) && selectedPeaks.length) payload.xrd_selected_peaks = selectedPeaks;
         if (Array.isArray(checkedRefs) && checkedRefs.length) payload.xrd_checked_refs = checkedRefs;
         if (lock?.verified && Array.isArray(lpeaks) && lpeaks.length) {
             payload.xrd_lock_version = lock.lock_version ?? null;
@@ -2291,9 +2315,32 @@ window.GraphPlotter = window.GraphPlotter || {
             const input = document.getElementById(k);
             if (input) input.value = v;
         });
-        d3.select('#chart').html(s.html); d3.selectAll('.xrd-user-peak,.xrd-ref-preview-peak,.xrd-ref-checked-peak,.xrd-ref-legend-group').remove(); G.features.prepareShapeLayer(); d3.selectAll('.shape-group').each(function(){G.features.makeShapeInteractive(d3.select(this))});
+        d3.select('#chart').html(s.html); d3.selectAll('.xrd-user-peak,.xrd-ref-peak,.xrd-ref-preview-peak,.xrd-ref-checked-peak,.xrd-ref-legend-group').remove(); G.features.prepareShapeLayer(); d3.selectAll('.shape-group').each(function(){G.features.makeShapeInteractive(d3.select(this))});
         d3.selectAll('foreignObject.user-text,g.legend-group,g.axis-title').call(G.utils.applyDrag); G.axis.tickEditing(d3.select('#chart svg'));
-        if (G.matchXRD) { G.matchXRD.lockActive = false; G.matchXRD.lockedPeaks = []; G.matchXRD.lockInfo = null; G.matchXRD.setCheckedRefs?.(s.xrd_checked_refs || []); }
+        const xrdElements = document.getElementById('xrd-elements');
+        const xrdMode = document.getElementById('xrd-logic-mode');
+        const xrdCount = document.getElementById('xrd-element-count');
+        const filterRaw = s.xrd_filter || {};
+        const filterElements = String(filterRaw.elements || "");
+        const filterMode = (filterRaw.mode === 'or' || filterRaw.mode === 'only') ? filterRaw.mode : 'and';
+        const filterCount = Math.max(0, parseInt(filterRaw.count) || 0);
+        if (xrdElements) xrdElements.value = filterElements;
+        if (xrdMode) xrdMode.value = filterMode;
+        if (xrdCount) xrdCount.value = String(filterCount);
+        const xrdPanel = document.getElementById('xrd-matchedData');
+        if (xrdPanel && s.xrd_panel_html) xrdPanel.innerHTML = s.xrd_panel_html;
+        const unlockSection = document.getElementById('xrd-unlock-section');
+        const unlockBtn = document.getElementById('xrd-unlock-btn');
+        if (unlockSection) unlockSection.style.display = s.xrd_unlock_visible ? '' : 'none';
+        if (unlockBtn) unlockBtn.style.display = s.xrd_unlock_visible ? '' : 'none';
+        if (G.matchXRD) {
+            G.matchXRD.lockActive = false;
+            G.matchXRD.lockedPeaks = [];
+            G.matchXRD.lockInfo = null;
+            G.matchXRD.setSelectedPeaks?.(s.xrd_selected_peaks || []);
+            G.matchXRD.setCheckedRefs?.(s.xrd_checked_refs || []);
+            G.matchXRD.setFilter(filterElements.split(',').filter(e => e.trim()), filterMode, filterCount);
+        }
         if (s.xrd_lock_hash && s.xrd_signature && Array.isArray(s.xrd_peaks) && s.xrd_account_id > 0 && typeof instananoCredits !== 'undefined') {
             const peaks = s.xrd_peaks.map(p => ({ x: Number(p.x), intensity: Number(p.intensity ?? 0), normInt: 0 }));
             const maxInt = peaks.length ? Math.max(...peaks.map(p => p.intensity)) : 0;
