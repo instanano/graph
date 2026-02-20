@@ -1607,6 +1607,7 @@ window.GraphPlotter = window.GraphPlotter || {
         t.style.background = '#f0f8ff';
 
         const { peaks, ints, fulldata } = await resolveRowData(t);
+        if (!t.classList.contains('xrd-preview-active')) return;
         try { G.matchXRD.showRef(peaks, ints, t.dataset.refid || ''); } catch (_) { }
         if (!fulldata) return;
 
