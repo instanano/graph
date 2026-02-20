@@ -2141,8 +2141,7 @@ window.GraphPlotter = window.GraphPlotter || {
                 ok: true,
                 matches: full.matches || [],
                 remaining: Number(r.data.remaining_total ?? r.data.remaining ?? 0),
-                current_remaining: Number(r.data.current_remaining ?? 0),
-                already_done: !!r.data.already_done
+                current_remaining: Number(r.data.current_remaining ?? 0)
             };
         },
         refreshFetchToken: async () => {
