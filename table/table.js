@@ -10,13 +10,16 @@
             rowHeaders: rowIndex => ["Axis", "Color", "Name"][rowIndex] || rowIndex - 2,
             rowHeaderWidth:60, colWidths:70,
             contextMenu: true, 
-            afterRemoveRow: () => { G.axis.resetScales(true); G.renderChart(); },
-            afterRemoveCol: () => { G.axis.resetScales(true); G.renderChart(); },
-            afterChange: (changes) => {
+            afterRemoveRow: () => { G.matchXRD?.invalidateLock?.(); G.axis.resetScales(true); G.renderChart(); },
+            afterRemoveCol: () => { G.matchXRD?.invalidateLock?.(); G.axis.resetScales(true); G.renderChart(); },
+            afterChange: (changes, source) => {
                 if (!changes) return;
-                if (G.matchXRD) { G.matchXRD.lockActive = false; G.matchXRD.lockedPeaks = []; G.matchXRD.lockInfo = null; G.matchXRD.render(); }
+                if (source === 'loadData') return;
+                const shouldInvalidate = changes.some(([row]) => Number(row) === 0 || Number(row) >= 3);
+                if (shouldInvalidate) G.matchXRD?.invalidateLock?.();
             },
             afterCreateCol: (start, count) => {
+                G.matchXRD?.invalidateLock?.();
                 for (let c = start; c < start + count; c++) {
                     G.state.hot.setDataAtCell(0, c, "Y-axis");
                     G.state.hot.setDataAtCell(1, c, G.config.COLORS[c % G.config.COLORS.length]);
@@ -40,7 +43,7 @@
             if (e.target.matches('input[type="checkbox"][data-col]')) {
                 const col = +e.target.dataset.col;
                 G.state.colEnabled[col] = e.target.checked;
-                if (G.matchXRD) { G.matchXRD.lockActive = false; G.matchXRD.lockedPeaks = []; G.matchXRD.lockInfo = null; G.matchXRD.render(); }
+                G.matchXRD?.invalidateLock?.();
                 G.state.hot.render();
                 G.axis.resetScales(false);
                 G.renderChart(); checkEmptyColumns();}});
