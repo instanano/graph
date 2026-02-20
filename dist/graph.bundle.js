@@ -1590,7 +1590,16 @@ window.GraphPlotter = window.GraphPlotter || {
         if (!t) return;
         if (t.dataset.tag === 'locked') return;
         const box = $xrd.node();
-        box?.querySelectorAll('.matchedrow').forEach(r => { if (r !== t) { r.style.background = ''; const d = r.querySelector('.xrd-ref-detail'); if (d) d.remove(); } });
+        if (t.classList.contains('xrd-preview-active')) {
+            t.classList.remove('xrd-preview-active');
+            t.style.background = '';
+            const d = t.querySelector('.xrd-ref-detail');
+            if (d) d.remove();
+            try { G.matchXRD.showRef([], [], ''); } catch (_) { }
+            return;
+        }
+        box?.querySelectorAll('.matchedrow').forEach(r => { if (r !== t) { r.classList.remove('xrd-preview-active'); r.style.background = ''; const d = r.querySelector('.xrd-ref-detail'); if (d) d.remove(); } });
+        t.classList.add('xrd-preview-active');
         t.style.background = '#f0f8ff';
 
         const { peaks, ints, fulldata } = await resolveRowData(t);
