@@ -12,6 +12,7 @@
     const MAX_RANKED_REFS = 25;
     let selectedPeaks = [];
     let previewRef = null;
+    let pendingImportedLock = null;
     let compositions = null;
     let elementFilter = { elements: [], mode: 'and', count: 0 };
     const selectedRefs = new Map();
@@ -62,26 +63,21 @@
         peaks.forEach(p => p.normInt = anchor > 0 ? Math.max(0, Math.min(100, (Number(p.intensity) || 0) / anchor * 100)) : 0);
     };
     const getTolerance = (twoTheta) => Math.max(MIN_TOLERANCE, Math.min(TOLERANCE, 0.18 + ((Number(twoTheta) || 0) * 0.0065)));
-    async function getTableSHA() {
-        const raw = JSON.stringify({ t: G.state.hot.getData(), c: G.state.colEnabled });
-        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
-        return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-    }
-    async function sha256Hex(raw) {
-        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
-        return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-    }
-    function canonicalizePeaks(peaks) {
-        return peaks.map(p => [Number(p.x).toFixed(4), Number(p.intensity ?? 0).toFixed(4)])
-            .sort((a, b) => a[0] === b[0] ? (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0) : a[0] < b[0] ? -1 : 1);
-    }
-    async function getPeaksHash(peaks) {
-        const raw = JSON.stringify(canonicalizePeaks(peaks));
-        return sha256Hex(raw);
-    }
     function getSampleCount() {
         const data = G.state.hot.getData();
         return data[0].filter((h, i) => h === 'Y-axis' && G.state.colEnabled[i] !== false).length || 1;
+    }
+    function getLockPayload(peaks) {
+        return {
+            table: G.state.hot?.getData?.() || [],
+            col: G.state.colEnabled || {},
+            peaks: (Array.isArray(peaks) ? peaks : []).map(p => ({ x: p.x, intensity: p.intensity }))
+        };
+    }
+    function clearLockState() {
+        G.matchXRD.lockActive = false;
+        G.matchXRD.lockedPeaks = [];
+        G.matchXRD.lockInfo = null;
     }
     async function ajaxPost(action, extra = {}) {
         if (typeof instananoCredits === 'undefined') return null;
@@ -181,6 +177,56 @@
         lockActive: false,
         lockInfo: null,
         lockedPeaks: [],
+        invalidateLock: () => {
+            pendingImportedLock = null;
+            clearLockState();
+            G.matchXRD.render();
+        },
+        setImportedLockCandidate: (candidate) => {
+            pendingImportedLock = null;
+            if (!candidate || !candidate.lock_hash || !candidate.signature || !candidate.account_id || !Array.isArray(candidate.peaks) || !candidate.peaks.length)
+                return false;
+            const peaks = candidate.peaks.map(p => ({ x: Number(p.x), intensity: Number(p.intensity ?? 0), normInt: 0 }));
+            normalizeIntensity(peaks);
+            pendingImportedLock = {
+                lock_hash: String(candidate.lock_hash || ''),
+                signature: String(candidate.signature || ''),
+                lock_version: candidate.lock_version ?? null,
+                account_id: Number(candidate.account_id || 0),
+                peaks
+            };
+            return true;
+        },
+        verifyImportedLockIfNeeded: async () => {
+            const lock = pendingImportedLock;
+            if (!lock || typeof instananoCredits === 'undefined') return false;
+            pendingImportedLock = null;
+            const r = await ajaxPost('instanano_verify_lock', {
+                lock_hash: lock.lock_hash,
+                signature: lock.signature,
+                lock_version: lock.lock_version,
+                account_id: lock.account_id,
+                lock_payload: JSON.stringify(getLockPayload(lock.peaks))
+            });
+            if (!r?.success || !r?.data?.valid) {
+                clearLockState();
+                G.matchXRD.render();
+                return false;
+            }
+            G.matchXRD.lockActive = true;
+            G.matchXRD.lockedPeaks = lock.peaks.map(p => ({ x: p.x, intensity: p.intensity, normInt: p.normInt }));
+            G.matchXRD.lockInfo = {
+                lock_hash: lock.lock_hash,
+                signature: lock.signature,
+                lock_version: lock.lock_version,
+                account_id: Number(r.data.account_id || lock.account_id || 0),
+                fetch_token: r.data.fetch_token || "",
+                fetch_token_expires: Number(r.data.fetch_token_expires || 0),
+                verified: true
+            };
+            G.matchXRD.render();
+            return true;
+        },
         addPeak: (x, intensity) => {
             if (G.matchXRD.lockActive) return;
             selectedPeaks.push({ x, intensity, normInt: 0 });
@@ -266,6 +312,7 @@
             return !!node && node.childElementCount > 0;
         },
         clear: () => {
+            pendingImportedLock = null;
             selectedPeaks = [];
             previewRef = null;
             selectedRefs.clear();
@@ -387,31 +434,23 @@
             return { matches: final, cols: ['Reference ID', 'Empirical Formula', 'Match Score (%)'], locked: false };
         },
         getSampleCount,
-        getTableSHA,
         checkCredit: async () => { const r = await ajaxPost('instanano_check_credit'); return r?.success ? r.data : null; },
-        computeLockHash: async (peaks) => {
-            const tableHash = await getTableSHA();
-            const peaksHash = await getPeaksHash(peaks);
-            const lockRaw = `${LOCK_VERSION}|${tableHash}|${peaksHash}`;
-            const lockHash = await sha256Hex(lockRaw);
-            return { lock_hash: lockHash, table_hash: tableHash, peaks_hash: peaksHash, lock_version: LOCK_VERSION };
-        },
         unlock: async () => {
             if (!selectedPeaks.length) return { ok: false, message: 'No peaks selected.' };
-            const n = getSampleCount();
-            const lock = await G.matchXRD.computeLockHash(selectedPeaks);
-            const r = await ajaxPost('instanano_use_credit', { lock_hash: lock.lock_hash, lock_version: lock.lock_version, sample_count: n });
-            if (!r?.success || !r?.data?.signature) return { ok: false, message: r?.data?.message || 'Failed.', remaining: r?.data?.remaining };
+            pendingImportedLock = null;
+            const r = await ajaxPost('instanano_use_credit', {
+                lock_payload: JSON.stringify(getLockPayload(selectedPeaks))
+            });
+            if (!r?.success || !r?.data?.signature || !r?.data?.lock_hash) return { ok: false, message: r?.data?.message || 'Failed.', remaining: r?.data?.remaining };
             const accountId = Number(r.data.account_id || 0);
+            const lockHash = String(r.data.lock_hash || "");
             G.matchXRD.lockActive = true;
             G.matchXRD.lockedPeaks = selectedPeaks.map(p => ({ x: p.x, intensity: p.intensity, normInt: p.normInt }));
             G.matchXRD.lockInfo = {
-                lock_hash: lock.lock_hash,
+                lock_hash: lockHash,
                 signature: r.data.signature,
-                lock_version: lock.lock_version,
+                lock_version: Number(r.data.lock_version || LOCK_VERSION),
                 account_id: accountId,
-                table_hash: lock.table_hash,
-                peaks_hash: lock.peaks_hash,
                 fetch_token: r.data.fetch_token || "",
                 fetch_token_expires: Number(r.data.fetch_token_expires || 0),
                 verified: true
@@ -422,7 +461,7 @@
                 matches: full.matches || [],
                 remaining: Number(r.data.remaining_total ?? r.data.remaining ?? 0),
                 current_remaining: Number(r.data.current_remaining ?? 0),
-                already_done: false
+                already_done: !!r.data.already_done
             };
         },
         refreshFetchToken: async () => {
