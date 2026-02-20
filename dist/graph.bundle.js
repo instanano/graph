@@ -598,7 +598,7 @@ window.GraphPlotter = window.GraphPlotter || {
     G.ui.drawLegend = function() {
         const svg = d3.select('#chart svg'); const data = G.state.hot.getData(), header = data[0], series = G.getSeries(), s = G.getSettings();
         const cols = header.map((v,i) => v === 'Y-axis' && G.state.colEnabled[i] ? i : -1).filter(i => i >= 0);
-        const X = G.config.DIM.W - G.config.DIM.MR - 100, Y = G.config.DIM.MT + 25, S = 20, M = 20; const legends = svg.selectAll('g.legend-group').data(cols, d => d);
+        const X = G.config.DIM.W - G.config.DIM.MR - 100, Y = G.config.DIM.MT + 25, S = 20, M = 20; const legends = svg.selectAll('g.legend-group:not(.xrd-ref-legend)').data(cols, d => d);
         legends.exit().remove(); legends.attr('transform', function(d, idx) { return this.dataset.savedTransform || `translate(${X},${Y + idx * S})`;}); const legendsEnter = legends.enter().append('g').classed('legend-group', 1).attr('data-col', d => d).attr('transform', (d, idx) => `translate(${X},${Y + idx * S})`).call(G.utils.applyDrag);
         legendsEnter.each(function (d, idx) { drawLegendMarker(d3.select(this), s.type, s, series[idx], idx, M);
         const fo = G.utils.editableText(d3.select(this), { x: M + 5, y: -10, text: data[2][d]});
@@ -761,7 +761,8 @@ window.GraphPlotter = window.GraphPlotter || {
     document.addEventListener('mouseup',setActiveButtons);
     document.addEventListener('keyup',setActiveButtons);
     G.ui.refs.rmBtn.on("click", () => { if (G.state.activeGroup) { G.state.activeGroup.style("display", "none"); G.state.activeGroup = null;}
-        else if (G.state.activeFo) { const parentG = G.state.activeFo.node().parentNode; if (parentG.classList.contains("legend-group")) { d3.select(parentG).style("display", "none"); } else { d3.select(G.state.activeFo.node()).style("display", "none");}} 
+        else if (G.state.activeFo) { const parentG = G.state.activeFo.node().parentNode; if (parentG.classList.contains("xrd-ref-legend")) { const refId = parentG.dataset.refid || ""; G.matchXRD?.removeReference?.(refId); d3.select(parentG).remove(); }
+        else if (parentG.classList.contains("legend-group")) { d3.select(parentG).style("display", "none"); } else { d3.select(G.state.activeFo.node()).style("display", "none");}} 
         G.state.activeFo = G.state.activeDiv = null; G.ui.refs.rmBtn.classed("disabled", true);}); 
 })(window.GraphPlotter);
 (function(G) {
@@ -1443,6 +1444,16 @@ window.GraphPlotter = window.GraphPlotter || {
                 if (ints) rowDiv.dataset.ints = JSON.stringify(ints);
                 if (fd) rowDiv.dataset.fulldata = JSON.stringify(fd);
             }
+            if (tag !== 'locked' && item.refId) {
+                const ckCell = document.createElement("div");
+                const ck = document.createElement("input");
+                ck.type = 'checkbox';
+                ck.className = 'xrd-ref-toggle';
+                ck.dataset.refid = item.refId;
+                ck.checked = !!G.matchXRD?.isReferenceSelected?.(item.refId);
+                ckCell.append(ck, document.createTextNode(' Add to graph'));
+                rowDiv.appendChild(ckCell);
+            }
             row.forEach((val, idx) => {
                 const cell = document.createElement("div");
                 const label = document.createElement("b");
@@ -1460,17 +1471,42 @@ window.GraphPlotter = window.GraphPlotter || {
         });
         node.appendChild(frag);
     }
+    function parseJsonData(raw, fallback) {
+        if (!raw) return fallback;
+        try { return JSON.parse(raw); } catch (_) { return fallback; }
+    }
+    async function resolveRowData(row) {
+        let peaks = parseJsonData(row.dataset.peaks, []);
+        let ints = parseJsonData(row.dataset.ints, []);
+        let fulldata = parseJsonData(row.dataset.fulldata, null);
+        if (!fulldata && !G.matchXRD.isLocked() && row.dataset.refid) {
+            try {
+                const rd = await G.matchXRD.fetchRef(row.dataset.refid);
+                if (rd?.data) {
+                    fulldata = rd.data;
+                    row.dataset.fulldata = JSON.stringify(fulldata);
+                }
+            } catch (_) { }
+        }
+        if (fulldata?.Peaks?.length) {
+            peaks = fulldata.Peaks.map(p => p.T);
+            ints = fulldata.Peaks.map(p => p.I);
+            row.dataset.peaks = JSON.stringify(peaks);
+            row.dataset.ints = JSON.stringify(ints);
+        }
+        return { peaks, ints, fulldata };
+    }
 
     window.addEventListener('focus', refreshCredits);
     document.querySelectorAll('input[name="matchinstrument"]').forEach(inp => inp.addEventListener('change', () => setPanelMessage($std, STD_MSG)));
-    ['icon1', 'icon2', 'icon3', 'icon4'].forEach(id => document.getElementById(id)?.addEventListener('change', () => { G.matchXRD?.clear(); setUnlockVisible(false); }));
+    ['icon1', 'icon2', 'icon3', 'icon4'].forEach(id => document.getElementById(id)?.addEventListener('change', () => { G.matchXRD?.render(); }));
     icon5?.addEventListener('change', () => {
-        setPanelMessage($xrd, XRD_MSG);
+        if (!icon5.checked) return;
+        if (!G.matchXRD?.hasResultsOnPanel?.()) setPanelMessage($xrd, XRD_MSG);
         refreshCredits();
-        setUnlockVisible(false);
         G.matchXRD?.render();
     });
-    icon6?.addEventListener('change', () => { G.matchXRD?.clear(); setUnlockVisible(false); setPanelMessage($std, STD_MSG); });
+    icon6?.addEventListener('change', () => { G.matchXRD?.render(); setPanelMessage($std, STD_MSG); });
     ['click', 'mousedown', 'pointerdown', 'focusin', 'input', 'keydown', 'keyup'].forEach(ev => fs?.addEventListener(ev, e => { e.stopPropagation(); setTimeout(() => G.matchXRD?.render(), 10); }));
     ei?.addEventListener('input', () => {
         if (!G.matchXRD) return;
@@ -1540,6 +1576,15 @@ window.GraphPlotter = window.GraphPlotter || {
         setPanelMessage($xrd, XRD_MSG);
     });
     $xrd.on('click', async function (e) {
+        const ck = e.target.closest('input.xrd-ref-toggle');
+        if (ck) {
+            const row = ck.closest('.matchedrow');
+            if (!row || row.dataset.tag === 'locked' || !row.dataset.refid) return;
+            const { peaks, ints } = await resolveRowData(row);
+            if (ck.checked && (!Array.isArray(peaks) || !peaks.length)) { ck.checked = false; return; }
+            G.matchXRD?.setReference?.(row.dataset.refid, peaks, ints, ck.checked);
+            return;
+        }
         const t = e.target.closest('.matchedrow');
         if (!t) return;
         if (t.dataset.tag === 'locked') return;
@@ -1547,28 +1592,8 @@ window.GraphPlotter = window.GraphPlotter || {
         box?.querySelectorAll('.matchedrow').forEach(r => { if (r !== t) { r.style.background = ''; const d = r.querySelector('.xrd-ref-detail'); if (d) d.remove(); } });
         t.style.background = '#f0f8ff';
 
-        let peaks = t.dataset.peaks ? JSON.parse(t.dataset.peaks) : [];
-        let ints = t.dataset.ints ? JSON.parse(t.dataset.ints) : [];
-        let fulldata = t.dataset.fulldata ? JSON.parse(t.dataset.fulldata) : null;
-
-        if (!fulldata && !G.matchXRD.isLocked() && t.dataset.refid) {
-            // Lazy load ONLY if unlocked
-            try {
-                const rd = await G.matchXRD.fetchRef(t.dataset.refid);
-                if (rd) {
-                    fulldata = rd.data; // The JSON blob from DB
-                    t.dataset.fulldata = JSON.stringify(fulldata);
-                    if (fulldata.Peaks) {
-                        peaks = fulldata.Peaks.map(p => p.T);
-                        ints = fulldata.Peaks.map(p => p.I);
-                        t.dataset.peaks = JSON.stringify(peaks);
-                        t.dataset.ints = JSON.stringify(ints);
-                    }
-                }
-            } catch (err) { console.error('Ref fetch failed', err); }
-        }
-
-        try { G.matchXRD.showRef(peaks, ints); } catch (_) { }
+        const { peaks, ints, fulldata } = await resolveRowData(t);
+        try { G.matchXRD.showRef(peaks, ints, t.dataset.refid || ''); } catch (_) { }
         if (!fulldata) return;
 
         let det = t.querySelector('.xrd-ref-detail');
@@ -1652,8 +1677,10 @@ window.GraphPlotter = window.GraphPlotter || {
     const FREE_PREVIEW_PEAKS = 3;
     const MAX_RANKED_REFS = 25;
     let selectedPeaks = [];
+    let previewRef = null;
     let compositions = null;
     let elementFilter = { elements: [], mode: 'and', count: 0 };
+    const selectedRefs = new Map();
     const metaCache = new Map();
     const indexCache = new Map();
     const chunkCache = new Map();
@@ -1734,6 +1761,91 @@ window.GraphPlotter = window.GraphPlotter || {
         const r = await fetch(instananoCredits.ajaxUrl, { method: 'POST', body: fd });
         return r.json();
     }
+    function pickRefColor() {
+        const palette = G.config.COLORS || [];
+        if (!palette.length) return '#0000FF';
+        const used = new Set(Array.from(selectedRefs.values()).map(r => r.color));
+        for (const c of palette) if (!used.has(c)) return c;
+        return palette[selectedRefs.size % palette.length];
+    }
+    function syncRefCheckbox(refId, checked) {
+        document.querySelectorAll('#xrd-matchedData input.xrd-ref-toggle').forEach(cb => {
+            if (cb.dataset.refid === String(refId)) cb.checked = !!checked;
+        });
+    }
+    function getMainLegendCount() {
+        const data = G.state.hot?.getData?.();
+        if (!data?.[0]) return 0;
+        return data[0].filter((h, i) => h === 'Y-axis' && G.state.colEnabled[i] !== false).length;
+    }
+    function refLegendTransform(idx) {
+        const X = G.config.DIM.W - G.config.DIM.MR - 100;
+        const Y = G.config.DIM.MT + 25;
+        const S = 20;
+        return `translate(${X},${Y + (getMainLegendCount() + idx) * S})`;
+    }
+    function drawRefLegendMarker(g, color) {
+        const sw = 20;
+        g.selectAll('.legend-marker').remove();
+        g.append('line').classed('legend-marker', true).attr('x2', sw)
+            .attr('stroke', color).attr('stroke-width', 1.5)
+            .attr('stroke-dasharray', '4,2');
+    }
+    function renderRefLegends(svg) {
+        const refs = Array.from(selectedRefs.values());
+        const legends = svg.selectAll('g.xrd-ref-legend').data(refs, d => d.refId);
+        legends.exit().remove();
+        legends
+            .attr('data-refid', d => d.refId)
+            .attr('transform', function (d, idx) { return this.dataset.savedTransform || refLegendTransform(idx); });
+        const legendsEnter = legends.enter().append('g')
+            .classed('legend-group', 1)
+            .classed('xrd-ref-legend', 1)
+            .attr('data-refid', d => d.refId)
+            .attr('transform', (d, idx) => refLegendTransform(idx))
+            .call(G.utils.applyDrag);
+        legendsEnter.each(function (d) {
+            const g = d3.select(this);
+            drawRefLegendMarker(g, d.color);
+            const fo = G.utils.editableText(g, { x: 25, y: -10, text: d.label || d.refId });
+            fo.fo.attr('width', fo.div.node().scrollWidth + fo.pad);
+            const div = fo.div.node();
+            div.addEventListener('mousedown', e => {
+                e.stopPropagation();
+                G.utils.clearActive();
+                G.features.activateText(fo.div, fo.fo);
+            });
+            div.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); div.blur(); } });
+            div.addEventListener('blur', () => {
+                const ref = selectedRefs.get(d.refId);
+                if (!ref) return;
+                const text = div.textContent.trim() || d.refId;
+                ref.label = text;
+                div.textContent = text;
+                d3.select(div).attr('contenteditable', false).style('outline', 'none').style('cursor', 'move');
+            });
+        });
+        legends.select('foreignObject div').text(d => d.label || d.refId);
+        legends.each(function (d) {
+            const g = d3.select(this);
+            drawRefLegendMarker(g, d.color);
+        });
+    }
+    function drawRefPeaks(svg, peaks, ints, cls, color, dash = '4,2', width = 1) {
+        const xMin = G.config.DIM.ML;
+        const xMax = G.config.DIM.W - G.config.DIM.MR;
+        for (let i = 0; i < peaks.length; i++) {
+            const xp = G.state.lastXScale(peaks[i]);
+            if (xp < xMin || xp > xMax) continue;
+            const h = 5 + ((ints?.[i] ?? 100) / 100) * 35;
+            svg.append('line').attr('class', cls)
+                .attr('x1', xp).attr('x2', xp)
+                .attr('y1', G.config.DIM.H - G.config.DIM.MB)
+                .attr('y2', G.config.DIM.H - G.config.DIM.MB - h)
+                .attr('stroke', color).attr('stroke-width', width)
+                .attr('stroke-dasharray', dash).style('pointer-events', 'none');
+        }
+    }
 
     G.matchXRD = {
         lockActive: false,
@@ -1747,9 +1859,17 @@ window.GraphPlotter = window.GraphPlotter || {
         },
         render: () => {
             const svg = d3.select('#chart svg');
+            if (svg.empty() || !G.state.lastXScale) return;
             const tab = document.getElementById('icon5');
-            if (tab && !tab.checked) { svg.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); return; }
+            const showUserPeaks = !tab || !!tab.checked;
+            svg.selectAll('.xrd-ref-peak,.xrd-ref-preview-peak').remove();
+            selectedRefs.forEach(ref => drawRefPeaks(svg, ref.peaks, ref.intensities, 'xrd-ref-peak', ref.color));
+            if (showUserPeaks && previewRef?.peaks?.length && !selectedRefs.has(previewRef.refId)) {
+                drawRefPeaks(svg, previewRef.peaks, previewRef.intensities, 'xrd-ref-preview-peak', '#1f77b4', '4,2', 1);
+            }
+            renderRefLegends(svg);
             svg.selectAll('.xrd-user-peak').remove();
+            if (!showUserPeaks) return;
             const peaks = G.matchXRD.lockActive ? G.matchXRD.lockedPeaks : selectedPeaks;
             const xMin = G.config.DIM.ML, xMax = G.config.DIM.W - G.config.DIM.MR;
             peaks.forEach((p, i) => {
@@ -1767,24 +1887,60 @@ window.GraphPlotter = window.GraphPlotter || {
                 }
             });
         },
-        showRef: (peaks, ints) => {
-            const svg = d3.select('#chart svg');
-            svg.selectAll('.xrd-ref-peak').remove();
-            peaks.forEach((x, i) => {
-                const xp = G.state.lastXScale(x);
-                if (xp < G.config.DIM.ML || xp > G.config.DIM.W - G.config.DIM.MR) return;
-                const h = 5 + ((ints?.[i] ?? 100) / 100) * 35;
-                svg.append('line').attr('class', 'xrd-ref-peak')
-                    .attr('x1', xp).attr('x2', xp)
-                    .attr('y1', G.config.DIM.H - G.config.DIM.MB)
-                    .attr('y2', G.config.DIM.H - G.config.DIM.MB - h)
-                    .attr('stroke', 'blue').attr('stroke-width', 1)
-                    .attr('stroke-dasharray', '4,2').style('pointer-events', 'none');
+        showRef: (peaks, ints, refId = '') => {
+            previewRef = {
+                refId: String(refId || ''),
+                peaks: Array.isArray(peaks) ? peaks.slice() : [],
+                intensities: Array.isArray(ints) ? ints.slice() : []
+            };
+            G.matchXRD.render();
+        },
+        setReference: (refId, peaks, ints, checked = true) => {
+            const id = String(refId || '').trim();
+            if (!id) return false;
+            if (!checked) {
+                G.matchXRD.removeReference(id);
+                return false;
+            }
+            const curr = selectedRefs.get(id);
+            if (curr) {
+                if (Array.isArray(peaks) && peaks.length) curr.peaks = peaks.slice();
+                if (Array.isArray(ints)) curr.intensities = ints.slice();
+                syncRefCheckbox(id, true);
+                G.matchXRD.render();
+                return true;
+            }
+            selectedRefs.set(id, {
+                refId: id,
+                peaks: Array.isArray(peaks) ? peaks.slice() : [],
+                intensities: Array.isArray(ints) ? ints.slice() : [],
+                color: pickRefColor(),
+                label: id
             });
+            syncRefCheckbox(id, true);
+            G.matchXRD.render();
+            return true;
+        },
+        removeReference: (refId) => {
+            const id = String(refId || '').trim();
+            if (!id) return false;
+            const removed = selectedRefs.delete(id);
+            if (previewRef?.refId === id) previewRef = null;
+            syncRefCheckbox(id, false);
+            G.matchXRD.render();
+            return removed;
+        },
+        isReferenceSelected: (refId) => selectedRefs.has(String(refId || '').trim()),
+        hasResultsOnPanel: () => {
+            const node = document.getElementById('xrd-matchedData');
+            return !!node && node.childElementCount > 0;
         },
         clear: () => {
             selectedPeaks = [];
-            d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove();
+            previewRef = null;
+            selectedRefs.clear();
+            d3.selectAll('.xrd-user-peak,.xrd-ref-peak,.xrd-ref-preview-peak,g.xrd-ref-legend').remove();
+            document.querySelectorAll('#xrd-matchedData input.xrd-ref-toggle').forEach(cb => { cb.checked = false; });
             if (G.matchXRD.lockActive) { G.matchXRD.render(); return; }
         },
         validate: (input) => {
@@ -2091,7 +2247,7 @@ window.GraphPlotter = window.GraphPlotter || {
         const rawHtml = d3.select('#chart').html();
         const tmpl = document.createElement('template');
         tmpl.innerHTML = rawHtml;
-        tmpl.content.querySelectorAll('.xrd-user-peak,.xrd-ref-peak').forEach(n => n.remove());
+        tmpl.content.querySelectorAll('.xrd-user-peak,.xrd-ref-peak,.xrd-ref-preview-peak,g.xrd-ref-legend').forEach(n => n.remove());
         const cleanedHtml = sanitizeChartHTML(tmpl.innerHTML);
         const payload={v:'v1.0', ts, table:G.state.hot.getData(), settings:G.getSettings(), col:G.state.colEnabled, html:cleanedHtml,
         overrideX:G.state.overrideX||null, overrideMultiY:G.state.overrideMultiY||{}, overrideXTicks:G.state.overrideXTicks||null,
@@ -2137,7 +2293,7 @@ window.GraphPlotter = window.GraphPlotter || {
             const input = document.getElementById(k);
             if (input) input.value = v;
         });
-        d3.select('#chart').html(s.html); d3.selectAll('.xrd-user-peak,.xrd-ref-peak').remove(); G.features.prepareShapeLayer(); d3.selectAll('.shape-group').each(function(){G.features.makeShapeInteractive(d3.select(this))});
+        d3.select('#chart').html(s.html); d3.selectAll('.xrd-user-peak,.xrd-ref-peak,.xrd-ref-preview-peak,g.xrd-ref-legend').remove(); G.features.prepareShapeLayer(); d3.selectAll('.shape-group').each(function(){G.features.makeShapeInteractive(d3.select(this))});
         d3.selectAll('foreignObject.user-text,g.legend-group,g.axis-title').call(G.utils.applyDrag); G.axis.tickEditing(d3.select('#chart svg'));
         if (G.matchXRD) { G.matchXRD.lockActive = false; G.matchXRD.lockedPeaks = []; G.matchXRD.lockInfo = null; }
         if (s.xrd_lock_hash && s.xrd_signature && Array.isArray(s.xrd_peaks) && s.xrd_account_id > 0 && typeof instananoCredits !== 'undefined') {
