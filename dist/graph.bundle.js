@@ -1769,7 +1769,7 @@ window.GraphPlotter = window.GraphPlotter || {
         const r = await fetch(instananoCredits.ajaxUrl, { method: 'POST', body: fd });
         return r.json();
     }
-    function normalizeRefPayload(refId, peaks, intensities, color) {
+    function normalizeRefPayload(refId, peaks, intensities, color, label) {
         const rid = String(refId ?? '').trim();
         if (!rid || !Array.isArray(peaks)) return null;
         const outPeaks = [];
@@ -1782,7 +1782,7 @@ window.GraphPlotter = window.GraphPlotter || {
             outInts.push(Number.isFinite(iv) && iv >= 0 ? iv : 100);
         });
         if (!outPeaks.length) return null;
-        return { refId: rid, peaks: outPeaks, intensities: outInts, color: color || '' };
+        return { refId: rid, peaks: outPeaks, intensities: outInts, color: color || '', label: String(label ?? rid).trim() || rid };
     }
     function pickRefColor(preferred = '') {
         const palette = Array.isArray(G.config.COLORS) && G.config.COLORS.length ? G.config.COLORS : ['#0000FF'];
@@ -1822,8 +1822,25 @@ window.GraphPlotter = window.GraphPlotter || {
             const g = svg.append('g').attr('class', 'xrd-ref-legend-group').attr('transform', `translate(${x},${y + (i * 20)})`);
             g.append('line').attr('x1', 0).attr('x2', marker).attr('y1', 0).attr('y2', 0)
                 .attr('stroke', ref.color).attr('stroke-width', 2).attr('stroke-dasharray', '4,2');
-            g.append('text').attr('x', marker + 5).attr('y', 4).style('font-size', '12px').style('pointer-events', 'none')
-                .text(`Ref ${ref.refId}`);
+            const fo = G.utils.editableText(g, { x: marker + 5, y: -10, text: ref.label || ref.refId });
+            fo.fo.attr('width', fo.div.node().scrollWidth + fo.pad);
+            const div = fo.div.node();
+            div.addEventListener('click', e => {
+                e.stopPropagation();
+                G.features.activateText?.(d3.select(div), fo.fo);
+            });
+            div.addEventListener('keydown', e => {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                div.blur();
+            });
+            div.addEventListener('blur', () => {
+                const next = div.textContent.trim() || ref.refId;
+                div.textContent = next;
+                fo.fo.attr('width', div.scrollWidth + fo.pad);
+                G.matchXRD.setRefLabel?.(ref.refId, next);
+                d3.select(div).attr('contenteditable', false).style('outline', 'none').style('cursor', 'move');
+            });
         });
     }
 
@@ -1895,7 +1912,9 @@ window.GraphPlotter = window.GraphPlotter || {
             }
             const parsed = normalizeRefPayload(rid, peaks, ints);
             if (!parsed) return false;
-            parsed.color = checkedRefs.get(rid)?.color || pickRefColor(parsed.color);
+            const prev = checkedRefs.get(rid);
+            parsed.color = prev?.color || pickRefColor(parsed.color);
+            parsed.label = prev?.label || parsed.label;
             checkedRefs.set(rid, parsed);
             G.matchXRD.render();
             return true;
@@ -1904,9 +1923,10 @@ window.GraphPlotter = window.GraphPlotter || {
             const rid = String(refId ?? '').trim();
             const prev = checkedRefs.get(rid);
             if (!prev) return false;
-            const parsed = normalizeRefPayload(rid, peaks, ints, prev.color);
+            const parsed = normalizeRefPayload(rid, peaks, ints, prev.color, prev.label);
             if (!parsed) return false;
             parsed.color = prev.color;
+            parsed.label = prev.label || parsed.refId;
             checkedRefs.set(rid, parsed);
             G.matchXRD.render();
             return true;
@@ -1917,7 +1937,8 @@ window.GraphPlotter = window.GraphPlotter || {
             refId: r.refId,
             peaks: r.peaks.slice(),
             intensities: r.intensities.slice(),
-            color: r.color
+            color: r.color,
+            label: r.label || r.refId
         })),
         getSelectedPeaks: () => selectedPeaks.map(p => ({ x: Number(p.x), intensity: Number(p.intensity) || 0 })),
         setSelectedPeaks: (peaks) => {
@@ -1938,13 +1959,22 @@ window.GraphPlotter = window.GraphPlotter || {
             checkedRefs.clear();
             if (Array.isArray(refs)) {
                 refs.forEach(r => {
-                    const parsed = normalizeRefPayload(r?.refId ?? r?.id ?? r?.ref, r?.peaks, r?.intensities, r?.color);
+                    const parsed = normalizeRefPayload(r?.refId ?? r?.id ?? r?.ref, r?.peaks, r?.intensities, r?.color, r?.label);
                     if (!parsed) return;
                     parsed.color = pickRefColor(parsed.color);
+                    parsed.label = parsed.label || parsed.refId;
                     checkedRefs.set(parsed.refId, parsed);
                 });
             }
             G.matchXRD.render();
+        },
+        setRefLabel: (refId, label) => {
+            const rid = String(refId ?? '').trim();
+            const item = checkedRefs.get(rid);
+            if (!item) return false;
+            item.label = String(label ?? '').trim() || rid;
+            checkedRefs.set(rid, item);
+            return true;
         },
         validate: (input) => {
             if (!input.trim()) return { valid: true, invalid: [] };
