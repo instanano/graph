@@ -144,11 +144,7 @@
             const fo = G.utils.editableText(g, { x: 25, y: -10, text: d.label || d.refId });
             fo.fo.attr('width', fo.div.node().scrollWidth + fo.pad);
             const div = fo.div.node();
-            div.addEventListener('mousedown', e => {
-                e.stopPropagation();
-                G.utils.clearActive();
-                G.features.activateText(fo.div, fo.fo);
-            });
+            div.addEventListener('click', e => { e.stopPropagation(); div.focus(); });
             div.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); div.blur(); } });
             div.addEventListener('blur', () => {
                 const ref = selectedRefs.get(d.refId);
