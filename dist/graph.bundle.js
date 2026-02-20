@@ -1763,7 +1763,7 @@ window.GraphPlotter = window.GraphPlotter || {
         return r.json();
     }
     function pickRefColor() {
-        const palette = G.config.COLORS || [];
+        const palette = (G.config.COLORS || []).slice(1);
         if (!palette.length) return '#0000FF';
         const used = new Set(Array.from(selectedRefs.values()).map(r => r.color));
         for (const c of palette) if (!used.has(c)) return c;
