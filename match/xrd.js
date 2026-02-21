@@ -417,17 +417,12 @@
             setProgress('done');
             const locked = !G.matchXRD.lockActive;
             if (locked) {
-                const mask = v => {
-                    const s = String(v == null ? '' : v);
-                    return s && !s.endsWith('...') ? (s + '...') : s;
-                };
                 const preview = final.slice(0, FREE_PREVIEW_REFS).map(m => ({
                     ...m,
-                    row: [m.row[0], mask(m.row[1]), m.row[2]],
                     peaks: m.peaks.slice(0, FREE_PREVIEW_PEAKS),
                     intensities: m.intensities.slice(0, FREE_PREVIEW_PEAKS)
                 }));
-                const lockedMatches = final.slice(FREE_PREVIEW_REFS).map(({ row, refId }) => ({ row: [row[0], mask(row[1]), row[2]], refId }));
+                const lockedMatches = final.slice(FREE_PREVIEW_REFS).map(({ row, refId }) => ({ row, refId }));
                 return {
                     matches: preview,
                     lockedMatches,
@@ -461,30 +456,9 @@
                 verified: true
             };
             const full = await G.matchXRD.search();
-            const matches = full.matches || [];
-            const refs = [...new Set(matches.map(m => String(m?.refId || '').trim()).filter(Boolean))];
-            if (refs.length) setTimeout(async () => {
-                let fetched = null;
-                try { fetched = await G.matchXRD.fetchRefs(refs, true); } catch (_) { }
-                if (!fetched) return;
-                matches.forEach(m => {
-                    const f = fetched[m.refId]?.formula;
-                    if (f) m.row[1] = f;
-                });
-                const box = document.getElementById('xrd-matchedData');
-                if (!box) return;
-                box.querySelectorAll('.matchedrow[data-refid]').forEach(row => {
-                    const f = fetched[row.dataset.refid]?.formula;
-                    if (!f) return;
-                    row.querySelectorAll('div').forEach(cell => {
-                        const b = cell.querySelector('b');
-                        if (b?.textContent === 'Empirical Formula:') cell.replaceChildren(b, document.createTextNode(' ' + f));
-                    });
-                });
-            }, 0);
             return {
                 ok: true,
-                matches,
+                matches: full.matches || [],
                 remaining: Number(r.data.remaining_total ?? r.data.remaining ?? 0),
                 current_remaining: Number(r.data.current_remaining ?? 0)
             };
@@ -503,41 +477,31 @@
             lock.fetch_token_expires = Number(r.data.fetch_token_expires || 0);
             return true;
         },
-        fetchRefs: async (refIds, formulaOnly = false) => {
+        fetchRef: async (refId) => {
             const lock = G.matchXRD.lockInfo;
             if (!G.matchXRD.lockActive || !lock?.signature || !lock?.account_id) return null;
-            const ids = [...new Set((Array.isArray(refIds) ? refIds : [refIds]).map(v => String(v || '').trim()).filter(Boolean))];
-            if (!ids.length) return {};
             const now = Math.floor(Date.now() / 1000);
             if (!lock.fetch_token || !lock.fetch_token_expires || now >= (lock.fetch_token_expires - 5)) {
                 const ok = await G.matchXRD.refreshFetchToken();
                 if (!ok) return null;
             }
-            const payload = {
-                ref_ids: ids,
+            let r = await ajaxPost('instanano_xrd_fetch_refs', {
+                ref_ids: [refId],
                 lock_hash: lock.lock_hash,
                 fetch_token: lock.fetch_token,
                 account_id: lock.account_id
-            };
-            if (formulaOnly) payload.formula_only = '1';
-            let r = await ajaxPost('instanano_xrd_fetch_refs', {
-                ...payload
             });
             if (!r?.success && r?.data?.code === 'fetch_token_expired') {
                 const ok = await G.matchXRD.refreshFetchToken();
                 if (!ok) return null;
-                payload.fetch_token = lock.fetch_token;
                 r = await ajaxPost('instanano_xrd_fetch_refs', {
-                    ...payload
+                    ref_ids: [refId],
+                    lock_hash: lock.lock_hash,
+                    fetch_token: lock.fetch_token,
+                    account_id: lock.account_id
                 });
             }
-            return r?.success ? r.data : null;
-        },
-        fetchRef: async (refId) => {
-            const id = String(refId || '').trim();
-            if (!id) return null;
-            const data = await G.matchXRD.fetchRefs([id]);
-            return data ? data[id] : null;
+            return r?.success ? r.data[refId] : null;
         },
         isLocked: () => !G.matchXRD.lockActive
     };
