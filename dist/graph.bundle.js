@@ -1693,7 +1693,6 @@ window.GraphPlotter = window.GraphPlotter || {
     const FREE_PREVIEW_PEAKS = 3;
     const MAX_RANKED_REFS = 25;
     let selectedPeaks = [];
-    let lastRankedRefIds = [];
     let previewRef = null;
     let pendingImportedLock = null;
     let compositions = null;
@@ -1756,17 +1755,6 @@ window.GraphPlotter = window.GraphPlotter || {
             col: G.state.colEnabled || {},
             peaks: (Array.isArray(peaks) ? peaks : []).map(p => ({ x: p.x, intensity: p.intensity }))
         };
-    }
-    function applyFormulaMap(matches, formulaMap) {
-        if (!formulaMap || typeof formulaMap !== 'object') return;
-        for (const item of matches) {
-            const id = String(item?.refId || item?.row?.[0] || '');
-            if (!id) continue;
-            const formula = formulaMap[id];
-            if (typeof formula === 'string' && formula && Array.isArray(item.row) && item.row.length > 1) {
-                item.row[1] = formula;
-            }
-        }
     }
     function clearLockState() {
         G.matchXRD.lockActive = false;
@@ -1916,7 +1904,7 @@ window.GraphPlotter = window.GraphPlotter || {
                 account_id: Number(r.data.account_id || lock.account_id || 0),
                 fetch_token: r.data.fetch_token || "",
                 fetch_token_expires: Number(r.data.fetch_token_expires || 0),
-                formula_map: {},
+                formula_map: (r.data.formula_map && typeof r.data.formula_map === 'object') ? r.data.formula_map : {},
                 verified: true
             };
             G.matchXRD.render();
@@ -1924,7 +1912,6 @@ window.GraphPlotter = window.GraphPlotter || {
         },
         addPeak: (x, intensity) => {
             if (G.matchXRD.lockActive) return;
-            lastRankedRefIds = [];
             selectedPeaks.push({ x, intensity, normInt: 0 });
             normalizeIntensity(selectedPeaks);
             G.matchXRD.render();
@@ -2009,7 +1996,6 @@ window.GraphPlotter = window.GraphPlotter || {
         },
         clear: () => {
             pendingImportedLock = null;
-            lastRankedRefIds = [];
             selectedPeaks = [];
             previewRef = null;
             selectedRefs.clear();
@@ -2031,21 +2017,13 @@ window.GraphPlotter = window.GraphPlotter || {
         clearFilter: () => { elementFilter = { elements: [], mode: 'and', count: 0 }; },
         search: async () => {
             const peaks = G.matchXRD.lockActive ? G.matchXRD.lockedPeaks : selectedPeaks;
-            if (!peaks.length) {
-                lastRankedRefIds = [];
-                return { matches: [], cols: [] };
-            }
+            if (!peaks.length) return { matches: [], cols: [] };
             normalizeIntensity(peaks);
             setProgress(0);
             setStatusMessage('Searching and matching from ~1 million references...');
             if (!compositions) {
                 compositions = await fetchJsonWithCache(metaCache, `${XRD_BASE}meta/compositions.json`);
-                if (!compositions) {
-                    lastRankedRefIds = [];
-                    setProgress(0);
-                    setStatusMessage('Error loading.');
-                    return { matches: [], cols: [] };
-                }
+                if (!compositions) { setProgress(0); setStatusMessage('Error loading.'); return { matches: [], cols: [] }; }
             }
             setProgress(10);
             const candidates = new Map();
@@ -2079,11 +2057,7 @@ window.GraphPlotter = window.GraphPlotter || {
                 }
             }
             const sorted = [...candidates.entries()].sort((a, b) => b[1].length - a[1].length).slice(0, MAX_RANKED_REFS);
-            if (!sorted.length) {
-                lastRankedRefIds = [];
-                setProgress(0);
-                return { matches: [], cols: [] };
-            }
+            if (!sorted.length) { setProgress(0); return { matches: [], cols: [] }; }
             const chunks = {};
             const cids = [...new Set(sorted.map(([r]) => Math.floor(r / 1000)))];
             let chunkDone = 0;
@@ -2123,7 +2097,6 @@ window.GraphPlotter = window.GraphPlotter || {
                 final.push({ row: [d[0], d[1], score.toFixed(1)], refId: d[0], peaks: refPeaks, intensities: refInts, score });
             }
             final.sort((a, b) => b.score - a.score);
-            lastRankedRefIds = final.map(m => String(m.refId || '')).filter(Boolean);
             setProgress('done');
             const locked = !G.matchXRD.lockActive;
             if (locked) {
@@ -2140,7 +2113,21 @@ window.GraphPlotter = window.GraphPlotter || {
                     locked: true
                 };
             }
-            applyFormulaMap(final, G.matchXRD.lockInfo?.formula_map);
+            const lock = G.matchXRD.lockInfo;
+            if (lock) {
+                const map = (lock.formula_map && typeof lock.formula_map === 'object') ? lock.formula_map : {};
+                lock.formula_map = map;
+                const missing = final.map(m => String(m.refId || '')).filter(id => id && !map[id]).slice(0, MAX_RANKED_REFS);
+                if (missing.length && lock.signature && lock.lock_hash && lock.account_id) {
+                    const r = await ajaxPost('instanano_verify_lock', { lock_hash: lock.lock_hash, signature: lock.signature, lock_version: lock.lock_version, account_id: lock.account_id, ref_ids: missing });
+                    if (r?.success && r?.data?.valid) {
+                        lock.fetch_token = r.data.fetch_token || lock.fetch_token;
+                        lock.fetch_token_expires = Number(r.data.fetch_token_expires || lock.fetch_token_expires || 0);
+                        if (r.data.formula_map && typeof r.data.formula_map === 'object') Object.assign(map, r.data.formula_map);
+                    }
+                }
+                final.forEach(m => { const id = String(m.refId || ''); if (id && map[id] && Array.isArray(m.row) && m.row.length > 1) m.row[1] = map[id]; });
+            }
             return { matches: final, cols: ['Reference ID', 'Empirical Formula', 'Match Score (%)'], locked: false };
         },
         getSampleCount,
@@ -2148,7 +2135,7 @@ window.GraphPlotter = window.GraphPlotter || {
         unlock: async () => {
             if (!selectedPeaks.length) return { ok: false, message: 'No peaks selected.' };
             pendingImportedLock = null;
-            const refIds = lastRankedRefIds.slice(0, MAX_RANKED_REFS);
+            const refIds = Array.from(document.querySelectorAll('#xrd-matchedData .matchedrow[data-refid]')).map(n => String(n.dataset.refid || '').trim()).filter(Boolean).slice(0, MAX_RANKED_REFS);
             const r = await ajaxPost('instanano_use_credit', {
                 lock_payload: JSON.stringify(getLockPayload(selectedPeaks)),
                 ref_ids: refIds
@@ -2156,7 +2143,6 @@ window.GraphPlotter = window.GraphPlotter || {
             if (!r?.success || !r?.data?.signature || !r?.data?.lock_hash) return { ok: false, message: r?.data?.message || 'Failed.', remaining: r?.data?.remaining };
             const accountId = Number(r.data.account_id || 0);
             const lockHash = String(r.data.lock_hash || "");
-            const formulaMap = (r.data.formula_map && typeof r.data.formula_map === 'object') ? r.data.formula_map : {};
             G.matchXRD.lockActive = true;
             G.matchXRD.lockedPeaks = selectedPeaks.map(p => ({ x: p.x, intensity: p.intensity, normInt: p.normInt }));
             G.matchXRD.lockInfo = {
@@ -2166,7 +2152,7 @@ window.GraphPlotter = window.GraphPlotter || {
                 account_id: accountId,
                 fetch_token: r.data.fetch_token || "",
                 fetch_token_expires: Number(r.data.fetch_token_expires || 0),
-                formula_map: formulaMap,
+                formula_map: (r.data.formula_map && typeof r.data.formula_map === 'object') ? r.data.formula_map : {},
                 verified: true
             };
             const full = await G.matchXRD.search();
