@@ -463,15 +463,25 @@
             const full = await G.matchXRD.search();
             const matches = full.matches || [];
             const refs = [...new Set(matches.map(m => String(m?.refId || '').trim()).filter(Boolean))];
-            if (refs.length) {
-                const fetched = await G.matchXRD.fetchRefs(refs, true);
-                if (fetched) {
-                    matches.forEach(m => {
-                        const f = fetched[m.refId]?.formula;
-                        if (f) m.row[1] = f;
+            if (refs.length) setTimeout(async () => {
+                let fetched = null;
+                try { fetched = await G.matchXRD.fetchRefs(refs, true); } catch (_) { }
+                if (!fetched) return;
+                matches.forEach(m => {
+                    const f = fetched[m.refId]?.formula;
+                    if (f) m.row[1] = f;
+                });
+                const box = document.getElementById('xrd-matchedData');
+                if (!box) return;
+                box.querySelectorAll('.matchedrow[data-refid]').forEach(row => {
+                    const f = fetched[row.dataset.refid]?.formula;
+                    if (!f) return;
+                    row.querySelectorAll('div').forEach(cell => {
+                        const b = cell.querySelector('b');
+                        if (b?.textContent === 'Empirical Formula:') cell.replaceChildren(b, document.createTextNode(' ' + f));
                     });
-                }
-            }
+                });
+            }, 0);
             return {
                 ok: true,
                 matches,
