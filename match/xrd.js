@@ -239,30 +239,31 @@
             if (svg.empty() || !G.state.lastXScale) return;
             const tab = document.getElementById('icon5');
             const showUserPeaks = !tab || !!tab.checked;
+            svg.selectAll('.xrd-user-peak').remove();
             svg.selectAll('.xrd-ref-peak,.xrd-ref-preview-peak').remove();
+            if (showUserPeaks) {
+                const peaks = G.matchXRD.lockActive ? G.matchXRD.lockedPeaks : selectedPeaks;
+                const xMin = G.config.DIM.ML, xMax = G.config.DIM.W - G.config.DIM.MR;
+                peaks.forEach((p, i) => {
+                    const xp = G.state.lastXScale(p.x);
+                    if (xp < xMin || xp > xMax) return;
+                    const line = svg.append('line').attr('class', 'xrd-user-peak')
+                        .attr('x1', xp).attr('x2', xp)
+                        .attr('y1', G.config.DIM.H - G.config.DIM.MB)
+                        .attr('y2', G.config.DIM.H - G.config.DIM.MB - 7)
+                        .attr('stroke', 'red').attr('stroke-width', 3);
+                    if (!G.matchXRD.lockActive) {
+                        line.style('cursor', 'pointer').on('click', (e) => { e.stopPropagation(); selectedPeaks.splice(i, 1); normalizeIntensity(selectedPeaks); G.matchXRD.render(); });
+                    } else {
+                        line.style('cursor', 'default');
+                    }
+                });
+            }
             selectedRefs.forEach(ref => drawRefPeaks(svg, ref.peaks, ref.intensities, 'xrd-ref-peak', ref.color));
             if (showUserPeaks && previewRef?.peaks?.length && !selectedRefs.has(previewRef.refId)) {
                 drawRefPeaks(svg, previewRef.peaks, previewRef.intensities, 'xrd-ref-preview-peak', '#1f77b4', '4,2', 1);
             }
             renderRefLegends(svg);
-            svg.selectAll('.xrd-user-peak').remove();
-            if (!showUserPeaks) return;
-            const peaks = G.matchXRD.lockActive ? G.matchXRD.lockedPeaks : selectedPeaks;
-            const xMin = G.config.DIM.ML, xMax = G.config.DIM.W - G.config.DIM.MR;
-            peaks.forEach((p, i) => {
-                const xp = G.state.lastXScale(p.x);
-                if (xp < xMin || xp > xMax) return;
-                const line = svg.append('line').attr('class', 'xrd-user-peak')
-                    .attr('x1', xp).attr('x2', xp)
-                    .attr('y1', G.config.DIM.H - G.config.DIM.MB)
-                    .attr('y2', G.config.DIM.H - G.config.DIM.MB - 7)
-                    .attr('stroke', 'red').attr('stroke-width', 3);
-                if (!G.matchXRD.lockActive) {
-                    line.style('cursor', 'pointer').on('click', (e) => { e.stopPropagation(); selectedPeaks.splice(i, 1); normalizeIntensity(selectedPeaks); G.matchXRD.render(); });
-                } else {
-                    line.style('cursor', 'default');
-                }
-            });
         },
         showRef: (peaks, ints, refId = '') => {
             previewRef = {
