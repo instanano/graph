@@ -1,6 +1,6 @@
 (function (G) {
     "use strict";
-    const XRD_BASE = 'https://cdn.jsdelivr.net/gh/instanano/graph_static@latest/match/xrd/';
+    const XRD_BASE = 'https://cdn.jsdelivr.net/gh/instanano/graph_static@v1.0.2/match/xrd/';
     const BIN_WIDTH = 0.5;
     const LOCK_VERSION = 1;
     const PRECISION = 100;
@@ -450,7 +450,6 @@
             return { matches: final, cols: ['Reference ID', 'Empirical Formula', 'Match Score (%)'], locked: false };
         },
         getSampleCount,
-        checkCredit: async () => { const r = await ajaxPost('instanano_check_credit'); return r?.success ? r.data : null; },
         unlock: async () => {
             if (!selectedPeaks.length) return { ok: false, message: 'No peaks selected.' };
             pendingImportedLock = null;
