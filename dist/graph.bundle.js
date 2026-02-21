@@ -1365,6 +1365,7 @@ window.GraphPlotter = window.GraphPlotter || {
     "use strict";
     const XRD_MSG = "Please click any peak to add.";
     const STD_MSG = "Please click any peak.";
+    const PRICING_URL = 'https://instanano.com/xrd-data-match-pricing/';
     const $xrd = d3.select('#xrd-matchedData');
     const $std = d3.select('#standard-matchedData');
     const icon5 = document.getElementById('icon5');
@@ -1373,13 +1374,33 @@ window.GraphPlotter = window.GraphPlotter || {
     const ei = document.getElementById('xrd-elements');
     const unlockBtn = document.getElementById('xrd-unlock-btn');
     const unlockSection = document.getElementById('xrd-unlock-section');
+    const creditBar = document.getElementById('xrd-credit-bar');
+    const creditCount = document.getElementById('xrd-credit-count');
+    let currentCredits = 0;
 
-    function setUnlockVisible(show) {
+    function updateCreditDisplay(data) {
+        const total = Number(typeof data === 'object' && data ? (data.remaining_total ?? data.remaining ?? 0) : (data ?? 0));
+        const current = Number(typeof data === 'object' && data ? (data.current_remaining ?? total) : total);
+        currentCredits = Number.isFinite(total) ? Math.max(0, total) : 0;
+        if (creditBar) creditBar.style.display = '';
+        if (creditCount) {
+            const currentSafe = Number.isFinite(current) ? Math.max(0, current) : 0;
+            const other = Math.max(0, currentCredits - currentSafe);
+            if (currentCredits <= 0) {
+                creditCount.innerHTML = `0 (<a href="${PRICING_URL}" target="_blank" rel="noopener noreferrer">Click to buy credits</a>)`;
+            } else {
+                creditCount.textContent = other > 0 ? `${currentCredits} (Current: ${currentSafe}, Other: ${other})` : `${currentCredits}`;
+            }
+        }
+    }
+
+    function setUnlockVisible(show, n) {
         if (unlockSection) unlockSection.style.display = show ? '' : 'none';
         if (!unlockBtn) return;
         unlockBtn.style.display = show ? '' : 'none';
         if (!show) return;
-        unlockBtn.textContent = 'Unlock Full XRD Match';
+        const needed = n || G.matchXRD?.getSampleCount?.() || 1;
+        unlockBtn.textContent = `Unlock Full XRD Match (${needed} Credit${needed > 1 ? 's' : ''})`;
     }
 
     function setPanelMessage(panel, message) {
@@ -1388,6 +1409,15 @@ window.GraphPlotter = window.GraphPlotter || {
         const p = document.createElement("p");
         p.textContent = message;
         node.replaceChildren(p);
+    }
+
+    async function refreshCredits() {
+        if (typeof instananoCredits !== 'undefined' && G.matchXRD?.checkCredit) {
+            const cr = await G.matchXRD.checkCredit();
+            updateCreditDisplay(cr || 0);
+        } else {
+            updateCreditDisplay(0);
+        }
     }
 
     function renderMatches(panel, matches, cols, lockedMatches = []) {
@@ -1470,12 +1500,14 @@ window.GraphPlotter = window.GraphPlotter || {
         return { peaks, ints, fulldata };
     }
 
+    window.addEventListener('focus', refreshCredits);
     document.querySelectorAll('input[name="matchinstrument"]').forEach(inp => inp.addEventListener('change', () => setPanelMessage($std, STD_MSG)));
     ['icon1', 'icon2', 'icon3', 'icon4'].forEach(id => document.getElementById(id)?.addEventListener('change', () => { G.matchXRD?.render(); }));
     icon5?.addEventListener('change', async () => {
         if (!icon5.checked) return;
         await G.matchXRD?.verifyImportedLockIfNeeded?.();
         if (!G.matchXRD?.hasResultsOnPanel?.()) setPanelMessage($xrd, XRD_MSG);
+        refreshCredits();
         G.matchXRD?.render();
     });
     icon6?.addEventListener('change', () => { G.matchXRD?.render(); setPanelMessage($std, STD_MSG); });
@@ -1517,15 +1549,25 @@ window.GraphPlotter = window.GraphPlotter || {
         renderMatches($xrd, result.matches, result.cols, result.lockedMatches || []);
         if (!result.matches.length && !(result.lockedMatches || []).length) return;
         if (result.locked) {
-            setUnlockVisible(true);
+            setUnlockVisible(true, G.matchXRD.getSampleCount());
         }
     });
     unlockBtn?.addEventListener('click', async function () {
+        if (typeof instananoCredits === 'undefined') {
+            window.open(PRICING_URL, '_blank');
+            return;
+        }
         unlockBtn.style.pointerEvents = 'none';
         try {
+            await refreshCredits();
+            if (currentCredits <= 0) {
+                window.open(PRICING_URL, '_blank');
+                return;
+            }
             const result = await G.matchXRD.unlock();
             if (result.ok) {
                 setUnlockVisible(false);
+                updateCreditDisplay({ remaining_total: result.remaining, current_remaining: result.current_remaining });
                 renderMatches($xrd, result.matches, ['Reference ID', 'Empirical Formula', 'Match Score (%)']);
                 $xrd.node()?.querySelectorAll('input.xrd-ref-toggle:checked').forEach(cb => { cb.click(); cb.click(); });
             }
@@ -1879,31 +1921,30 @@ window.GraphPlotter = window.GraphPlotter || {
             if (svg.empty() || !G.state.lastXScale) return;
             const tab = document.getElementById('icon5');
             const showUserPeaks = !tab || !!tab.checked;
-            svg.selectAll('.xrd-user-peak').remove();
             svg.selectAll('.xrd-ref-peak,.xrd-ref-preview-peak').remove();
-            if (showUserPeaks) {
-                const peaks = G.matchXRD.lockActive ? G.matchXRD.lockedPeaks : selectedPeaks;
-                const xMin = G.config.DIM.ML, xMax = G.config.DIM.W - G.config.DIM.MR;
-                peaks.forEach((p, i) => {
-                    const xp = G.state.lastXScale(p.x);
-                    if (xp < xMin || xp > xMax) return;
-                    const line = svg.append('line').attr('class', 'xrd-user-peak')
-                        .attr('x1', xp).attr('x2', xp)
-                        .attr('y1', G.config.DIM.H - G.config.DIM.MB)
-                        .attr('y2', G.config.DIM.H - G.config.DIM.MB - 7)
-                        .attr('stroke', 'red').attr('stroke-width', 3);
-                    if (!G.matchXRD.lockActive) {
-                        line.style('cursor', 'pointer').on('click', (e) => { e.stopPropagation(); selectedPeaks.splice(i, 1); normalizeIntensity(selectedPeaks); G.matchXRD.render(); });
-                    } else {
-                        line.style('cursor', 'default');
-                    }
-                });
-            }
             selectedRefs.forEach(ref => drawRefPeaks(svg, ref.peaks, ref.intensities, 'xrd-ref-peak', ref.color));
             if (showUserPeaks && previewRef?.peaks?.length && !selectedRefs.has(previewRef.refId)) {
                 drawRefPeaks(svg, previewRef.peaks, previewRef.intensities, 'xrd-ref-preview-peak', '#1f77b4', '4,2', 1);
             }
             renderRefLegends(svg);
+            svg.selectAll('.xrd-user-peak').remove();
+            if (!showUserPeaks) return;
+            const peaks = G.matchXRD.lockActive ? G.matchXRD.lockedPeaks : selectedPeaks;
+            const xMin = G.config.DIM.ML, xMax = G.config.DIM.W - G.config.DIM.MR;
+            peaks.forEach((p, i) => {
+                const xp = G.state.lastXScale(p.x);
+                if (xp < xMin || xp > xMax) return;
+                const line = svg.append('line').attr('class', 'xrd-user-peak')
+                    .attr('x1', xp).attr('x2', xp)
+                    .attr('y1', G.config.DIM.H - G.config.DIM.MB)
+                    .attr('y2', G.config.DIM.H - G.config.DIM.MB - 7)
+                    .attr('stroke', 'red').attr('stroke-width', 3);
+                if (!G.matchXRD.lockActive) {
+                    line.style('cursor', 'pointer').on('click', (e) => { e.stopPropagation(); selectedPeaks.splice(i, 1); normalizeIntensity(selectedPeaks); G.matchXRD.render(); });
+                } else {
+                    line.style('cursor', 'default');
+                }
+            });
         },
         showRef: (peaks, ints, refId = '') => {
             previewRef = {
@@ -2090,6 +2131,7 @@ window.GraphPlotter = window.GraphPlotter || {
             return { matches: final, cols: ['Reference ID', 'Empirical Formula', 'Match Score (%)'], locked: false };
         },
         getSampleCount,
+        checkCredit: async () => { const r = await ajaxPost('instanano_check_credit'); return r?.success ? r.data : null; },
         unlock: async () => {
             if (!selectedPeaks.length) return { ok: false, message: 'No peaks selected.' };
             pendingImportedLock = null;
