@@ -1682,7 +1682,7 @@ window.GraphPlotter = window.GraphPlotter || {
 })(window.GraphPlotter);
 (function (G) {
     "use strict";
-    const XRD_BASE = 'https://cdn.jsdelivr.net/gh/instanano/graph_static@v1.0.0/match/xrd/';
+    const XRD_BASE = 'https://cdn.jsdelivr.net/gh/instanano/graph_static@v1.0.2/match/xrd/';
     const BIN_WIDTH = 0.5;
     const LOCK_VERSION = 1;
     const PRECISION = 100;
