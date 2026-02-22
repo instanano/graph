@@ -11,25 +11,6 @@
     const ei = document.getElementById('xrd-elements');
     const unlockBtn = document.getElementById('xrd-unlock-btn');
     const unlockSection = document.getElementById('xrd-unlock-section');
-    const creditBar = document.getElementById('xrd-credit-bar');
-    const creditCount = document.getElementById('xrd-credit-count');
-    let currentCredits = 0;
-
-    function updateCreditDisplay(data) {
-        const total = Number(typeof data === 'object' && data ? (data.remaining_total ?? data.remaining ?? 0) : (data ?? 0));
-        const current = Number(typeof data === 'object' && data ? (data.current_remaining ?? total) : total);
-        currentCredits = Number.isFinite(total) ? Math.max(0, total) : 0;
-        if (creditBar) creditBar.style.display = '';
-        if (creditCount) {
-            const currentSafe = Number.isFinite(current) ? Math.max(0, current) : 0;
-            const other = Math.max(0, currentCredits - currentSafe);
-            if (currentCredits <= 0) {
-                creditCount.innerHTML = `0 (<a href="${PRICING_URL}" target="_blank" rel="noopener noreferrer">Click to buy credits</a>)`;
-            } else {
-                creditCount.textContent = other > 0 ? `${currentCredits} (Current: ${currentSafe}, Other: ${other})` : `${currentCredits}`;
-            }
-        }
-    }
 
     function setUnlockVisible(show, n) {
         if (unlockSection) unlockSection.style.display = show ? '' : 'none';
@@ -46,15 +27,6 @@
         const p = document.createElement("p");
         p.textContent = message;
         node.replaceChildren(p);
-    }
-
-    async function refreshCredits() {
-        if (typeof instananoCredits !== 'undefined' && G.matchXRD?.checkCredit) {
-            const cr = await G.matchXRD.checkCredit();
-            updateCreditDisplay(cr || 0);
-        } else {
-            updateCreditDisplay(0);
-        }
     }
 
     function renderMatches(panel, matches, cols, lockedMatches = []) {
@@ -137,14 +109,12 @@
         return { peaks, ints, fulldata };
     }
 
-    window.addEventListener('focus', refreshCredits);
     document.querySelectorAll('input[name="matchinstrument"]').forEach(inp => inp.addEventListener('change', () => setPanelMessage($std, STD_MSG)));
     ['icon1', 'icon2', 'icon3', 'icon4'].forEach(id => document.getElementById(id)?.addEventListener('change', () => { G.matchXRD?.render(); }));
     icon5?.addEventListener('change', async () => {
         if (!icon5.checked) return;
         await G.matchXRD?.verifyImportedLockIfNeeded?.();
         if (!G.matchXRD?.hasResultsOnPanel?.()) setPanelMessage($xrd, XRD_MSG);
-        refreshCredits();
         G.matchXRD?.render();
     });
     icon6?.addEventListener('change', () => { G.matchXRD?.render(); setPanelMessage($std, STD_MSG); });
@@ -196,18 +166,17 @@
         }
         unlockBtn.style.pointerEvents = 'none';
         try {
-            await refreshCredits();
-            if (currentCredits <= 0) {
-                window.open(PRICING_URL, '_blank');
+            const result = await G.matchXRD.unlock();
+            if (!result.ok) {
+                if (result.message) alert(result.message);
+                if (result.code === 'no_account' || result.code === 'no_credits') {
+                    window.open(PRICING_URL, '_blank');
+                }
                 return;
             }
-            const result = await G.matchXRD.unlock();
-            if (result.ok) {
-                setUnlockVisible(false);
-                updateCreditDisplay({ remaining_total: result.remaining, current_remaining: result.current_remaining });
-                renderMatches($xrd, result.matches, ['Reference ID', 'Empirical Formula', 'Match Score (%)']);
-                $xrd.node()?.querySelectorAll('input.xrd-ref-toggle:checked').forEach(cb => { cb.click(); cb.click(); });
-            }
+            setUnlockVisible(false);
+            renderMatches($xrd, result.matches, ['Reference ID', 'Empirical Formula', 'Match Score (%)']);
+            $xrd.node()?.querySelectorAll('input.xrd-ref-toggle:checked').forEach(cb => { cb.click(); cb.click(); });
         } finally {
             unlockBtn.style.pointerEvents = '';
         }
