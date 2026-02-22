@@ -1374,25 +1374,6 @@ window.GraphPlotter = window.GraphPlotter || {
     const ei = document.getElementById('xrd-elements');
     const unlockBtn = document.getElementById('xrd-unlock-btn');
     const unlockSection = document.getElementById('xrd-unlock-section');
-    const creditBar = document.getElementById('xrd-credit-bar');
-    const creditCount = document.getElementById('xrd-credit-count');
-    let currentCredits = 0;
-
-    function updateCreditDisplay(data) {
-        const total = Number(typeof data === 'object' && data ? (data.remaining_total ?? data.remaining ?? 0) : (data ?? 0));
-        const current = Number(typeof data === 'object' && data ? (data.current_remaining ?? total) : total);
-        currentCredits = Number.isFinite(total) ? Math.max(0, total) : 0;
-        if (creditBar) creditBar.style.display = '';
-        if (creditCount) {
-            const currentSafe = Number.isFinite(current) ? Math.max(0, current) : 0;
-            const other = Math.max(0, currentCredits - currentSafe);
-            if (currentCredits <= 0) {
-                creditCount.innerHTML = `0 (<a href="${PRICING_URL}" target="_blank" rel="noopener noreferrer">Click to buy credits</a>)`;
-            } else {
-                creditCount.textContent = other > 0 ? `${currentCredits} (Current: ${currentSafe}, Other: ${other})` : `${currentCredits}`;
-            }
-        }
-    }
 
     function setUnlockVisible(show, n) {
         if (unlockSection) unlockSection.style.display = show ? '' : 'none';
@@ -1409,15 +1390,6 @@ window.GraphPlotter = window.GraphPlotter || {
         const p = document.createElement("p");
         p.textContent = message;
         node.replaceChildren(p);
-    }
-
-    async function refreshCredits() {
-        if (typeof instananoCredits !== 'undefined' && G.matchXRD?.checkCredit) {
-            const cr = await G.matchXRD.checkCredit();
-            updateCreditDisplay(cr || 0);
-        } else {
-            updateCreditDisplay(0);
-        }
     }
 
     function renderMatches(panel, matches, cols, lockedMatches = []) {
@@ -1500,14 +1472,12 @@ window.GraphPlotter = window.GraphPlotter || {
         return { peaks, ints, fulldata };
     }
 
-    window.addEventListener('focus', refreshCredits);
     document.querySelectorAll('input[name="matchinstrument"]').forEach(inp => inp.addEventListener('change', () => setPanelMessage($std, STD_MSG)));
     ['icon1', 'icon2', 'icon3', 'icon4'].forEach(id => document.getElementById(id)?.addEventListener('change', () => { G.matchXRD?.render(); }));
     icon5?.addEventListener('change', async () => {
         if (!icon5.checked) return;
         await G.matchXRD?.verifyImportedLockIfNeeded?.();
         if (!G.matchXRD?.hasResultsOnPanel?.()) setPanelMessage($xrd, XRD_MSG);
-        refreshCredits();
         G.matchXRD?.render();
     });
     icon6?.addEventListener('change', () => { G.matchXRD?.render(); setPanelMessage($std, STD_MSG); });
@@ -1559,18 +1529,17 @@ window.GraphPlotter = window.GraphPlotter || {
         }
         unlockBtn.style.pointerEvents = 'none';
         try {
-            await refreshCredits();
-            if (currentCredits <= 0) {
-                window.open(PRICING_URL, '_blank');
+            const result = await G.matchXRD.unlock();
+            if (!result.ok) {
+                if (result.message) alert(result.message);
+                if (result.code === 'no_account' || result.code === 'no_credits') {
+                    window.open(PRICING_URL, '_blank');
+                }
                 return;
             }
-            const result = await G.matchXRD.unlock();
-            if (result.ok) {
-                setUnlockVisible(false);
-                updateCreditDisplay({ remaining_total: result.remaining, current_remaining: result.current_remaining });
-                renderMatches($xrd, result.matches, ['Reference ID', 'Empirical Formula', 'Match Score (%)']);
-                $xrd.node()?.querySelectorAll('input.xrd-ref-toggle:checked').forEach(cb => { cb.click(); cb.click(); });
-            }
+            setUnlockVisible(false);
+            renderMatches($xrd, result.matches, ['Reference ID', 'Empirical Formula', 'Match Score (%)']);
+            $xrd.node()?.querySelectorAll('input.xrd-ref-toggle:checked').forEach(cb => { cb.click(); cb.click(); });
         } finally {
             unlockBtn.style.pointerEvents = '';
         }
@@ -1682,7 +1651,7 @@ window.GraphPlotter = window.GraphPlotter || {
 })(window.GraphPlotter);
 (function (G) {
     "use strict";
-    const XRD_BASE = 'https://cdn.jsdelivr.net/gh/instanano/graph_static@latest/match/xrd/';
+    const XRD_BASE = 'https://cdn.jsdelivr.net/gh/instanano/graph_static@v1.0.2/match/xrd/';
     const BIN_WIDTH = 0.5;
     const LOCK_VERSION = 1;
     const PRECISION = 100;
@@ -2131,7 +2100,6 @@ window.GraphPlotter = window.GraphPlotter || {
             return { matches: final, cols: ['Reference ID', 'Empirical Formula', 'Match Score (%)'], locked: false };
         },
         getSampleCount,
-        checkCredit: async () => { const r = await ajaxPost('instanano_check_credit'); return r?.success ? r.data : null; },
         unlock: async () => {
             if (!selectedPeaks.length) return { ok: false, message: 'No peaks selected.' };
             pendingImportedLock = null;
@@ -2140,7 +2108,7 @@ window.GraphPlotter = window.GraphPlotter || {
                 lock_payload: JSON.stringify(getLockPayload(selectedPeaks)),
                 ref_ids: refIds
             });
-            if (!r?.success || !r?.data?.signature || !r?.data?.lock_hash) return { ok: false, message: r?.data?.message || 'Failed.', remaining: r?.data?.remaining };
+            if (!r?.success || !r?.data?.signature || !r?.data?.lock_hash) return { ok: false, message: r?.data?.message || 'Failed.', code: r?.data?.code || '' };
             const accountId = Number(r.data.account_id || 0);
             const lockHash = String(r.data.lock_hash || "");
             G.matchXRD.lockActive = true;
@@ -2156,12 +2124,7 @@ window.GraphPlotter = window.GraphPlotter || {
                 verified: true
             };
             const full = await G.matchXRD.search();
-            return {
-                ok: true,
-                matches: full.matches || [],
-                remaining: Number(r.data.remaining_total ?? r.data.remaining ?? 0),
-                current_remaining: Number(r.data.current_remaining ?? 0)
-            };
+            return { ok: true, matches: full.matches || [] };
         },
         refreshFetchToken: async () => {
             const lock = G.matchXRD.lockInfo;
