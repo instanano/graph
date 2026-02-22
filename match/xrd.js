@@ -1,6 +1,6 @@
 (function (G) {
     "use strict";
-    const XRD_BASE = 'https://cdn.jsdelivr.net/gh/instanano/graph_static@latest/match/xrd/';
+    const XRD_BASE = 'https://cdn.jsdelivr.net/gh/instanano/graph_static@v1.0.2/match/xrd/';
     const BIN_WIDTH = 0.5;
     const LOCK_VERSION = 1;
     const PRECISION = 100;
@@ -449,7 +449,6 @@
             return { matches: final, cols: ['Reference ID', 'Empirical Formula', 'Match Score (%)'], locked: false };
         },
         getSampleCount,
-        checkCredit: async () => { const r = await ajaxPost('instanano_check_credit'); return r?.success ? r.data : null; },
         unlock: async () => {
             if (!selectedPeaks.length) return { ok: false, message: 'No peaks selected.' };
             pendingImportedLock = null;
@@ -458,7 +457,7 @@
                 lock_payload: JSON.stringify(getLockPayload(selectedPeaks)),
                 ref_ids: refIds
             });
-            if (!r?.success || !r?.data?.signature || !r?.data?.lock_hash) return { ok: false, message: r?.data?.message || 'Failed.', remaining: r?.data?.remaining };
+            if (!r?.success || !r?.data?.signature || !r?.data?.lock_hash) return { ok: false, message: r?.data?.message || 'Failed.', code: r?.data?.code || '' };
             const accountId = Number(r.data.account_id || 0);
             const lockHash = String(r.data.lock_hash || "");
             G.matchXRD.lockActive = true;
@@ -474,12 +473,7 @@
                 verified: true
             };
             const full = await G.matchXRD.search();
-            return {
-                ok: true,
-                matches: full.matches || [],
-                remaining: Number(r.data.remaining_total ?? r.data.remaining ?? 0),
-                current_remaining: Number(r.data.current_remaining ?? 0)
-            };
+            return { ok: true, matches: full.matches || [] };
         },
         refreshFetchToken: async () => {
             const lock = G.matchXRD.lockInfo;
