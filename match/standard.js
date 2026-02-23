@@ -1,6 +1,6 @@
 (function (G) {
     "use strict";
-    const CDN_BASE = 'https://cdn.jsdelivr.net/gh/instanano/graph_static@latest/match/';
+    const CDN_BASE = 'https://cdn.jsdelivr.net/gh/instanano/graph-data@latest/ref/';
     const cache = {};
     const config = {
         ftirmatch: { buf: { range: 20, single: 50 }, cols: ['Peak Position', 'Group', 'Class', 'Intensity'] },
