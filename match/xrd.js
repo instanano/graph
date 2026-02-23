@@ -1,6 +1,6 @@
 (function (G) {
     "use strict";
-    const XRD_BASE = 'https://cdn.jsdelivr.net/gh/instanano/graph_static@v1.0.3/match/xrd/';
+    const XRD_BASE = 'https://cdn.jsdelivr.net/gh/instanano/graph-data@latest/ref/xrd/';
     const BIN_WIDTH = 0.5;
     const LOCK_VERSION = 1;
     const PRECISION = 100;
@@ -340,7 +340,7 @@
             setProgress(0);
             setStatusMessage('Searching and matching from ~1 million references...');
             if (!compositions) {
-                compositions = await fetchJsonWithCache(metaCache, `${XRD_BASE}meta/compositions.json`);
+                compositions = await fetchJsonWithCache(metaCache, `${XRD_BASE}info/compositions.json`);
                 if (!compositions) { setProgress(0); setStatusMessage('Error loading.'); return { matches: [], cols: [] }; }
             }
             setProgress(10);
@@ -350,7 +350,7 @@
             const binArr = [...binSet];
             let binDone = 0;
             const fetches = await mapLimit(binArr, FETCH_CONCURRENCY, async b => {
-                const data = await fetchJsonWithCache(indexCache, `${XRD_BASE}index/${b}.json`);
+                const data = await fetchJsonWithCache(indexCache, `${XRD_BASE}search/${b}.json`);
                 binDone++;
                 setProgress(10 + (binDone / Math.max(1, binArr.length)) * 40);
                 return data;
@@ -380,7 +380,7 @@
             const cids = [...new Set(sorted.map(([r]) => Math.floor(r / 1000)))];
             let chunkDone = 0;
             await mapLimit(cids, FETCH_CONCURRENCY, async c => {
-                chunks[c] = await fetchJsonWithCache(chunkCache, `${XRD_BASE}data/${c}.json`);
+                chunks[c] = await fetchJsonWithCache(chunkCache, `${XRD_BASE}records/${c}.json`);
                 chunkDone++;
                 setProgress(50 + (chunkDone / Math.max(1, cids.length)) * 40);
             });
