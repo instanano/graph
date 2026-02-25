@@ -1374,14 +1374,22 @@ window.GraphPlotter = window.GraphPlotter || {
     const ei = document.getElementById('xrd-elements');
     const unlockBtn = document.getElementById('xrd-unlock-btn');
     const unlockSection = document.getElementById('xrd-unlock-section');
+    const plansSection = document.getElementById('xrd-credit-plans');
 
     function setUnlockVisible(show, n) {
         if (unlockSection) unlockSection.style.display = show ? '' : 'none';
+        if (!show && plansSection) plansSection.style.display = 'none';
         if (!unlockBtn) return;
         unlockBtn.style.display = show ? '' : 'none';
         if (!show) return;
         const needed = n || G.matchXRD?.getSampleCount?.() || 1;
         unlockBtn.textContent = `Unlock Full XRD Match (${needed} Credit${needed > 1 ? 's' : ''})`;
+    }
+    function showPlansInline() {
+        if (!plansSection) return false;
+        plansSection.style.display = '';
+        plansSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return true;
     }
 
     function setPanelMessage(panel, message) {
@@ -1524,7 +1532,7 @@ window.GraphPlotter = window.GraphPlotter || {
     });
     unlockBtn?.addEventListener('click', async function () {
         if (typeof instananoCredits === 'undefined') {
-            window.open(PRICING_URL, '_blank');
+            if (!showPlansInline()) window.open(PRICING_URL, '_blank');
             return;
         }
         unlockBtn.style.pointerEvents = 'none';
@@ -1533,7 +1541,7 @@ window.GraphPlotter = window.GraphPlotter || {
             if (!result.ok) {
                 if (result.message) alert(result.message);
                 if (result.code === 'no_account' || result.code === 'no_credits') {
-                    window.open(PRICING_URL, '_blank');
+                    if (!showPlansInline()) window.open(PRICING_URL, '_blank');
                 }
                 return;
             }
