@@ -1365,7 +1365,6 @@ window.GraphPlotter = window.GraphPlotter || {
     "use strict";
     const XRD_MSG = "Please click any peak to add.";
     const STD_MSG = "Please click any peak.";
-    const PRICING_URL = 'https://instanano.com/xrd-data-match-pricing/';
     const $xrd = d3.select('#xrd-matchedData');
     const $std = d3.select('#standard-matchedData');
     const icon5 = document.getElementById('icon5');
@@ -1532,7 +1531,7 @@ window.GraphPlotter = window.GraphPlotter || {
     });
     unlockBtn?.addEventListener('click', async function () {
         if (typeof instananoCredits === 'undefined') {
-            if (!showPlansInline()) window.open(PRICING_URL, '_blank');
+            showPlansInline();
             return;
         }
         unlockBtn.style.pointerEvents = 'none';
@@ -1541,7 +1540,7 @@ window.GraphPlotter = window.GraphPlotter || {
             if (!result.ok) {
                 if (result.message) alert(result.message);
                 if (result.code === 'no_account' || result.code === 'no_credits') {
-                    if (!showPlansInline()) window.open(PRICING_URL, '_blank');
+                    showPlansInline();
                 }
                 return;
             }
