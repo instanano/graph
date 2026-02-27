@@ -1543,10 +1543,11 @@ window.GraphPlotter = window.GraphPlotter || {
         try {
             const result = await G.matchXRD.unlock();
             if (!result.ok) {
-                if (result.message) alert(result.message);
-                if (result.code === 'no_account' || result.code === 'no_credits') {
-                    showPlansInline();
+                if (result.code === 'email_not_verified') {
+                    alert('Please verify your email to use shared pool credits.');
+                    return;
                 }
+                showPlansInline();
                 return;
             }
             setUnlockVisible(false);
