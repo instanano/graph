@@ -3,6 +3,7 @@
     G.ui.refs.colorCtrl = d3.select("#addedtextcolor");
     G.ui.refs.sizeCtrl = d3.select("#addedtextsize");
     G.ui.refs.addTextBtn = d3.select("#addtext");
+    G.ui.refs.addTextVBtn = d3.select("#addtextv");
     G.ui.refs.rmBtn = d3.select("#removebtn");
     G.ui.refs.fontCtrl = d3.select("#fontfamily");
     G.ui.refs.boldBtn = d3.select("#boldBtn");
@@ -62,6 +63,7 @@
     document.addEventListener('mouseup',setActiveButtons);
     document.addEventListener('keyup',setActiveButtons);
     G.ui.refs.rmBtn.on("click", () => { if (G.state.activeGroup) { G.state.activeGroup.style("display", "none"); G.state.activeGroup = null;}
-        else if (G.state.activeFo) { const parentG = G.state.activeFo.node().parentNode; if (parentG.classList.contains("legend-group")) { d3.select(parentG).style("display", "none"); } else { d3.select(G.state.activeFo.node()).style("display", "none");}} 
+        else if (G.state.activeFo) { const parentG = G.state.activeFo.node().parentNode; if (parentG.classList.contains("xrd-ref-legend")) { const refId = parentG.dataset.refid || ""; G.matchXRD?.removeReference?.(refId); d3.select(parentG).remove(); }
+        else if (parentG.classList.contains("legend-group")) { d3.select(parentG).style("display", "none"); } else { d3.select(G.state.activeFo.node()).style("display", "none");}} 
         G.state.activeFo = G.state.activeDiv = null; G.ui.refs.rmBtn.classed("disabled", true);}); 
 })(window.GraphPlotter);
