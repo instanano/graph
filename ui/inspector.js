@@ -3,6 +3,7 @@
     G.ui.refs.colorCtrl = d3.select("#addedtextcolor");
     G.ui.refs.sizeCtrl = d3.select("#addedtextsize");
     G.ui.refs.addTextBtn = d3.select("#addtext");
+    G.ui.refs.addTextVBtn = d3.select("#addtextv");
     G.ui.refs.rmBtn = d3.select("#removebtn");
     G.ui.refs.fontCtrl = d3.select("#fontfamily");
     G.ui.refs.boldBtn = d3.select("#boldBtn");
