@@ -252,7 +252,7 @@
             peaks.forEach((p, i) => {
                 const xp = G.state.lastXScale(p.x);
                 if (xp < xMin || xp > xMax) return;
-                const line = svg.append('line').attr('class', 'xrd-user-peak')
+                const line = svg.insert('line', '.xrd-ref-peak,.xrd-ref-preview-peak').attr('class', 'xrd-user-peak')
                     .attr('x1', xp).attr('x2', xp)
                     .attr('y1', G.config.DIM.H - G.config.DIM.MB)
                     .attr('y2', G.config.DIM.H - G.config.DIM.MB - 7)
