@@ -705,6 +705,7 @@ window.GraphPlotter = window.GraphPlotter || {
     G.ui.refs.colorCtrl = d3.select("#addedtextcolor");
     G.ui.refs.sizeCtrl = d3.select("#addedtextsize");
     G.ui.refs.addTextBtn = d3.select("#addtext");
+    G.ui.refs.addTextVBtn = d3.select("#addtextv");
     G.ui.refs.rmBtn = d3.select("#removebtn");
     G.ui.refs.fontCtrl = d3.select("#fontfamily");
     G.ui.refs.boldBtn = d3.select("#boldBtn");
@@ -969,10 +970,14 @@ window.GraphPlotter = window.GraphPlotter || {
             } makeShapeInteractive(g); setTimeout(() => G.features.activateShape(g), 0); G.state.tempShape=null;
             } d3.selectAll('input[name="shape"]').property('checked', false);G.state.shapeMode = "none"; });
     }
-    G.ui.refs.addTextBtn.on("click",function(){ G.ui.disableAreaCal();
+    function addUserText(rotation){
+        G.ui.disableAreaCal();
         const svg=d3.select("#chart svg");if(svg.empty())return;
-        const {fo,div} = G.utils.editableText(svg,{x:G.config.DIM.W/2-G.config.DIM.MT,y:G.config.DIM.H/2-G.config.DIM.MR,text:"Text",rotation:0});
-        fo.classed("user-text",1).call(G.utils.applyDrag); G.utils.clearActive(); G.features.activateText(div, fo);});
+        const {fo,div} = G.utils.editableText(svg,{x:G.config.DIM.W/2-G.config.DIM.MT,y:G.config.DIM.H/2-G.config.DIM.MR,text:"Text",rotation});
+        fo.classed("user-text",1).call(G.utils.applyDrag); G.utils.clearActive(); G.features.activateText(div, fo);
+    }
+    G.ui.refs.addTextBtn.on("click",function(){ addUserText(0); });
+    G.ui.refs.addTextVBtn.on("click",function(){ addUserText(-90); });
     d3.selectAll('input[name="shape"]').on("change", function(){ G.ui.disableAreaCal(); G.state.shapeMode = this.value; G.utils.clearActive();});
     G.features.makeShapeInteractive = makeShapeInteractive; 
 })(window.GraphPlotter);
