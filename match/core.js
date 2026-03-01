@@ -35,18 +35,6 @@
         p.textContent = message;
         node.replaceChildren(p);
     }
-    function renderSavedXRD() {
-        const saved = G.matchXRD?.getSavedMatches?.() || [];
-        if (!saved.length) return false;
-        renderMatches($xrd, saved, ['Reference ID', 'Empirical Formula', 'Match Score (%)']);
-        return true;
-    }
-    async function hydrateCheckedXRDRefs() {
-        const box = $xrd.node();
-        if (!box) return;
-        const rows = Array.from(box.querySelectorAll('.matchedrow[data-refid]')).filter(row => row.querySelector('input.xrd-ref-toggle')?.checked);
-        for (const row of rows) await resolveRowData(row);
-    }
 
     function renderMatches(panel, matches, cols, lockedMatches = []) {
         const node = panel?.node();
@@ -68,6 +56,7 @@
             if (tag) rowDiv.dataset.tag = tag;
             if (item.refId) rowDiv.dataset.refid = item.refId;
             if (tag !== 'locked') {
+                rowDiv.dataset.row = JSON.stringify(Array.isArray(row) ? row : []);
                 const fd = item.fullData?.data;
                 const peaks = fd?.Peaks ? fd.Peaks.map(p => p.T) : item.peaks;
                 const ints = fd?.Peaks ? fd.Peaks.map(p => p.I) : item.intensities;
@@ -106,7 +95,7 @@
         if (!raw) return fallback;
         try { return JSON.parse(raw); } catch (_) { return fallback; }
     }
-    async function resolveRowData(row, syncSelected = true) {
+    async function resolveRowData(row) {
         let peaks = parseJsonData(row.dataset.peaks, []);
         let ints = parseJsonData(row.dataset.ints, []);
         let fulldata = parseJsonData(row.dataset.fulldata, null);
@@ -124,20 +113,49 @@
             ints = fulldata.Peaks.map(p => p.I);
             row.dataset.peaks = JSON.stringify(peaks);
             row.dataset.ints = JSON.stringify(ints);
-            if (syncSelected && row.dataset.refid && G.matchXRD?.isReferenceSelected?.(row.dataset.refid)) {
-                G.matchXRD?.setReference?.(row.dataset.refid, peaks, ints, true);
-            }
         }
         return { peaks, ints, fulldata };
+    }
+    async function syncCheckedReferenceData() {
+        const node = $xrd.node();
+        if (!node) return;
+        const checked = Array.from(node.querySelectorAll('input.xrd-ref-toggle:checked'));
+        for (const ck of checked) {
+            const row = ck.closest('.matchedrow');
+            if (!row || row.dataset.tag === 'locked' || !row.dataset.refid) continue;
+            const { peaks, ints } = await resolveRowData(row);
+            if (!Array.isArray(peaks) || !peaks.length) continue;
+            const rowData = parseJsonData(row.dataset.row, null);
+            G.matchXRD?.setReference?.(row.dataset.refid, peaks, ints, true, rowData);
+        }
+    }
+    function restoreSavedReferenceRows(refs) {
+        const list = Array.isArray(refs) ? refs : [];
+        const matches = list.map(r => {
+            const refId = String(r?.refId || '').trim();
+            if (!refId) return null;
+            const peaks = Array.isArray(r.peaks) ? r.peaks.map(v => Number(v)).filter(Number.isFinite) : [];
+            if (!peaks.length) return null;
+            const intensitiesRaw = Array.isArray(r.intensities) ? r.intensities : [];
+            const intensities = peaks.map((_, i) => {
+                const n = Number(intensitiesRaw[i]);
+                return Number.isFinite(n) ? n : 0;
+            });
+            const row = Array.isArray(r.row) && r.row.length >= 3 ? r.row.slice(0, 3) : [refId, String(r?.label || ''), 'Saved'];
+            return { row, refId, peaks, intensities };
+        }).filter(Boolean);
+        if (!matches.length) { setPanelMessage($xrd, XRD_MSG); return; }
+        setUnlockVisible(false);
+        renderMatches($xrd, matches, ['Reference ID', 'Empirical Formula', 'Match Score (%)']);
     }
 
     document.querySelectorAll('input[name="matchinstrument"]').forEach(inp => inp.addEventListener('change', () => setPanelMessage($std, STD_MSG)));
     ['icon1', 'icon2', 'icon3', 'icon4'].forEach(id => document.getElementById(id)?.addEventListener('change', () => { G.matchXRD?.render(); }));
-    icon5?.addEventListener('change', () => {
+    icon5?.addEventListener('change', async () => {
         if (!icon5.checked) return;
-        if (!G.matchXRD?.hasResultsOnPanel?.() && !renderSavedXRD()) setPanelMessage($xrd, XRD_MSG);
+        await G.matchXRD?.verifyImportedLockIfNeeded?.();
+        if (!G.matchXRD?.hasResultsOnPanel?.()) setPanelMessage($xrd, XRD_MSG);
         G.matchXRD?.render();
-        G.matchXRD?.verifyImportedLockIfNeeded?.();
     });
     icon6?.addEventListener('change', () => { G.matchXRD?.render(); setPanelMessage($std, STD_MSG); });
     ['click', 'mousedown', 'pointerdown', 'focusin', 'input', 'keydown', 'keyup'].forEach(ev => fs?.addEventListener(ev, e => { e.stopPropagation(); setTimeout(() => G.matchXRD?.render(), 10); }));
@@ -200,7 +218,7 @@
             }
             setUnlockVisible(false);
             renderMatches($xrd, result.matches, ['Reference ID', 'Empirical Formula', 'Match Score (%)']);
-            await hydrateCheckedXRDRefs();
+            await syncCheckedReferenceData();
             if (G.state) G.state.nextSavePromptMessage = 'Change unlimited filters upto 30 days using saved project file.';
             requestAnimationFrame(() => document.getElementById('save')?.click());
         } finally {
@@ -217,9 +235,10 @@
         if (ck) {
             const row = ck.closest('.matchedrow');
             if (!row || row.dataset.tag === 'locked' || !row.dataset.refid) return;
-            const { peaks, ints } = await resolveRowData(row, false);
+            const { peaks, ints } = await resolveRowData(row);
             if (ck.checked && (!Array.isArray(peaks) || !peaks.length)) { ck.checked = false; return; }
-            G.matchXRD?.setReference?.(row.dataset.refid, peaks, ints, ck.checked);
+            const rowData = parseJsonData(row.dataset.row, null);
+            G.matchXRD?.setReference?.(row.dataset.refid, peaks, ints, ck.checked, rowData);
             return;
         }
         const t = e.target.closest('.matchedrow');
@@ -271,6 +290,9 @@
             t.appendChild(det);
         } catch (_) { }
     });
+    if (G.matchXRD) {
+        G.matchXRD.restoreSavedReferenceRows = restoreSavedReferenceRows;
+    }
     setUnlockVisible(false);
     setPanelMessage($xrd, XRD_MSG);
     setPanelMessage($std, STD_MSG);
