@@ -177,6 +177,7 @@
             if (!result.ok) {
                 if (result.code === 'email_not_verified') {
                     alert('Please verify your email to use shared pool credits.');
+                    showPlansInline();
                     return;
                 }
                 showPlansInline();
@@ -185,6 +186,8 @@
             setUnlockVisible(false);
             renderMatches($xrd, result.matches, ['Reference ID', 'Empirical Formula', 'Match Score (%)']);
             $xrd.node()?.querySelectorAll('input.xrd-ref-toggle:checked').forEach(cb => { cb.click(); cb.click(); });
+            if (G.state) G.state.nextSavePromptMessage = 'Change unlimited filters upto 30 days using project file.';
+            requestAnimationFrame(() => document.getElementById('save')?.click());
         } finally {
             unlockBtn.style.pointerEvents = '';
         }
