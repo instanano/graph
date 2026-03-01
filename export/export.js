@@ -124,7 +124,9 @@
             payload.xrd_signature = lock.signature || "";
             payload.xrd_peaks = lpeaks.map(p => ({ x: p.x, intensity: p.intensity }));
         }
-        const u=URL.createObjectURL(new Blob([JSON.stringify(payload)])), a=document.createElement('a'), name = await htmlPrompt( "Enter file name", `Project_${ts}`); if(!name) return; a.href=u; a.download=`${name}.instanano`; 
+        const promptMessage = G.state.nextSavePromptMessage || "Enter file name";
+        G.state.nextSavePromptMessage = null;
+        const u=URL.createObjectURL(new Blob([JSON.stringify(payload)])), a=document.createElement('a'), name = await htmlPrompt(promptMessage, `Project_${ts}`); if(!name) return; a.href=u; a.download=`${name}.instanano`; 
         document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(u);})
     G.importState = function(raw){ 
         const s = normalizeImportState(raw);
