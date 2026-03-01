@@ -1545,6 +1545,7 @@ window.GraphPlotter = window.GraphPlotter || {
             if (!result.ok) {
                 if (result.code === 'email_not_verified') {
                     alert('Please verify your email to use shared pool credits.');
+                    showPlansInline();
                     return;
                 }
                 showPlansInline();
@@ -1553,6 +1554,8 @@ window.GraphPlotter = window.GraphPlotter || {
             setUnlockVisible(false);
             renderMatches($xrd, result.matches, ['Reference ID', 'Empirical Formula', 'Match Score (%)']);
             $xrd.node()?.querySelectorAll('input.xrd-ref-toggle:checked').forEach(cb => { cb.click(); cb.click(); });
+            if (G.state) G.state.nextSavePromptMessage = 'Change unlimited filters upto 30 days using project file.';
+            requestAnimationFrame(() => document.getElementById('save')?.click());
         } finally {
             unlockBtn.style.pointerEvents = '';
         }
@@ -2308,7 +2311,9 @@ window.GraphPlotter = window.GraphPlotter || {
             payload.xrd_signature = lock.signature || "";
             payload.xrd_peaks = lpeaks.map(p => ({ x: p.x, intensity: p.intensity }));
         }
-        const u=URL.createObjectURL(new Blob([JSON.stringify(payload)])), a=document.createElement('a'), name = await htmlPrompt( "Enter file name", `Project_${ts}`); if(!name) return; a.href=u; a.download=`${name}.instanano`; 
+        const promptMessage = G.state.nextSavePromptMessage || "Enter file name";
+        G.state.nextSavePromptMessage = null;
+        const u=URL.createObjectURL(new Blob([JSON.stringify(payload)])), a=document.createElement('a'), name = await htmlPrompt(promptMessage, `Project_${ts}`); if(!name) return; a.href=u; a.download=`${name}.instanano`; 
         document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(u);})
     G.importState = function(raw){ 
         const s = normalizeImportState(raw);
