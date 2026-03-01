@@ -10,6 +10,8 @@
     const FREE_PREVIEW_REFS = 3;
     const FREE_PREVIEW_PEAKS = 3;
     const MAX_RANKED_REFS = 25;
+    const MAX_SAVED_REFS = 100;
+    const MAX_SAVED_PEAKS = 2000;
     let selectedPeaks = [];
     let previewRef = null;
     let pendingImportedLock = null;
@@ -20,6 +22,8 @@
     const indexCache = new Map();
     const chunkCache = new Map();
     const PERIODIC_TABLE = { 'H': 1, 'He': 2, 'Li': 3, 'Be': 4, 'B': 5, 'C': 6, 'N': 7, 'O': 8, 'F': 9, 'Ne': 10, 'Na': 11, 'Mg': 12, 'Al': 13, 'Si': 14, 'P': 15, 'S': 16, 'Cl': 17, 'Ar': 18, 'K': 19, 'Ca': 20, 'Sc': 21, 'Ti': 22, 'V': 23, 'Cr': 24, 'Mn': 25, 'Fe': 26, 'Co': 27, 'Ni': 28, 'Cu': 29, 'Zn': 30, 'Ga': 31, 'Ge': 32, 'As': 33, 'Se': 34, 'Br': 35, 'Kr': 36, 'Rb': 37, 'Sr': 38, 'Y': 39, 'Zr': 40, 'Nb': 41, 'Mo': 42, 'Tc': 43, 'Ru': 44, 'Rh': 45, 'Pd': 46, 'Ag': 47, 'Cd': 48, 'In': 49, 'Sn': 50, 'Sb': 51, 'Te': 52, 'I': 53, 'Xe': 54, 'Cs': 55, 'Ba': 56, 'La': 57, 'Ce': 58, 'Pr': 59, 'Nd': 60, 'Pm': 61, 'Sm': 62, 'Eu': 63, 'Gd': 64, 'Tb': 65, 'Dy': 66, 'Ho': 67, 'Er': 68, 'Tm': 69, 'Yb': 70, 'Lu': 71, 'Hf': 72, 'Ta': 73, 'W': 74, 'Re': 75, 'Os': 76, 'Ir': 77, 'Pt': 78, 'Au': 79, 'Hg': 80, 'Tl': 81, 'Pb': 82, 'Bi': 83, 'Po': 84, 'At': 85, 'Rn': 86, 'Fr': 87, 'Ra': 88, 'Ac': 89, 'Th': 90, 'Pa': 91, 'U': 92, 'Np': 93, 'Pu': 94, 'Am': 95, 'Cm': 96, 'Bk': 97, 'Cf': 98, 'Es': 99, 'Fm': 100, 'Md': 101, 'No': 102, 'Lr': 103, 'Rf': 104, 'Db': 105, 'Sg': 106, 'Bh': 107, 'Hs': 108, 'Mt': 109, 'Ds': 110, 'Rg': 111, 'Cn': 112, 'Nh': 113, 'Fl': 114, 'Mc': 115, 'Lv': 116, 'Ts': 117, 'Og': 118 };
+    const SYMBOL_BY_NUM = Object.fromEntries(Object.entries(PERIODIC_TABLE).map(([s, n]) => [n, s]));
+    const VALID_FILTER_MODES = new Set(['and', 'or', 'only']);
     const setProgress = (p) => { const b = document.getElementById('xrd-search-btn'); if (!b) return; if (p === 'done') b.classList.add('progress-done'); else { b.classList.contains('progress-done') && (b.classList.add('no-anim'), void b.offsetHeight); b.classList.remove('progress-done', 'no-anim'); b.style.setProperty('--progress', p + '%'); } };
     const setStatusMessage = (msg) => {
         const box = document.getElementById('xrd-matchedData');
@@ -61,6 +65,32 @@
         if (!vals.length) return peaks.forEach(p => p.normInt = 0);
         const anchor = vals[Math.min(2, vals.length - 1)] || vals[0];
         peaks.forEach(p => p.normInt = anchor > 0 ? Math.max(0, Math.min(100, (Number(p.intensity) || 0) / anchor * 100)) : 0);
+    };
+    const toFiniteArray = (arr, limit = MAX_SAVED_PEAKS) => {
+        const out = [];
+        if (!Array.isArray(arr)) return out;
+        for (let i = 0; i < arr.length && i < limit; i++) {
+            const n = Number(arr[i]);
+            if (Number.isFinite(n)) out.push(n);
+        }
+        return out;
+    };
+    const getFilterSymbols = () => elementFilter.elements.map(n => SYMBOL_BY_NUM[n]).filter(Boolean);
+    const syncFilterInputs = () => {
+        const ei = document.getElementById('xrd-elements');
+        const lm = document.getElementById('xrd-logic-mode');
+        const ec = document.getElementById('xrd-element-count');
+        if (ei) { ei.value = getFilterSymbols().join(', '); ei.style.outline = ''; ei.title = ''; }
+        if (lm) lm.value = VALID_FILTER_MODES.has(elementFilter.mode) ? elementFilter.mode : 'and';
+        if (ec) ec.value = String(Math.max(0, Number(elementFilter.count) || 0));
+    };
+    const sanitizeSavedRef = (raw) => {
+        const refId = String(raw?.refId || '').trim();
+        if (!refId || refId.length > 80) return null;
+        const peaks = toFiniteArray(raw?.peaks);
+        const intensities = toFiniteArray(raw?.intensities).slice(0, peaks.length);
+        if (!peaks.length) return null;
+        return { refId, peaks, intensities };
     };
     const getTolerance = (twoTheta) => Math.max(MIN_TOLERANCE, Math.min(TOLERANCE, 0.18 + ((Number(twoTheta) || 0) * 0.0065)));
     function getSampleCount() {
@@ -515,6 +545,41 @@
             }
             return r?.success ? r.data[refId] : null;
         },
+        getSessionSnapshot: () => {
+            const refs = Array.from(selectedRefs.values()).slice(0, MAX_SAVED_REFS).map(ref => ({
+                refId: ref.refId,
+                peaks: toFiniteArray(ref.peaks),
+                intensities: toFiniteArray(ref.intensities)
+            })).filter(ref => ref.refId && ref.peaks.length);
+            const filter = { elements: getFilterSymbols(), mode: VALID_FILTER_MODES.has(elementFilter.mode) ? elementFilter.mode : 'and', count: Math.max(0, Number(elementFilter.count) || 0) };
+            if (!refs.length && !filter.elements.length && !filter.count) return null;
+            return { filter, refs };
+        },
+        importSessionSnapshot: (snapshot) => {
+            selectedRefs.clear();
+            previewRef = null;
+            G.matchXRD.clearFilter();
+            const f = snapshot && typeof snapshot === 'object' ? snapshot.filter : null;
+            const refs = snapshot && typeof snapshot === 'object' ? snapshot.refs : null;
+            if (f && typeof f === 'object') {
+                const els = (Array.isArray(f.elements) ? f.elements : []).map(e => String(e || '').trim()).filter(e => PERIODIC_TABLE[e]);
+                G.matchXRD.setFilter(els, VALID_FILTER_MODES.has(f.mode) ? f.mode : 'and', Math.max(0, Math.min(118, Number(f.count) || 0)));
+            }
+            (Array.isArray(refs) ? refs : []).slice(0, MAX_SAVED_REFS).forEach(raw => {
+                const ref = sanitizeSavedRef(raw);
+                if (!ref) return;
+                selectedRefs.set(ref.refId, { refId: ref.refId, peaks: ref.peaks, intensities: ref.intensities, color: pickRefColor(), label: ref.refId });
+            });
+            syncFilterInputs();
+            G.matchXRD.render();
+            return selectedRefs.size;
+        },
+        getSavedMatches: () => Array.from(selectedRefs.values()).map(ref => ({
+            row: [ref.refId, (G.matchXRD.lockInfo?.formula_map?.[ref.refId] || '-'), 'Saved'],
+            refId: ref.refId,
+            peaks: ref.peaks,
+            intensities: ref.intensities
+        })),
         isLocked: () => !G.matchXRD.lockActive
     };
 })(window.GraphPlotter);
