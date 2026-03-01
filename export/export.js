@@ -47,6 +47,7 @@
             xrd_lock_hash: typeof raw.xrd_lock_hash === "string" ? raw.xrd_lock_hash : "",
             xrd_signature: typeof raw.xrd_signature === "string" ? raw.xrd_signature : "",
             xrd_peaks: Array.isArray(raw.xrd_peaks) ? raw.xrd_peaks : null,
+            xrd_session: raw.xrd_session && typeof raw.xrd_session === "object" ? raw.xrd_session : null,
             overrideX: raw.overrideX || null,
             overrideMultiY: raw.overrideMultiY && typeof raw.overrideMultiY === "object" ? raw.overrideMultiY : {},
             overrideXTicks: raw.overrideXTicks ?? null,
@@ -124,6 +125,8 @@
             payload.xrd_signature = lock.signature || "";
             payload.xrd_peaks = lpeaks.map(p => ({ x: p.x, intensity: p.intensity }));
         }
+        const xrdSession = G.matchXRD?.getSessionSnapshot?.();
+        if (xrdSession) payload.xrd_session = xrdSession;
         const promptMessage = G.state.nextSavePromptMessage || "Enter file name";
         G.state.nextSavePromptMessage = null;
         const u=URL.createObjectURL(new Blob([JSON.stringify(payload)])), a=document.createElement('a'), name = await htmlPrompt(promptMessage, `Project_${ts}`); if(!name) return; a.href=u; a.download=`${name}.instanano`; 
@@ -154,7 +157,10 @@
         });
         d3.select('#chart').html(s.html); d3.selectAll('.xrd-user-peak,.xrd-ref-peak,.xrd-ref-preview-peak,g.xrd-ref-legend').remove(); G.features.prepareShapeLayer(); d3.selectAll('.shape-group').each(function(){G.features.makeShapeInteractive(d3.select(this))});
         d3.selectAll('foreignObject.user-text,g.legend-group,g.axis-title').call(G.utils.applyDrag); G.axis.tickEditing(d3.select('#chart svg'));
+        const xrdPanel = document.getElementById('xrd-matchedData');
+        if (xrdPanel) xrdPanel.replaceChildren();
         if (G.matchXRD) {
+            G.matchXRD.clear?.();
             G.matchXRD.lockActive = false;
             G.matchXRD.lockedPeaks = [];
             G.matchXRD.lockInfo = null;
@@ -172,5 +178,7 @@
                 peaks
             });
         }
+        G.matchXRD?.importSessionSnapshot?.(s.xrd_session || null);
+        if (document.getElementById('icon5')?.checked) document.getElementById('icon5').dispatchEvent(new Event('change'));
     }
 })(window.GraphPlotter);
