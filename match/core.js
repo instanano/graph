@@ -119,14 +119,36 @@
     async function syncCheckedReferenceData() {
         const node = $xrd.node();
         if (!node) return;
-        const checked = Array.from(node.querySelectorAll('input.xrd-ref-toggle:checked'));
-        for (const ck of checked) {
-            const row = ck.closest('.matchedrow');
-            if (!row || row.dataset.tag === 'locked' || !row.dataset.refid) continue;
-            const { peaks, ints } = await resolveRowData(row);
-            if (!Array.isArray(peaks) || !peaks.length) continue;
-            const rowData = parseJsonData(row.dataset.row, null);
-            G.matchXRD?.setReference?.(row.dataset.refid, peaks, ints, true, rowData);
+        const allRows = Array.from(node.querySelectorAll('.matchedrow[data-refid]'));
+        const selected = G.matchXRD?.getSelectedReferences?.() || [];
+        for (const ref of selected) {
+            const refId = String(ref?.refId || '').trim();
+            if (!refId) continue;
+            const row = allRows.find(r => String(r.dataset.refid || '').trim() === refId && r.dataset.tag !== 'locked');
+            let peaks = [];
+            let ints = [];
+            let rowData = Array.isArray(ref?.row) ? ref.row : null;
+            if (row) {
+                const resolved = await resolveRowData(row);
+                peaks = resolved.peaks;
+                ints = resolved.ints;
+                rowData = parseJsonData(row.dataset.row, rowData);
+            } else {
+                try {
+                    const rd = await G.matchXRD.fetchRef(refId);
+                    if (rd?.data?.Peaks?.length) {
+                        peaks = rd.data.Peaks.map(p => p.T);
+                        ints = rd.data.Peaks.map(p => p.I);
+                    }
+                } catch (_) { }
+            }
+            if ((!Array.isArray(peaks) || !peaks.length) && Array.isArray(ref?.peaks) && ref.peaks.length) {
+                peaks = ref.peaks;
+                ints = Array.isArray(ref?.intensities) ? ref.intensities : [];
+            }
+            if (Array.isArray(peaks) && peaks.length) {
+                G.matchXRD?.setReference?.(refId, peaks, ints, true, rowData);
+            }
         }
     }
     function restoreSavedReferenceRows(refs) {
