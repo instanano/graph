@@ -1468,7 +1468,7 @@ window.GraphPlotter = window.GraphPlotter || {
         if (!raw) return fallback;
         try { return JSON.parse(raw); } catch (_) { return fallback; }
     }
-    async function resolveRowData(row) {
+    async function resolveRowData(row, syncSelected = true) {
         let peaks = parseJsonData(row.dataset.peaks, []);
         let ints = parseJsonData(row.dataset.ints, []);
         let fulldata = parseJsonData(row.dataset.fulldata, null);
@@ -1486,17 +1486,20 @@ window.GraphPlotter = window.GraphPlotter || {
             ints = fulldata.Peaks.map(p => p.I);
             row.dataset.peaks = JSON.stringify(peaks);
             row.dataset.ints = JSON.stringify(ints);
+            if (syncSelected && row.dataset.refid && G.matchXRD?.isReferenceSelected?.(row.dataset.refid)) {
+                G.matchXRD?.setReference?.(row.dataset.refid, peaks, ints, true);
+            }
         }
         return { peaks, ints, fulldata };
     }
 
     document.querySelectorAll('input[name="matchinstrument"]').forEach(inp => inp.addEventListener('change', () => setPanelMessage($std, STD_MSG)));
     ['icon1', 'icon2', 'icon3', 'icon4'].forEach(id => document.getElementById(id)?.addEventListener('change', () => { G.matchXRD?.render(); }));
-    icon5?.addEventListener('change', async () => {
+    icon5?.addEventListener('change', () => {
         if (!icon5.checked) return;
-        await G.matchXRD?.verifyImportedLockIfNeeded?.();
         if (!G.matchXRD?.hasResultsOnPanel?.() && !renderSavedXRD()) setPanelMessage($xrd, XRD_MSG);
         G.matchXRD?.render();
+        G.matchXRD?.verifyImportedLockIfNeeded?.();
     });
     icon6?.addEventListener('change', () => { G.matchXRD?.render(); setPanelMessage($std, STD_MSG); });
     ['click', 'mousedown', 'pointerdown', 'focusin', 'input', 'keydown', 'keyup'].forEach(ev => fs?.addEventListener(ev, e => { e.stopPropagation(); setTimeout(() => G.matchXRD?.render(), 10); }));
@@ -1576,7 +1579,7 @@ window.GraphPlotter = window.GraphPlotter || {
         if (ck) {
             const row = ck.closest('.matchedrow');
             if (!row || row.dataset.tag === 'locked' || !row.dataset.refid) return;
-            const { peaks, ints } = await resolveRowData(row);
+            const { peaks, ints } = await resolveRowData(row, false);
             if (ck.checked && (!Array.isArray(peaks) || !peaks.length)) { ck.checked = false; return; }
             G.matchXRD?.setReference?.(row.dataset.refid, peaks, ints, ck.checked);
             return;
