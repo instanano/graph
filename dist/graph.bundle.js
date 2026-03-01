@@ -1470,8 +1470,13 @@ window.GraphPlotter = window.GraphPlotter || {
         if (!fulldata && !G.matchXRD.isLocked() && row.dataset.refid) {
             try {
                 const rd = await G.matchXRD.fetchRef(row.dataset.refid);
-                if (rd?.data) {
-                    fulldata = rd.data;
+                if (rd) {
+                    const data = rd.data && typeof rd.data === 'object' ? rd.data : {};
+                    fulldata = { ...data };
+                    if (!fulldata.ChF && rd.formula) fulldata.ChF = rd.formula;
+                    if (!fulldata.CpN && rd.compound) fulldata.CpN = rd.compound;
+                    if (!fulldata.CmN && rd.common) fulldata.CmN = rd.common;
+                    if (!fulldata.MnN && rd.mineral) fulldata.MnN = rd.mineral;
                     row.dataset.fulldata = JSON.stringify(fulldata);
                 }
             } catch (_) { }
@@ -1658,9 +1663,14 @@ window.GraphPlotter = window.GraphPlotter || {
             det = document.createElement('div');
             det.className = 'xrd-ref-detail';
             det.style.cssText = 'font-size:11px;color:#444;margin-top:6px;border-top:1px solid #eee;padding-top:4px;max-height:200px;overflow-y:auto;line-height:1.5';
-            const esc = G.utils?.escapeHTML || (v => String(v == null ? "" : v));
-            const info = [];
             const d = fulldata;
+            const esc = G.utils?.escapeHTML || (v => String(v == null ? "" : v));
+            const titleInfo = [];
+            if (d.CpN) titleInfo.push(`<b>Compound Name:</b> ${esc(d.CpN)}`);
+            if (d.CmN) titleInfo.push(`<b>Common Name:</b> ${esc(d.CmN)}`);
+            if (d.MnN) titleInfo.push(`<b>Mineral Name:</b> ${esc(d.MnN)}`);
+            if (d.ChF) titleInfo.push(`<b>Chemical Formula:</b> ${esc(d.ChF)}`);
+            const info = [];
             if (d.CS) info.push(`<b>Crystal:</b> ${esc(d.CS)}`);
             if (d.SG) info.push(`<b>SG:</b> ${esc(d.SG)}`);
             if (d.A) info.push(`<b>a=</b>${esc(d.A)}`);
@@ -1670,7 +1680,9 @@ window.GraphPlotter = window.GraphPlotter || {
             if (d.Be) info.push(`<b>β=</b>${esc(d.Be)}°`);
             if (d.Ga) info.push(`<b>γ=</b>${esc(d.Ga)}°`);
             if (d.MW) info.push(`<b>MW:</b> ${esc(d.MW)}`);
-            let html = '<div style="word-break:break-word">' + info.join(' | ') + '</div>';
+            let html = '';
+            if (titleInfo.length) html += '<div style="word-break:break-word">' + titleInfo.join(' | ') + '</div>';
+            if (info.length) html += '<div style="word-break:break-word">' + info.join(' | ') + '</div>';
             if (d.Peaks?.length) {
                 html += '<table style="width:100%;border-collapse:collapse;margin-top:4px;font-size:10px;text-align:center"><tr style="background:#f5f5f5;font-weight:600"><td>2θ</td><td>d(Å)</td><td>I</td><td>hkl</td></tr>';
                 d.Peaks.forEach(p => { html += `<tr style="border-bottom:1px solid #f0f0f0"><td>${esc(p.T)}</td><td>${esc(p.D)}</td><td>${esc(p.I)}</td><td>(${esc(p.H)},${esc(p.K)},${esc(p.L)})</td></tr>`; });
