@@ -35,6 +35,12 @@
         p.textContent = message;
         node.replaceChildren(p);
     }
+    function renderSavedXRD() {
+        const saved = G.matchXRD?.getSavedMatches?.() || [];
+        if (!saved.length) return false;
+        renderMatches($xrd, saved, ['Reference ID', 'Empirical Formula', 'Match Score (%)']);
+        return true;
+    }
 
     function renderMatches(panel, matches, cols, lockedMatches = []) {
         const node = panel?.node();
@@ -121,7 +127,7 @@
     icon5?.addEventListener('change', async () => {
         if (!icon5.checked) return;
         await G.matchXRD?.verifyImportedLockIfNeeded?.();
-        if (!G.matchXRD?.hasResultsOnPanel?.()) setPanelMessage($xrd, XRD_MSG);
+        if (!G.matchXRD?.hasResultsOnPanel?.() && !renderSavedXRD()) setPanelMessage($xrd, XRD_MSG);
         G.matchXRD?.render();
     });
     icon6?.addEventListener('change', () => { G.matchXRD?.render(); setPanelMessage($std, STD_MSG); });
