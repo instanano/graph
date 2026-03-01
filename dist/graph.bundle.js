@@ -1403,18 +1403,6 @@ window.GraphPlotter = window.GraphPlotter || {
         p.textContent = message;
         node.replaceChildren(p);
     }
-    function renderSavedXRD() {
-        const saved = G.matchXRD?.getSavedMatches?.() || [];
-        if (!saved.length) return false;
-        renderMatches($xrd, saved, ['Reference ID', 'Empirical Formula', 'Match Score (%)']);
-        return true;
-    }
-    async function hydrateCheckedXRDRefs() {
-        const box = $xrd.node();
-        if (!box) return;
-        const rows = Array.from(box.querySelectorAll('.matchedrow[data-refid]')).filter(row => row.querySelector('input.xrd-ref-toggle')?.checked);
-        for (const row of rows) await resolveRowData(row);
-    }
 
     function renderMatches(panel, matches, cols, lockedMatches = []) {
         const node = panel?.node();
@@ -1436,6 +1424,7 @@ window.GraphPlotter = window.GraphPlotter || {
             if (tag) rowDiv.dataset.tag = tag;
             if (item.refId) rowDiv.dataset.refid = item.refId;
             if (tag !== 'locked') {
+                rowDiv.dataset.row = JSON.stringify(Array.isArray(row) ? row : []);
                 const fd = item.fullData?.data;
                 const peaks = fd?.Peaks ? fd.Peaks.map(p => p.T) : item.peaks;
                 const ints = fd?.Peaks ? fd.Peaks.map(p => p.I) : item.intensities;
@@ -1474,7 +1463,7 @@ window.GraphPlotter = window.GraphPlotter || {
         if (!raw) return fallback;
         try { return JSON.parse(raw); } catch (_) { return fallback; }
     }
-    async function resolveRowData(row, syncSelected = true) {
+    async function resolveRowData(row) {
         let peaks = parseJsonData(row.dataset.peaks, []);
         let ints = parseJsonData(row.dataset.ints, []);
         let fulldata = parseJsonData(row.dataset.fulldata, null);
@@ -1492,20 +1481,49 @@ window.GraphPlotter = window.GraphPlotter || {
             ints = fulldata.Peaks.map(p => p.I);
             row.dataset.peaks = JSON.stringify(peaks);
             row.dataset.ints = JSON.stringify(ints);
-            if (syncSelected && row.dataset.refid && G.matchXRD?.isReferenceSelected?.(row.dataset.refid)) {
-                G.matchXRD?.setReference?.(row.dataset.refid, peaks, ints, true);
-            }
         }
         return { peaks, ints, fulldata };
+    }
+    async function syncCheckedReferenceData() {
+        const node = $xrd.node();
+        if (!node) return;
+        const checked = Array.from(node.querySelectorAll('input.xrd-ref-toggle:checked'));
+        for (const ck of checked) {
+            const row = ck.closest('.matchedrow');
+            if (!row || row.dataset.tag === 'locked' || !row.dataset.refid) continue;
+            const { peaks, ints } = await resolveRowData(row);
+            if (!Array.isArray(peaks) || !peaks.length) continue;
+            const rowData = parseJsonData(row.dataset.row, null);
+            G.matchXRD?.setReference?.(row.dataset.refid, peaks, ints, true, rowData);
+        }
+    }
+    function restoreSavedReferenceRows(refs) {
+        const list = Array.isArray(refs) ? refs : [];
+        const matches = list.map(r => {
+            const refId = String(r?.refId || '').trim();
+            if (!refId) return null;
+            const peaks = Array.isArray(r.peaks) ? r.peaks.map(v => Number(v)).filter(Number.isFinite) : [];
+            if (!peaks.length) return null;
+            const intensitiesRaw = Array.isArray(r.intensities) ? r.intensities : [];
+            const intensities = peaks.map((_, i) => {
+                const n = Number(intensitiesRaw[i]);
+                return Number.isFinite(n) ? n : 0;
+            });
+            const row = Array.isArray(r.row) && r.row.length >= 3 ? r.row.slice(0, 3) : [refId, String(r?.label || ''), 'Saved'];
+            return { row, refId, peaks, intensities };
+        }).filter(Boolean);
+        if (!matches.length) { setPanelMessage($xrd, XRD_MSG); return; }
+        setUnlockVisible(false);
+        renderMatches($xrd, matches, ['Reference ID', 'Empirical Formula', 'Match Score (%)']);
     }
 
     document.querySelectorAll('input[name="matchinstrument"]').forEach(inp => inp.addEventListener('change', () => setPanelMessage($std, STD_MSG)));
     ['icon1', 'icon2', 'icon3', 'icon4'].forEach(id => document.getElementById(id)?.addEventListener('change', () => { G.matchXRD?.render(); }));
-    icon5?.addEventListener('change', () => {
+    icon5?.addEventListener('change', async () => {
         if (!icon5.checked) return;
-        if (!G.matchXRD?.hasResultsOnPanel?.() && !renderSavedXRD()) setPanelMessage($xrd, XRD_MSG);
+        await G.matchXRD?.verifyImportedLockIfNeeded?.();
+        if (!G.matchXRD?.hasResultsOnPanel?.()) setPanelMessage($xrd, XRD_MSG);
         G.matchXRD?.render();
-        G.matchXRD?.verifyImportedLockIfNeeded?.();
     });
     icon6?.addEventListener('change', () => { G.matchXRD?.render(); setPanelMessage($std, STD_MSG); });
     ['click', 'mousedown', 'pointerdown', 'focusin', 'input', 'keydown', 'keyup'].forEach(ev => fs?.addEventListener(ev, e => { e.stopPropagation(); setTimeout(() => G.matchXRD?.render(), 10); }));
@@ -1568,7 +1586,7 @@ window.GraphPlotter = window.GraphPlotter || {
             }
             setUnlockVisible(false);
             renderMatches($xrd, result.matches, ['Reference ID', 'Empirical Formula', 'Match Score (%)']);
-            await hydrateCheckedXRDRefs();
+            await syncCheckedReferenceData();
             if (G.state) G.state.nextSavePromptMessage = 'Change unlimited filters upto 30 days using saved project file.';
             requestAnimationFrame(() => document.getElementById('save')?.click());
         } finally {
@@ -1585,9 +1603,10 @@ window.GraphPlotter = window.GraphPlotter || {
         if (ck) {
             const row = ck.closest('.matchedrow');
             if (!row || row.dataset.tag === 'locked' || !row.dataset.refid) return;
-            const { peaks, ints } = await resolveRowData(row, false);
+            const { peaks, ints } = await resolveRowData(row);
             if (ck.checked && (!Array.isArray(peaks) || !peaks.length)) { ck.checked = false; return; }
-            G.matchXRD?.setReference?.(row.dataset.refid, peaks, ints, ck.checked);
+            const rowData = parseJsonData(row.dataset.row, null);
+            G.matchXRD?.setReference?.(row.dataset.refid, peaks, ints, ck.checked, rowData);
             return;
         }
         const t = e.target.closest('.matchedrow');
@@ -1639,6 +1658,9 @@ window.GraphPlotter = window.GraphPlotter || {
             t.appendChild(det);
         } catch (_) { }
     });
+    if (G.matchXRD) {
+        G.matchXRD.restoreSavedReferenceRows = restoreSavedReferenceRows;
+    }
     setUnlockVisible(false);
     setPanelMessage($xrd, XRD_MSG);
     setPanelMessage($std, STD_MSG);
@@ -1692,8 +1714,6 @@ window.GraphPlotter = window.GraphPlotter || {
     const FREE_PREVIEW_REFS = 3;
     const FREE_PREVIEW_PEAKS = 3;
     const MAX_RANKED_REFS = 25;
-    const MAX_SAVED_REFS = 100;
-    const MAX_SAVED_PEAKS = 2000;
     let selectedPeaks = [];
     let previewRef = null;
     let pendingImportedLock = null;
@@ -1704,8 +1724,6 @@ window.GraphPlotter = window.GraphPlotter || {
     const indexCache = new Map();
     const chunkCache = new Map();
     const PERIODIC_TABLE = { 'H': 1, 'He': 2, 'Li': 3, 'Be': 4, 'B': 5, 'C': 6, 'N': 7, 'O': 8, 'F': 9, 'Ne': 10, 'Na': 11, 'Mg': 12, 'Al': 13, 'Si': 14, 'P': 15, 'S': 16, 'Cl': 17, 'Ar': 18, 'K': 19, 'Ca': 20, 'Sc': 21, 'Ti': 22, 'V': 23, 'Cr': 24, 'Mn': 25, 'Fe': 26, 'Co': 27, 'Ni': 28, 'Cu': 29, 'Zn': 30, 'Ga': 31, 'Ge': 32, 'As': 33, 'Se': 34, 'Br': 35, 'Kr': 36, 'Rb': 37, 'Sr': 38, 'Y': 39, 'Zr': 40, 'Nb': 41, 'Mo': 42, 'Tc': 43, 'Ru': 44, 'Rh': 45, 'Pd': 46, 'Ag': 47, 'Cd': 48, 'In': 49, 'Sn': 50, 'Sb': 51, 'Te': 52, 'I': 53, 'Xe': 54, 'Cs': 55, 'Ba': 56, 'La': 57, 'Ce': 58, 'Pr': 59, 'Nd': 60, 'Pm': 61, 'Sm': 62, 'Eu': 63, 'Gd': 64, 'Tb': 65, 'Dy': 66, 'Ho': 67, 'Er': 68, 'Tm': 69, 'Yb': 70, 'Lu': 71, 'Hf': 72, 'Ta': 73, 'W': 74, 'Re': 75, 'Os': 76, 'Ir': 77, 'Pt': 78, 'Au': 79, 'Hg': 80, 'Tl': 81, 'Pb': 82, 'Bi': 83, 'Po': 84, 'At': 85, 'Rn': 86, 'Fr': 87, 'Ra': 88, 'Ac': 89, 'Th': 90, 'Pa': 91, 'U': 92, 'Np': 93, 'Pu': 94, 'Am': 95, 'Cm': 96, 'Bk': 97, 'Cf': 98, 'Es': 99, 'Fm': 100, 'Md': 101, 'No': 102, 'Lr': 103, 'Rf': 104, 'Db': 105, 'Sg': 106, 'Bh': 107, 'Hs': 108, 'Mt': 109, 'Ds': 110, 'Rg': 111, 'Cn': 112, 'Nh': 113, 'Fl': 114, 'Mc': 115, 'Lv': 116, 'Ts': 117, 'Og': 118 };
-    const SYMBOL_BY_NUM = Object.fromEntries(Object.entries(PERIODIC_TABLE).map(([s, n]) => [n, s]));
-    const VALID_FILTER_MODES = new Set(['and', 'or', 'only']);
     const setProgress = (p) => { const b = document.getElementById('xrd-search-btn'); if (!b) return; if (p === 'done') b.classList.add('progress-done'); else { b.classList.contains('progress-done') && (b.classList.add('no-anim'), void b.offsetHeight); b.classList.remove('progress-done', 'no-anim'); b.style.setProperty('--progress', p + '%'); } };
     const setStatusMessage = (msg) => {
         const box = document.getElementById('xrd-matchedData');
@@ -1748,31 +1766,15 @@ window.GraphPlotter = window.GraphPlotter || {
         const anchor = vals[Math.min(2, vals.length - 1)] || vals[0];
         peaks.forEach(p => p.normInt = anchor > 0 ? Math.max(0, Math.min(100, (Number(p.intensity) || 0) / anchor * 100)) : 0);
     };
-    const toFiniteArray = (arr, limit = MAX_SAVED_PEAKS) => {
-        const out = [];
-        if (!Array.isArray(arr)) return out;
-        for (let i = 0; i < arr.length && i < limit; i++) {
-            const n = Number(arr[i]);
-            if (Number.isFinite(n)) out.push(n);
-        }
-        return out;
+    const toNumberArray = (arr) => Array.isArray(arr) ? arr.map(v => Number(v)).filter(Number.isFinite) : [];
+    const toIntensityArray = (arr, len) => {
+        const out = Array.isArray(arr) ? arr.map(v => Number(v)).map(v => Number.isFinite(v) ? v : 0) : [];
+        if (out.length < len) return Array.from({ length: len }, (_, i) => Number(out[i] || 0));
+        return out.slice(0, len);
     };
-    const getFilterSymbols = () => elementFilter.elements.map(n => SYMBOL_BY_NUM[n]).filter(Boolean);
-    const syncFilterInputs = () => {
-        const ei = document.getElementById('xrd-elements');
-        const lm = document.getElementById('xrd-logic-mode');
-        const ec = document.getElementById('xrd-element-count');
-        if (ei) { ei.value = getFilterSymbols().join(', '); ei.style.outline = ''; ei.title = ''; }
-        if (lm) lm.value = VALID_FILTER_MODES.has(elementFilter.mode) ? elementFilter.mode : 'and';
-        if (ec) ec.value = String(Math.max(0, Number(elementFilter.count) || 0));
-    };
-    const sanitizeSavedRef = (raw) => {
-        const refId = String(raw?.refId || '').trim();
-        if (!refId || refId.length > 80) return null;
-        const peaks = toFiniteArray(raw?.peaks);
-        const intensities = toFiniteArray(raw?.intensities).slice(0, peaks.length);
-        if (!peaks.length) return null;
-        return { refId, peaks, intensities };
+    const normalizeRefRow = (row, refId, label) => {
+        if (Array.isArray(row) && row.length >= 3) return row.slice(0, 3).map(v => String(v ?? ''));
+        return [refId, String(label || ''), 'Saved'];
     };
     const getTolerance = (twoTheta) => Math.max(MIN_TOLERANCE, Math.min(TOLERANCE, 0.18 + ((Number(twoTheta) || 0) * 0.0065)));
     function getSampleCount() {
@@ -1984,27 +1986,32 @@ window.GraphPlotter = window.GraphPlotter || {
             };
             G.matchXRD.render();
         },
-        setReference: (refId, peaks, ints, checked = true) => {
+        setReference: (refId, peaks, ints, checked = true, row = null) => {
             const id = String(refId || '').trim();
             if (!id) return false;
             if (!checked) {
                 G.matchXRD.removeReference(id);
                 return false;
             }
+            const peakVals = toNumberArray(peaks);
+            if (!peakVals.length) return false;
+            const intVals = toIntensityArray(ints, peakVals.length);
             const curr = selectedRefs.get(id);
             if (curr) {
-                if (Array.isArray(peaks) && peaks.length) curr.peaks = peaks.slice();
-                if (Array.isArray(ints)) curr.intensities = ints.slice();
+                curr.peaks = peakVals;
+                curr.intensities = intVals;
+                if (row != null) curr.row = normalizeRefRow(row, id, curr.label || id);
                 syncRefCheckbox(id, true);
                 G.matchXRD.render();
                 return true;
             }
             selectedRefs.set(id, {
                 refId: id,
-                peaks: Array.isArray(peaks) ? peaks.slice() : [],
-                intensities: Array.isArray(ints) ? ints.slice() : [],
+                peaks: peakVals,
+                intensities: intVals,
                 color: pickRefColor(),
-                label: id
+                label: id,
+                row: normalizeRefRow(row, id, id)
             });
             syncRefCheckbox(id, true);
             G.matchXRD.render();
@@ -2018,6 +2025,34 @@ window.GraphPlotter = window.GraphPlotter || {
             syncRefCheckbox(id, false);
             G.matchXRD.render();
             return removed;
+        },
+        getSelectedReferences: () => Array.from(selectedRefs.values()).map(ref => ({
+            refId: ref.refId,
+            peaks: ref.peaks.slice(),
+            intensities: ref.intensities.slice(),
+            color: ref.color,
+            label: ref.label,
+            row: normalizeRefRow(ref.row, ref.refId, ref.label || ref.refId)
+        })),
+        replaceSelectedReferences: (refs) => {
+            selectedRefs.clear();
+            const list = Array.isArray(refs) ? refs : [];
+            for (const item of list) {
+                const id = String(item?.refId || '').trim();
+                if (!id) continue;
+                const peaks = toNumberArray(item.peaks);
+                if (!peaks.length) continue;
+                selectedRefs.set(id, {
+                    refId: id,
+                    peaks,
+                    intensities: toIntensityArray(item.intensities, peaks.length),
+                    color: /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(String(item.color || '')) ? String(item.color) : pickRefColor(),
+                    label: String(item.label || id),
+                    row: normalizeRefRow(item.row, id, String(item.label || id))
+                });
+            }
+            G.matchXRD.render();
+            return selectedRefs.size;
         },
         isReferenceSelected: (refId) => selectedRefs.has(String(refId || '').trim()),
         hasResultsOnPanel: () => {
@@ -2042,7 +2077,8 @@ window.GraphPlotter = window.GraphPlotter || {
         setFilter: (els, mode, count) => {
             const nums = [];
             for (const e of els) { const t = e.trim(); if (PERIODIC_TABLE[t]) nums.push(PERIODIC_TABLE[t]); }
-            elementFilter = { elements: nums, mode: mode || 'and', count: count || 0 };
+            const safeMode = (mode === 'or' || mode === 'only' || mode === 'and') ? mode : 'and';
+            elementFilter = { elements: nums, mode: safeMode, count: Math.max(0, parseInt(count, 10) || 0) };
         },
         clearFilter: () => { elementFilter = { elements: [], mode: 'and', count: 0 }; },
         search: async () => {
@@ -2227,41 +2263,6 @@ window.GraphPlotter = window.GraphPlotter || {
             }
             return r?.success ? r.data[refId] : null;
         },
-        getSessionSnapshot: () => {
-            const refs = Array.from(selectedRefs.values()).slice(0, MAX_SAVED_REFS).map(ref => ({
-                refId: ref.refId,
-                peaks: toFiniteArray(ref.peaks),
-                intensities: toFiniteArray(ref.intensities)
-            })).filter(ref => ref.refId && ref.peaks.length);
-            const filter = { elements: getFilterSymbols(), mode: VALID_FILTER_MODES.has(elementFilter.mode) ? elementFilter.mode : 'and', count: Math.max(0, Number(elementFilter.count) || 0) };
-            if (!refs.length && !filter.elements.length && !filter.count) return null;
-            return { filter, refs };
-        },
-        importSessionSnapshot: (snapshot) => {
-            selectedRefs.clear();
-            previewRef = null;
-            G.matchXRD.clearFilter();
-            const f = snapshot && typeof snapshot === 'object' ? snapshot.filter : null;
-            const refs = snapshot && typeof snapshot === 'object' ? snapshot.refs : null;
-            if (f && typeof f === 'object') {
-                const els = (Array.isArray(f.elements) ? f.elements : []).map(e => String(e || '').trim()).filter(e => PERIODIC_TABLE[e]);
-                G.matchXRD.setFilter(els, VALID_FILTER_MODES.has(f.mode) ? f.mode : 'and', Math.max(0, Math.min(118, Number(f.count) || 0)));
-            }
-            (Array.isArray(refs) ? refs : []).slice(0, MAX_SAVED_REFS).forEach(raw => {
-                const ref = sanitizeSavedRef(raw);
-                if (!ref) return;
-                selectedRefs.set(ref.refId, { refId: ref.refId, peaks: ref.peaks, intensities: ref.intensities, color: pickRefColor(), label: ref.refId });
-            });
-            syncFilterInputs();
-            G.matchXRD.render();
-            return selectedRefs.size;
-        },
-        getSavedMatches: () => Array.from(selectedRefs.values()).map(ref => ({
-            row: [ref.refId, (G.matchXRD.lockInfo?.formula_map?.[ref.refId] || '-'), 'Saved'],
-            refId: ref.refId,
-            peaks: ref.peaks,
-            intensities: ref.intensities
-        })),
         isLocked: () => !G.matchXRD.lockActive
     };
 })(window.GraphPlotter);
@@ -2314,7 +2315,8 @@ window.GraphPlotter = window.GraphPlotter || {
             xrd_lock_hash: typeof raw.xrd_lock_hash === "string" ? raw.xrd_lock_hash : "",
             xrd_signature: typeof raw.xrd_signature === "string" ? raw.xrd_signature : "",
             xrd_peaks: Array.isArray(raw.xrd_peaks) ? raw.xrd_peaks : null,
-            xrd_session: raw.xrd_session && typeof raw.xrd_session === "object" ? raw.xrd_session : null,
+            xrd_filter: raw.xrd_filter && typeof raw.xrd_filter === "object" ? raw.xrd_filter : null,
+            xrd_refs: Array.isArray(raw.xrd_refs) ? raw.xrd_refs : [],
             overrideX: raw.overrideX || null,
             overrideMultiY: raw.overrideMultiY && typeof raw.overrideMultiY === "object" ? raw.overrideMultiY : {},
             overrideXTicks: raw.overrideXTicks ?? null,
@@ -2392,8 +2394,13 @@ window.GraphPlotter = window.GraphPlotter || {
             payload.xrd_signature = lock.signature || "";
             payload.xrd_peaks = lpeaks.map(p => ({ x: p.x, intensity: p.intensity }));
         }
-        const xrdSession = G.matchXRD?.getSessionSnapshot?.();
-        if (xrdSession) payload.xrd_session = xrdSession;
+        const xrdRefs = G.matchXRD?.getSelectedReferences?.() || [];
+        if (xrdRefs.length) payload.xrd_refs = xrdRefs;
+        const xrdElements = document.getElementById('xrd-elements')?.value || '';
+        const xrdModeRaw = document.getElementById('xrd-logic-mode')?.value || 'and';
+        const xrdMode = ['and', 'or', 'only'].includes(xrdModeRaw) ? xrdModeRaw : 'and';
+        const xrdCount = Math.max(0, parseInt(document.getElementById('xrd-element-count')?.value, 10) || 0);
+        if (xrdElements || xrdMode !== 'and' || xrdCount) payload.xrd_filter = { elements: xrdElements, mode: xrdMode, count: xrdCount };
         const promptMessage = G.state.nextSavePromptMessage || "Enter file name";
         G.state.nextSavePromptMessage = null;
         const u=URL.createObjectURL(new Blob([JSON.stringify(payload)])), a=document.createElement('a'), name = await htmlPrompt(promptMessage, `Project_${ts}`); if(!name) return; a.href=u; a.download=`${name}.instanano`; 
@@ -2424,10 +2431,9 @@ window.GraphPlotter = window.GraphPlotter || {
         });
         d3.select('#chart').html(s.html); d3.selectAll('.xrd-user-peak,.xrd-ref-peak,.xrd-ref-preview-peak,g.xrd-ref-legend').remove(); G.features.prepareShapeLayer(); d3.selectAll('.shape-group').each(function(){G.features.makeShapeInteractive(d3.select(this))});
         d3.selectAll('foreignObject.user-text,g.legend-group,g.axis-title').call(G.utils.applyDrag); G.axis.tickEditing(d3.select('#chart svg'));
-        const xrdPanel = document.getElementById('xrd-matchedData');
-        if (xrdPanel) xrdPanel.replaceChildren();
         if (G.matchXRD) {
             G.matchXRD.clear?.();
+            G.matchXRD.clearFilter?.();
             G.matchXRD.lockActive = false;
             G.matchXRD.lockedPeaks = [];
             G.matchXRD.lockInfo = null;
@@ -2445,8 +2451,19 @@ window.GraphPlotter = window.GraphPlotter || {
                 peaks
             });
         }
-        G.matchXRD?.importSessionSnapshot?.(s.xrd_session || null);
-        if (document.getElementById('icon5')?.checked) document.getElementById('icon5').dispatchEvent(new Event('change'));
+        const xf = s.xrd_filter && typeof s.xrd_filter === 'object' ? s.xrd_filter : null;
+        const xrdMode = ['and', 'or', 'only'].includes(xf?.mode) ? xf.mode : 'and';
+        const xrdCount = Math.max(0, parseInt(xf?.count, 10) || 0);
+        const xrdElements = typeof xf?.elements === 'string' ? xf.elements : '';
+        const xrdElementsInput = document.getElementById('xrd-elements');
+        const xrdModeInput = document.getElementById('xrd-logic-mode');
+        const xrdCountInput = document.getElementById('xrd-element-count');
+        if (xrdElementsInput) xrdElementsInput.value = xrdElements;
+        if (xrdModeInput) xrdModeInput.value = xrdMode;
+        if (xrdCountInput) xrdCountInput.value = String(xrdCount);
+        G.matchXRD?.setFilter?.(xrdElements.split(',').filter(e => e.trim()), xrdMode, xrdCount);
+        G.matchXRD?.replaceSelectedReferences?.(s.xrd_refs || []);
+        G.matchXRD?.restoreSavedReferenceRows?.(s.xrd_refs || []);
     }
 })(window.GraphPlotter);
 (function(G) {
