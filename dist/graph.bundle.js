@@ -1409,6 +1409,12 @@ window.GraphPlotter = window.GraphPlotter || {
         renderMatches($xrd, saved, ['Reference ID', 'Empirical Formula', 'Match Score (%)']);
         return true;
     }
+    async function hydrateCheckedXRDRefs() {
+        const box = $xrd.node();
+        if (!box) return;
+        const rows = Array.from(box.querySelectorAll('.matchedrow[data-refid]')).filter(row => row.querySelector('input.xrd-ref-toggle')?.checked);
+        for (const row of rows) await resolveRowData(row);
+    }
 
     function renderMatches(panel, matches, cols, lockedMatches = []) {
         const node = panel?.node();
@@ -1562,7 +1568,7 @@ window.GraphPlotter = window.GraphPlotter || {
             }
             setUnlockVisible(false);
             renderMatches($xrd, result.matches, ['Reference ID', 'Empirical Formula', 'Match Score (%)']);
-            $xrd.node()?.querySelectorAll('input.xrd-ref-toggle:checked').forEach(cb => { cb.click(); cb.click(); });
+            await hydrateCheckedXRDRefs();
             if (G.state) G.state.nextSavePromptMessage = 'Change unlimited filters upto 30 days using saved project file.';
             requestAnimationFrame(() => document.getElementById('save')?.click());
         } finally {
