@@ -9,7 +9,6 @@
     const fs = document.getElementById('xrd-filter-section');
     const ei = document.getElementById('xrd-elements');
     const unlockBtn = document.getElementById('xrd-unlock-btn');
-    const rirBtn = document.getElementById('xrd-rir-btn');
     const unlockSection = document.getElementById('xrd-unlock-section');
     const plansSection = document.getElementById('xrd-credit-plans');
 
@@ -35,11 +34,6 @@
         const p = document.createElement("p");
         p.textContent = message;
         node.replaceChildren(p);
-    }
-    function refreshRirButtonState() {
-        if (!rirBtn) return;
-        const unlocked = !!(G.matchXRD && !G.matchXRD.isLocked?.());
-        rirBtn.style.display = unlocked ? '' : 'none';
     }
 
     function renderMatches(panel, matches, cols, lockedMatches = []) {
@@ -122,126 +116,6 @@
         }
         return { peaks, ints, fulldata };
     }
-    const getMatchTolerance = (twoTheta) => Math.max(0.25, Math.min(0.5, 0.18 + ((Number(twoTheta) || 0) * 0.0065)));
-    function getUnlockedSamplePeaks() {
-        return (Array.isArray(G.matchXRD?.lockedPeaks) ? G.matchXRD.lockedPeaks : [])
-            .map(p => ({ x: Number(p?.x), intensity: Number(p?.intensity) }))
-            .filter(p => Number.isFinite(p.x) && Number.isFinite(p.intensity) && p.intensity >= 0);
-    }
-    function getRIRValue(data) {
-        if (!data || typeof data !== 'object') return null;
-        const direct = [data.RIR, data.rir, data.Rir, data.Icor, data.ICOR, data.iCor, data.IIC, data.iic];
-        for (const v of direct) {
-            const n = Number(v);
-            if (Number.isFinite(n) && n > 0) return n;
-        }
-        for (const [k, v] of Object.entries(data)) {
-            if (!/rir|i\/?ic|icor|iic/i.test(String(k))) continue;
-            const n = Number(v);
-            if (Number.isFinite(n) && n > 0) return n;
-        }
-        return null;
-    }
-    function getTopMatchedRatios(samplePeaks, refPeaks) {
-        const refs = (Array.isArray(refPeaks) ? refPeaks : [])
-            .map(p => ({ x: Number(p?.T), intensity: Number(p?.I) }))
-            .filter(p => Number.isFinite(p.x) && Number.isFinite(p.intensity) && p.intensity > 0);
-        if (!refs.length || !samplePeaks.length) return [];
-        const maxRef = Math.max(...refs.map(p => p.intensity));
-        if (!(maxRef > 0)) return [];
-        const usedSample = new Set();
-        const matches = [];
-        for (const rp of refs) {
-            const refNorm = (rp.intensity / maxRef) * 100;
-            if (!(refNorm > 0)) continue;
-            let best = null;
-            let bestIdx = -1;
-            for (let i = 0; i < samplePeaks.length; i++) {
-                if (usedSample.has(i)) continue;
-                const sp = samplePeaks[i];
-                const diff = Math.abs(sp.x - rp.x);
-                const tol = getMatchTolerance((sp.x + rp.x) * 0.5);
-                if (diff > tol) continue;
-                const q = diff / tol;
-                if (!best || q < best.q) { best = { q, sampleInt: sp.intensity, refNorm }; bestIdx = i; }
-            }
-            if (best && bestIdx >= 0) {
-                usedSample.add(bestIdx);
-                matches.push(best);
-            }
-        }
-        matches.sort((a, b) => a.q - b.q);
-        return matches.slice(0, Math.min(3, matches.length));
-    }
-    async function getFullRefData(refId) {
-        const node = $xrd.node();
-        const rows = node ? Array.from(node.querySelectorAll('.matchedrow[data-refid]')) : [];
-        const row = rows.find(r => String(r.dataset.refid || '').trim() === refId && r.dataset.tag !== 'locked');
-        if (row) {
-            const cached = parseJsonData(row.dataset.fulldata, null);
-            if (cached?.Peaks?.length) return cached;
-            const resolved = await resolveRowData(row);
-            if (resolved.fulldata?.Peaks?.length) return resolved.fulldata;
-        }
-        try {
-            const rd = await G.matchXRD?.fetchRef?.(refId);
-            if (rd?.data?.Peaks?.length) return rd.data;
-        } catch (_) { }
-        return null;
-    }
-    function addRIRTextBox(lines) {
-        const svg = d3.select('#chart svg');
-        if (svg.empty()) return;
-        const bx = G.config.DIM.ML + 6;
-        const by = G.config.DIM.MT + 12;
-        const st = svg.selectAll('foreignObject.user-text').size();
-        lines.forEach((tx, i) => {
-            const obj = G.utils.editableText(svg, { x: bx, y: by + (st + i) * 16, text: tx, rotation: 0 });
-            obj.div.text(tx);
-            obj.fo.attr('width', obj.div.node().scrollWidth + obj.pad).attr('height', obj.div.node().scrollHeight + obj.pad);
-            obj.fo.classed('user-text', true).call(G.utils.applyDrag);
-        });
-    }
-    async function runRIRComposition() {
-        if (!G.matchXRD) return;
-        await G.matchXRD.verifyImportedLockIfNeeded?.();
-        refreshRirButtonState();
-        if (G.matchXRD.isLocked()) { alert('Unlock full XRD match first.'); return; }
-        const refs = G.matchXRD.getSelectedReferences?.() || [];
-        if (!refs.length) { alert('Please select at least one reference checkbox.'); return; }
-        const samplePeaks = getUnlockedSamplePeaks();
-        if (!samplePeaks.length) { alert('No unlocked peaks found for composition calculation.'); return; }
-        const tokenOk = await G.matchXRD.refreshFetchToken?.();
-        if (!tokenOk) { alert('Unlock session expired. Please unlock again.'); return; }
-        const phases = [];
-        const skipped = [];
-        for (const ref of refs) {
-            const refId = String(ref?.refId || '').trim();
-            if (!refId) continue;
-            const fullData = await getFullRefData(refId);
-            if (!fullData?.Peaks?.length) { skipped.push(`${refId}: no ref peaks`); continue; }
-            const rir = getRIRValue(fullData);
-            if (!(rir > 0)) { skipped.push(`${refId}: missing RIR`); continue; }
-            const topMatches = getTopMatchedRatios(samplePeaks, fullData.Peaks);
-            if (!topMatches.length) { skipped.push(`${refId}: no matched peaks`); continue; }
-            const avgRatio = topMatches.reduce((s, m) => s + (m.sampleInt / m.refNorm), 0) / topMatches.length;
-            const raw = avgRatio / rir;
-            if (!Number.isFinite(raw) || raw <= 0) { skipped.push(`${refId}: invalid ratio`); continue; }
-            phases.push({ refId, label: String(ref?.label || refId), rir, raw, used: topMatches.length });
-        }
-        if (!phases.length) {
-            alert('Unable to calculate composition. Ensure selected references have RIR and matched peaks.');
-            return;
-        }
-        const totalRaw = phases.reduce((s, p) => s + p.raw, 0);
-        if (!Number.isFinite(totalRaw) || totalRaw <= 0) { alert('Composition calculation failed.'); return; }
-        phases.forEach(p => p.wt = (p.raw / totalRaw) * 100);
-        phases.sort((a, b) => b.wt - a.wt);
-        const lines = ['RIR composition estimate (top matched peaks):']
-            .concat(phases.map(p => `${p.label} (${p.refId}): ${p.wt.toFixed(2)} wt% [RIR=${p.rir.toFixed(3)}, peaks=${p.used}]`));
-        if (skipped.length) lines.push(`Skipped: ${skipped.join('; ')}`);
-        addRIRTextBox(lines);
-    }
     async function syncCheckedReferenceData() {
         const node = $xrd.node();
         if (!node) return;
@@ -304,7 +178,6 @@
         await G.matchXRD?.verifyImportedLockIfNeeded?.();
         if (!G.matchXRD?.hasResultsOnPanel?.()) setPanelMessage($xrd, XRD_MSG);
         G.matchXRD?.render();
-        refreshRirButtonState();
     });
     icon6?.addEventListener('change', () => { G.matchXRD?.render(); setPanelMessage($std, STD_MSG); });
     ['click', 'mousedown', 'pointerdown', 'focusin', 'input', 'keydown', 'keyup'].forEach(ev => fs?.addEventListener(ev, e => { e.stopPropagation(); setTimeout(() => G.matchXRD?.render(), 10); }));
@@ -343,7 +216,6 @@
         setUnlockVisible(false);
         const result = await G.matchXRD.search();
         renderMatches($xrd, result.matches, result.cols, result.lockedMatches || []);
-        refreshRirButtonState();
         if (!result.matches.length && !(result.lockedMatches || []).length) return;
         if (result.locked) {
             setUnlockVisible(true, G.matchXRD.getSampleCount());
@@ -369,21 +241,15 @@
             setUnlockVisible(false);
             renderMatches($xrd, result.matches, ['Reference ID', 'Empirical Formula', 'Match Score (%)']);
             await syncCheckedReferenceData();
-            refreshRirButtonState();
             if (G.state) G.state.nextSavePromptMessage = 'Change unlimited filters upto 30 days using saved project file.';
             requestAnimationFrame(() => document.getElementById('save')?.click());
         } finally {
             unlockBtn.style.pointerEvents = '';
         }
     });
-    rirBtn?.addEventListener('click', async function () {
-        this.style.pointerEvents = 'none';
-        try { await runRIRComposition(); } finally { this.style.pointerEvents = ''; }
-    });
     document.getElementById('xrd-clear-peaks')?.addEventListener('click', function () {
         G.matchXRD?.clear();
         setUnlockVisible(false);
-        refreshRirButtonState();
         setPanelMessage($xrd, XRD_MSG);
     });
     $xrd.on('click', async function (e) {
@@ -449,7 +315,6 @@
     if (G.matchXRD) {
         G.matchXRD.restoreSavedReferenceRows = restoreSavedReferenceRows;
     }
-    refreshRirButtonState();
     setUnlockVisible(false);
     setPanelMessage($xrd, XRD_MSG);
     setPanelMessage($std, STD_MSG);
