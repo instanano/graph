@@ -471,7 +471,7 @@
                 return {
                     matches: preview,
                     lockedMatches,
-                    cols: ['Reference ID', 'Formula', 'Match Score (%)'],
+                    cols: ['Reference ID', 'Chemical Formula', 'Match Score (%)'],
                     locked: true
                 };
             }
@@ -490,7 +490,7 @@
                 }
                 final.forEach(m => { const id = String(m.refId || ''); if (id && map[id] && Array.isArray(m.row) && m.row.length > 1) m.row[1] = map[id]; });
             }
-            return { matches: final, cols: ['Reference ID', 'Formula', 'Match Score (%)'], locked: false };
+            return { matches: final, cols: ['Reference ID', 'Chemical Formula', 'Match Score (%)'], locked: false };
         },
         getSampleCount,
         unlock: async () => {
