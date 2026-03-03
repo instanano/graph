@@ -1541,7 +1541,7 @@ window.GraphPlotter = window.GraphPlotter || {
         }).filter(Boolean);
         if (!matches.length) { setPanelMessage($xrd, XRD_MSG); return; }
         setUnlockVisible(false);
-        renderMatches($xrd, matches, ['Reference ID', 'Empirical Formula', 'Match Score (%)']);
+        renderMatches($xrd, matches, ['Reference ID', 'Formula', 'Match Score (%)']);
     }
 
     document.querySelectorAll('input[name="matchinstrument"]').forEach(inp => inp.addEventListener('change', () => setPanelMessage($std, STD_MSG)));
@@ -1612,7 +1612,7 @@ window.GraphPlotter = window.GraphPlotter || {
                 return;
             }
             setUnlockVisible(false);
-            renderMatches($xrd, result.matches, ['Reference ID', 'Empirical Formula', 'Match Score (%)']);
+            renderMatches($xrd, result.matches, ['Reference ID', 'Formula', 'Match Score (%)']);
             await syncCheckedReferenceData();
             if (G.state) G.state.nextSavePromptMessage = 'Change unlimited filters upto 30 days using saved project file.';
             requestAnimationFrame(() => document.getElementById('save')?.click());
@@ -2209,7 +2209,7 @@ window.GraphPlotter = window.GraphPlotter || {
                 return {
                     matches: preview,
                     lockedMatches,
-                    cols: ['Reference ID', 'Empirical Formula', 'Match Score (%)'],
+                    cols: ['Reference ID', 'Formula', 'Match Score (%)'],
                     locked: true
                 };
             }
@@ -2228,7 +2228,7 @@ window.GraphPlotter = window.GraphPlotter || {
                 }
                 final.forEach(m => { const id = String(m.refId || ''); if (id && map[id] && Array.isArray(m.row) && m.row.length > 1) m.row[1] = map[id]; });
             }
-            return { matches: final, cols: ['Reference ID', 'Empirical Formula', 'Match Score (%)'], locked: false };
+            return { matches: final, cols: ['Reference ID', 'Formula', 'Match Score (%)'], locked: false };
         },
         getSampleCount,
         unlock: async () => {
