@@ -173,7 +173,7 @@
         }).filter(Boolean);
         if (!matches.length) { setPanelMessage($xrd, XRD_MSG); return; }
         setUnlockVisible(false);
-        renderMatches($xrd, matches, ['Reference ID', 'Empirical Formula', 'Match Score (%)']);
+        renderMatches($xrd, matches, ['Reference ID', 'Formula', 'Match Score (%)']);
     }
 
     document.querySelectorAll('input[name="matchinstrument"]').forEach(inp => inp.addEventListener('change', () => setPanelMessage($std, STD_MSG)));
@@ -244,7 +244,7 @@
                 return;
             }
             setUnlockVisible(false);
-            renderMatches($xrd, result.matches, ['Reference ID', 'Empirical Formula', 'Match Score (%)']);
+            renderMatches($xrd, result.matches, ['Reference ID', 'Formula', 'Match Score (%)']);
             await syncCheckedReferenceData();
             if (G.state) G.state.nextSavePromptMessage = 'Change unlimited filters upto 30 days using saved project file.';
             requestAnimationFrame(() => document.getElementById('save')?.click());
