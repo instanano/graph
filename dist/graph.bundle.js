@@ -1176,6 +1176,841 @@ window.GraphPlotter = window.GraphPlotter || {
         }
     });
 })(window.GraphPlotter);
+(function (w) {
+    "use strict";
+
+    const NS = (w.InstaNanoAds = w.InstaNanoAds || {});
+    const UTM_KEYS = [
+        "utm_id",
+        "utm_source",
+        "utm_medium",
+        "utm_campaign",
+        "utm_content",
+        "utm_term",
+        "utm_source_platform",
+        "utm_creative_format",
+        "utm_marketing_tactic"
+    ];
+    const CLICK_ID_KEYS = ["gclid", "wbraid", "gbraid", "dclid", "fbclid"];
+    const INTERNAL_KEYS = ["in_lp", "in_flow", "in_offer", "in_exp", "in_ver", "landing"];
+
+    const variants = {
+        default: {
+            key: "default",
+            badge: "Free XRD Preview",
+            headline: "Plot your data instantly and preview top XRD matches for free.",
+            subheading:
+                "Get the top 3 peaks of the top 3 references free, then unlock full matching when needed.",
+            ctaText: "Try Your Sample",
+            ctaTarget: "tool",
+            trustPoints: [
+                "No app install required",
+                "Fast in-browser plotting workflow",
+                "Credit-based unlock only when you need full matching"
+            ]
+        },
+        xrd_v1: {
+            key: "xrd_v1",
+            badge: "XRD Matching",
+            headline: "Upload XRD data, preview top matches free, unlock full references when ready.",
+            subheading:
+                "Designed for researchers who want immediate plotting plus a practical phase-matching workflow.",
+            ctaText: "Try XRD Workflow",
+            ctaTarget: "xrd",
+            trustPoints: [
+                "Top-3 preview is free",
+                "Unlock flow keeps your current graph tab intact",
+                "Filters and references stay tied to your working sample"
+            ]
+        },
+        xrd_speed_v1: {
+            key: "xrd_speed_v1",
+            badge: "Fast Track",
+            headline: "From raw sample to XRD preview in minutes.",
+            subheading:
+                "Open graph, select peaks, search references, and unlock full detail only when required.",
+            ctaText: "Start Matching",
+            ctaTarget: "xrd",
+            trustPoints: [
+                "Built for quick ad-click onboarding",
+                "No forced flow change for checkout",
+                "Works with your existing credit plans"
+            ]
+        }
+    };
+
+    function deepFreeze(obj) {
+        if (!obj || typeof obj !== "object") return obj;
+        Object.getOwnPropertyNames(obj).forEach(function (name) {
+            const value = obj[name];
+            if (value && typeof value === "object") deepFreeze(value);
+        });
+        return Object.freeze(obj);
+    }
+
+    NS.schemaVersion = "ads_v1";
+    NS.paramKeys = {
+        utm: UTM_KEYS.slice(),
+        clickIds: CLICK_ID_KEYS.slice(),
+        internal: INTERNAL_KEYS.slice()
+    };
+    NS.variants = deepFreeze(variants);
+    NS._queue = Array.isArray(NS._queue) ? NS._queue : [];
+
+    NS.emit = function (name, payload) {
+        if (!name || typeof name !== "string") return;
+        const event = {
+            name: name,
+            payload: payload && typeof payload === "object" ? payload : {},
+            ts: Date.now()
+        };
+        if (typeof NS.onEvent === "function") {
+            try {
+                NS.onEvent(event);
+                return;
+            } catch (_) {
+                // fall through to queue for safety
+            }
+        }
+        NS._queue.push(event);
+    };
+
+    NS.consumeQueuedEvents = function (handler) {
+        if (typeof handler !== "function") return;
+        while (NS._queue.length) {
+            const event = NS._queue.shift();
+            handler(event);
+        }
+    };
+})(window);
+(function (w, d) {
+    "use strict";
+
+    const NS = (w.InstaNanoAds = w.InstaNanoAds || {});
+    if (NS.__trackingInitialized) return;
+    NS.__trackingInitialized = true;
+
+    const ATTR_KEY = "instanano_ads_attr_v1";
+    const VISITOR_KEY = "instanano_ads_vid_v1";
+    const SESSION_KEY = "instanano_ads_sid_v1";
+    const FLOW_KEY = "instanano_ads_flow_v1";
+    const CHECKOUT_KEY = "instanano_ads_checkout_v1";
+    const EVENT_VERSION = "1.0.0";
+    const CHECKOUT_TTL_MS = 24 * 60 * 60 * 1000;
+
+    const paramKeys = NS.paramKeys || {};
+    const UTM_KEYS = paramKeys.utm || [
+        "utm_id",
+        "utm_source",
+        "utm_medium",
+        "utm_campaign",
+        "utm_content",
+        "utm_term"
+    ];
+    const CLICK_ID_KEYS = paramKeys.clickIds || ["gclid", "wbraid", "gbraid", "dclid", "fbclid"];
+    const INTERNAL_KEYS = paramKeys.internal || ["in_lp", "in_flow", "in_offer", "in_exp", "in_ver", "landing"];
+    const TRACK_KEYS = UTM_KEYS.concat(CLICK_ID_KEYS, INTERNAL_KEYS);
+
+    let pendingSearchResult = false;
+    let lastUnlockClickAt = 0;
+    let planModalOpen = false;
+    let searchTimeoutHandle = null;
+
+    function safeString(value, maxLen) {
+        if (value == null) return "";
+        const str = String(value)
+            .replace(/[\u0000-\u001F\u007F]/g, "")
+            .trim();
+        return str.length > maxLen ? str.slice(0, maxLen) : str;
+    }
+
+    function toNumber(value, fallback) {
+        const n = Number(value);
+        return Number.isFinite(n) ? n : fallback;
+    }
+
+    function safeRead(storage, key) {
+        try {
+            return storage.getItem(key);
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function safeWrite(storage, key, value) {
+        try {
+            storage.setItem(key, value);
+        } catch (_) {
+            // Ignore storage failures; tracking should not break UX.
+        }
+    }
+
+    function safeRemove(storage, key) {
+        try {
+            storage.removeItem(key);
+        } catch (_) {
+            // Ignore storage failures.
+        }
+    }
+
+    function parseJson(raw, fallback) {
+        if (!raw) return fallback;
+        try {
+            return JSON.parse(raw);
+        } catch (_) {
+            return fallback;
+        }
+    }
+
+    function uid(prefix) {
+        const base =
+            w.crypto && typeof w.crypto.randomUUID === "function"
+                ? w.crypto.randomUUID()
+                : Math.random().toString(36).slice(2) + Date.now().toString(36);
+        return prefix + "_" + base;
+    }
+
+    function getId(storage, key, prefix) {
+        const existing = safeRead(storage, key);
+        if (existing) return existing;
+        const created = uid(prefix);
+        safeWrite(storage, key, created);
+        return created;
+    }
+
+    function getSearchParams() {
+        try {
+            return new URLSearchParams(w.location.search || "");
+        } catch (_) {
+            return new URLSearchParams();
+        }
+    }
+
+    function hasAnyAttribution(data) {
+        return Object.keys(data).some(function (k) {
+            return !!data[k];
+        });
+    }
+
+    function readAttributionState() {
+        return parseJson(safeRead(w.localStorage, ATTR_KEY), {});
+    }
+
+    function writeAttributionState(state) {
+        safeWrite(w.localStorage, ATTR_KEY, JSON.stringify(state || {}));
+    }
+
+    function pickParams(params, keys) {
+        const out = {};
+        keys.forEach(function (key) {
+            if (!params.has(key)) return;
+            const value = safeString(params.get(key), 180);
+            if (value) out[key] = value;
+        });
+        return out;
+    }
+
+    function captureAttribution() {
+        const params = getSearchParams();
+        const incoming = Object.assign({}, pickParams(params, TRACK_KEYS));
+        const state = readAttributionState();
+
+        if (!state.first_touch && hasAnyAttribution(incoming)) {
+            state.first_touch = incoming;
+            state.first_touch_at = Date.now();
+        }
+
+        if (hasAnyAttribution(incoming)) {
+            state.last_touch = incoming;
+            state.last_touch_at = Date.now();
+        }
+
+        state.updated_at = Date.now();
+        writeAttributionState(state);
+        return state;
+    }
+
+    function buildAttributionPayload() {
+        const state = readAttributionState();
+        const first = state.first_touch || {};
+        const last = state.last_touch || {};
+        const out = {};
+
+        TRACK_KEYS.forEach(function (key) {
+            if (last[key]) out[key] = last[key];
+            if (first[key]) out["ft_" + key] = first[key];
+        });
+
+        return out;
+    }
+
+    function dataLayerPush(payload) {
+        w.dataLayer = w.dataLayer || [];
+        w.dataLayer.push(payload);
+    }
+
+    function getSelectedPeakCount() {
+        return d.querySelectorAll("#chart .xrd-user-peak").length;
+    }
+
+    function getMatchMetrics() {
+        const box = d.getElementById("xrd-matchedData");
+        if (!box) {
+            return { result_count: 0, locked_count: 0, limited_count: 0, has_no_match_text: false };
+        }
+
+        const rows = box.querySelectorAll(".matchedrow");
+        const locked = box.querySelectorAll('.matchedrow[data-tag="locked"]').length;
+        const limited = box.querySelectorAll('.matchedrow[data-tag="limited"]').length;
+        const text = safeString(box.textContent || "", 400).toLowerCase();
+
+        return {
+            result_count: rows.length,
+            locked_count: locked,
+            limited_count: limited,
+            has_no_match_text: text.indexOf("no matching peaks found") >= 0
+        };
+    }
+
+    function pushEvent(eventName, extra) {
+        const payload = Object.assign(
+            {
+                event: "instanano_event",
+                event_name: safeString(eventName, 64),
+                event_id: uid("evt"),
+                event_version: EVENT_VERSION,
+                ts: new Date().toISOString(),
+                visitor_id: getId(w.localStorage, VISITOR_KEY, "vid"),
+                session_id: getId(w.sessionStorage, SESSION_KEY, "sid"),
+                flow_id: getId(w.sessionStorage, FLOW_KEY, "flow"),
+                page_path: safeString(w.location.pathname, 200),
+                page_url: safeString(w.location.href, 1000),
+                page_title: safeString(d.title, 200),
+                referrer: safeString(d.referrer, 1000),
+                is_logged_in: typeof w.instananoCredits !== "undefined"
+            },
+            buildAttributionPayload(),
+            extra || {}
+        );
+
+        dataLayerPush(payload);
+    }
+
+    function consumeAdsEvent(event) {
+        if (!event || !event.name) return;
+        pushEvent(event.name, event.payload || {});
+    }
+
+    function onLandingReady() {
+        NS.onEvent = consumeAdsEvent;
+        if (typeof NS.consumeQueuedEvents === "function") NS.consumeQueuedEvents(consumeAdsEvent);
+    }
+
+    function emitSearchResult(source) {
+        const metrics = getMatchMetrics();
+        pushEvent("xrd_search_result", Object.assign({ source: source }, metrics));
+
+        if (metrics.locked_count > 0 || metrics.limited_count > 0) {
+            pushEvent("xrd_unlock_prompt_view", {
+                locked_count: metrics.locked_count,
+                limited_count: metrics.limited_count
+            });
+        }
+    }
+
+    function scheduleSearchTimeoutFallback() {
+        if (searchTimeoutHandle) w.clearTimeout(searchTimeoutHandle);
+        searchTimeoutHandle = w.setTimeout(function () {
+            if (!pendingSearchResult) return;
+            pendingSearchResult = false;
+            emitSearchResult("timeout");
+        }, 4500);
+    }
+
+    function isVisible(el) {
+        if (!el) return false;
+        const style = w.getComputedStyle(el);
+        return style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    }
+
+    function detectPlanModalOpen() {
+        const modal = d.getElementById("xrd-credit-plans");
+        if (!modal) return;
+        const visible = isVisible(modal);
+        if (visible && !planModalOpen) {
+            planModalOpen = true;
+            pushEvent("plans_modal_open", { location: "xrd_unlock" });
+        } else if (!visible && planModalOpen) {
+            planModalOpen = false;
+        }
+    }
+
+    function parseActionFromRequest(input, init) {
+        const req = input && typeof input === "object" ? input : null;
+        const url = safeString(
+            typeof input === "string" ? input : req && req.url ? req.url : "",
+            1000
+        );
+
+        let body = init && Object.prototype.hasOwnProperty.call(init, "body") ? init.body : null;
+        if (!body && req && req.bodyUsed === false) {
+            body = null;
+        }
+
+        let action = "";
+        if (body && typeof FormData !== "undefined" && body instanceof FormData) {
+            action = safeString(body.get("action"), 80);
+        } else if (typeof body === "string") {
+            const params = new URLSearchParams(body);
+            action = safeString(params.get("action"), 80);
+        }
+
+        return { url: url, action: action };
+    }
+
+    function rememberCheckout(planData) {
+        const payload = {
+            ts: Date.now(),
+            plan_id: safeString(planData.plan_id, 32),
+            plan_name: safeString(planData.plan_name, 120)
+        };
+        safeWrite(w.localStorage, CHECKOUT_KEY, JSON.stringify(payload));
+    }
+
+    function takeRecentCheckout() {
+        const data = parseJson(safeRead(w.localStorage, CHECKOUT_KEY), null);
+        if (!data || !data.ts) return null;
+        if (Date.now() - Number(data.ts) > CHECKOUT_TTL_MS) {
+            safeRemove(w.localStorage, CHECKOUT_KEY);
+            return null;
+        }
+        return data;
+    }
+
+    function attachUIListeners() {
+        const icon5 = d.getElementById("icon5");
+        if (icon5) {
+            icon5.addEventListener("change", function () {
+                if (icon5.checked) pushEvent("xrd_tab_open", { panel: "xrd" });
+            });
+        }
+
+        const searchBtn = d.getElementById("xrd-search-btn");
+        if (searchBtn) {
+            searchBtn.addEventListener("click", function () {
+                pendingSearchResult = true;
+                pushEvent("xrd_search_click", {
+                    selected_peak_count: getSelectedPeakCount(),
+                    filter_mode: safeString((d.getElementById("xrd-logic-mode") || {}).value, 16),
+                    filter_element_count: toNumber((d.getElementById("xrd-element-count") || {}).value, 0),
+                    has_element_filter: safeString((d.getElementById("xrd-elements") || {}).value, 200) !== ""
+                });
+                scheduleSearchTimeoutFallback();
+            });
+        }
+
+        const unlockBtn = d.getElementById("xrd-unlock-btn");
+        if (unlockBtn) {
+            unlockBtn.addEventListener("click", function () {
+                lastUnlockClickAt = Date.now();
+                pushEvent("xrd_unlock_click", {
+                    selected_peak_count: getSelectedPeakCount(),
+                    has_credit_nonce: typeof w.instananoCredits !== "undefined"
+                });
+            });
+        }
+
+        const plansRoot = d.getElementById("xrd-credit-plans");
+        if (plansRoot) {
+            plansRoot.addEventListener("click", function (event) {
+                const link = event.target && event.target.closest ? event.target.closest("a.cta-button[href]") : null;
+                if (!link) return;
+
+                let parsed;
+                try {
+                    parsed = new URL(link.getAttribute("href"), w.location.origin);
+                } catch (_) {
+                    return;
+                }
+
+                const planCard = link.closest(".pricing-card");
+                const planName = safeString(planCard && planCard.querySelector("h3") ? planCard.querySelector("h3").textContent : "", 120);
+                const amount = safeString(planCard && planCard.querySelector(".amount") ? planCard.querySelector(".amount").textContent : "", 40);
+                const planId = safeString(parsed.searchParams.get("add-to-cart") || "", 32);
+                const planData = {
+                    plan_id: planId,
+                    plan_name: planName,
+                    plan_amount_label: amount,
+                    checkout_mode: "new_tab"
+                };
+
+                pushEvent("plan_buy_click", planData);
+                pushEvent("checkout_started", planData);
+                rememberCheckout(planData);
+            });
+
+            const modalObserver = new MutationObserver(detectPlanModalOpen);
+            modalObserver.observe(plansRoot, {
+                attributes: true,
+                attributeFilter: ["style", "class"]
+            });
+        }
+
+        const matches = d.getElementById("xrd-matchedData");
+        if (matches) {
+            const matchObserver = new MutationObserver(function () {
+                if (!pendingSearchResult) return;
+                pendingSearchResult = false;
+                emitSearchResult("observer");
+            });
+            matchObserver.observe(matches, {
+                childList: true,
+                subtree: true
+            });
+        }
+    }
+
+    function patchFetch() {
+        if (typeof w.fetch !== "function" || w.fetch.__instananoAdsWrapped) return;
+
+        const originalFetch = w.fetch.bind(w);
+        const wrappedFetch = function (input, init) {
+            const meta = parseActionFromRequest(input, init);
+            const startedAt = Date.now();
+
+            return originalFetch(input, init)
+                .then(function (response) {
+                    if (
+                        meta.url.indexOf("admin-ajax.php") >= 0 &&
+                        meta.action === "instanano_use_credit" &&
+                        Date.now() - lastUnlockClickAt < 30000
+                    ) {
+                        response
+                            .clone()
+                            .json()
+                            .then(function (json) {
+                                const duration = Date.now() - startedAt;
+                                if (json && json.success) {
+                                    pushEvent("xrd_unlock_success", {
+                                        response_ms: duration,
+                                        analysis_type: safeString(
+                                            json.data && json.data.analysis_type ? json.data.analysis_type : "xrd",
+                                            16
+                                        )
+                                    });
+
+                                    const checkout = takeRecentCheckout();
+                                    if (checkout) {
+                                        pushEvent("xrd_unlock_after_payment_success", {
+                                            plan_id: safeString(checkout.plan_id, 32),
+                                            plan_name: safeString(checkout.plan_name, 120)
+                                        });
+                                        safeRemove(w.localStorage, CHECKOUT_KEY);
+                                    }
+                                } else {
+                                    pushEvent("xrd_unlock_failed", {
+                                        response_ms: duration,
+                                        error_code: safeString(json && json.data ? json.data.code : "unknown", 48),
+                                        error_message: safeString(json && json.data ? json.data.message : "Unlock failed", 200)
+                                    });
+                                }
+                            })
+                            .catch(function () {
+                                pushEvent("xrd_unlock_failed", {
+                                    response_ms: Date.now() - startedAt,
+                                    error_code: "invalid_json",
+                                    error_message: "Unlock response parse failed"
+                                });
+                            });
+                    }
+                    return response;
+                })
+                .catch(function (error) {
+                    if (
+                        meta.url.indexOf("admin-ajax.php") >= 0 &&
+                        meta.action === "instanano_use_credit" &&
+                        Date.now() - lastUnlockClickAt < 30000
+                    ) {
+                        pushEvent("xrd_unlock_failed", {
+                            response_ms: Date.now() - startedAt,
+                            error_code: "network_error",
+                            error_message: safeString(error && error.message ? error.message : "network error", 200)
+                        });
+                    }
+                    throw error;
+                });
+        };
+
+        wrappedFetch.__instananoAdsWrapped = true;
+        w.fetch = wrappedFetch;
+    }
+
+    function init() {
+        captureAttribution();
+        onLandingReady();
+        patchFetch();
+        attachUIListeners();
+
+        pushEvent("tracking_ready", {
+            tracking_mode: "browser_only",
+            schema: NS.schemaVersion || "ads_v1"
+        });
+
+        // If landing module is not used, still count visits with campaign params.
+        const params = getSearchParams();
+        if (params.has("in_lp") || params.has("landing") || params.has("utm_source") || params.has("gclid") || params.has("fbclid")) {
+            pushEvent("campaign_visit", {
+                in_lp: safeString(params.get("in_lp") || params.get("landing") || "", 64)
+            });
+        }
+
+        detectPlanModalOpen();
+    }
+
+    if (d.readyState === "loading") {
+        d.addEventListener("DOMContentLoaded", init, { once: true });
+    } else {
+        init();
+    }
+})(window, document);
+(function (w, d) {
+    "use strict";
+
+    const NS = (w.InstaNanoAds = w.InstaNanoAds || {});
+    if (NS.__landingInitialized) return;
+    NS.__landingInitialized = true;
+
+    const ROOT_ID = "instanano-ads-landing";
+    const STYLE_ID = "instanano-ads-landing-style";
+
+    function safeString(value, maxLen) {
+        if (value == null) return "";
+        const text = String(value)
+            .replace(/[\u0000-\u001F\u007F]/g, "")
+            .trim();
+        return text.length > maxLen ? text.slice(0, maxLen) : text;
+    }
+
+    function normalizeKey(value) {
+        const key = safeString(value, 64).toLowerCase();
+        return key.replace(/[^a-z0-9_-]/g, "");
+    }
+
+    function readParams() {
+        try {
+            return new URLSearchParams(w.location.search || "");
+        } catch (_) {
+            return new URLSearchParams();
+        }
+    }
+
+    function resolveVariant(params) {
+        const variants = NS.variants || {};
+        const requestedRaw = params.get("in_lp") || params.get("landing") || "";
+        let requested = normalizeKey(requestedRaw);
+        if (requested === "xrd") requested = "xrd_v1";
+
+        if (!requested) return { key: "", variant: null };
+        if (variants[requested]) return { key: requested, variant: variants[requested] };
+        if (variants.default) return { key: "default", variant: variants.default };
+
+        return { key: "", variant: null };
+    }
+
+    function ensureStyles() {
+        if (d.getElementById(STYLE_ID)) return;
+        const style = d.createElement("style");
+        style.id = STYLE_ID;
+        style.textContent =
+            "#" +
+            ROOT_ID +
+            "{max-width:1500px;margin:10px auto 8px;padding:0 10px;box-sizing:border-box;}" +
+            "#" +
+            ROOT_ID +
+            " .ads-landing-card{border:1px solid #dfd7ca;border-radius:14px;background:linear-gradient(120deg,#fffefb,#f6f0e5);padding:16px 18px;display:grid;grid-template-columns:1fr auto;gap:16px;align-items:center;}" +
+            "#" +
+            ROOT_ID +
+            " .ads-landing-badge{display:inline-block;font-size:12px;font-weight:700;letter-spacing:.02em;color:#7a5b00;background:#fdebb9;border:1px solid #f1d27a;border-radius:999px;padding:4px 10px;margin-bottom:8px;}" +
+            "#" +
+            ROOT_ID +
+            " .ads-landing-title{margin:0;font-size:28px;line-height:1.2;color:#2b2417;font-weight:700;}" +
+            "#" +
+            ROOT_ID +
+            " .ads-landing-sub{margin:7px 0 10px;color:#4c4130;font-size:15px;line-height:1.45;}" +
+            "#" +
+            ROOT_ID +
+            " .ads-landing-trust{display:flex;flex-wrap:wrap;gap:6px 12px;margin:0;padding:0;list-style:none;}" +
+            "#" +
+            ROOT_ID +
+            " .ads-landing-trust li{font-size:13px;color:#5a4c38;}" +
+            "#" +
+            ROOT_ID +
+            " .ads-landing-cta{display:inline-block;white-space:nowrap;border:0;border-radius:999px;background:#8a6a00;color:#fff;padding:11px 16px;font-weight:700;font-size:14px;cursor:pointer;}" +
+            "#" +
+            ROOT_ID +
+            " .ads-landing-cta:hover{background:#715500;}" +
+            "#" +
+            ROOT_ID +
+            " .ads-landing-media{width:100%;max-width:280px;border-radius:10px;overflow:hidden;border:1px solid #e7dcc7;background:#fff;}" +
+            "#" +
+            ROOT_ID +
+            " .ads-landing-media video,#" +
+            ROOT_ID +
+            " .ads-landing-media iframe{display:block;width:100%;height:160px;border:0;}" +
+            "@media (max-width:900px){#" +
+            ROOT_ID +
+            " .ads-landing-card{grid-template-columns:1fr;}#" +
+            ROOT_ID +
+            " .ads-landing-title{font-size:22px;}#" +
+            ROOT_ID +
+            " .ads-landing-media{max-width:none;}}";
+        d.head.appendChild(style);
+    }
+
+    function isSafeEmbedUrl(url) {
+        try {
+            const parsed = new URL(url, w.location.origin);
+            const host = parsed.hostname.toLowerCase();
+            return (
+                host === "www.youtube-nocookie.com" ||
+                host === "www.youtube.com" ||
+                host === "youtube.com" ||
+                host === "player.vimeo.com"
+            );
+        } catch (_) {
+            return false;
+        }
+    }
+
+    function createNode(tag, className, text) {
+        const node = d.createElement(tag);
+        if (className) node.className = className;
+        if (text) node.textContent = text;
+        return node;
+    }
+
+    function buildMedia(mediaConfig, variantKey) {
+        if (!mediaConfig || typeof mediaConfig !== "object") return null;
+
+        const wrapper = createNode("div", "ads-landing-media", "");
+
+        if (mediaConfig.type === "video" && mediaConfig.src) {
+            const video = d.createElement("video");
+            video.controls = true;
+            video.preload = "metadata";
+            video.src = safeString(mediaConfig.src, 1000);
+            video.addEventListener("play", function () {
+                NS.emit("landing_video_play", { variant_key: variantKey, media_type: "video" });
+            });
+            wrapper.appendChild(video);
+            return wrapper;
+        }
+
+        if (mediaConfig.type === "embed" && mediaConfig.src && isSafeEmbedUrl(mediaConfig.src)) {
+            const frame = d.createElement("iframe");
+            frame.loading = "lazy";
+            frame.referrerPolicy = "strict-origin-when-cross-origin";
+            frame.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
+            frame.allowFullscreen = true;
+            frame.src = safeString(mediaConfig.src, 1000);
+            wrapper.appendChild(frame);
+            return wrapper;
+        }
+
+        return null;
+    }
+
+    function focusWorkflow(target) {
+        if (target === "xrd") {
+            const xrdTab = d.getElementById("icon5");
+            if (xrdTab) xrdTab.checked = true;
+        }
+
+        const targetNode =
+            d.getElementById("dropzone") ||
+            d.getElementById("xrd-search-btn") ||
+            d.querySelector(".container");
+
+        if (targetNode && typeof targetNode.scrollIntoView === "function") {
+            targetNode.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+    }
+
+    function renderLanding(variantKey, variant, params) {
+        if (!variant || d.getElementById(ROOT_ID)) return;
+
+        const container = d.querySelector(".container");
+        if (!container || !container.parentNode) return;
+
+        ensureStyles();
+
+        const root = createNode("section", "", "");
+        root.id = ROOT_ID;
+        root.setAttribute("data-variant", variantKey);
+
+        const card = createNode("div", "ads-landing-card", "");
+        const left = createNode("div", "ads-landing-copy", "");
+
+        const badgeText = safeString(variant.badge, 64);
+        if (badgeText) left.appendChild(createNode("span", "ads-landing-badge", badgeText));
+
+        left.appendChild(createNode("h2", "ads-landing-title", safeString(variant.headline, 220)));
+        left.appendChild(createNode("p", "ads-landing-sub", safeString(variant.subheading, 320)));
+
+        const trustList = createNode("ul", "ads-landing-trust", "");
+        const trustPoints = Array.isArray(variant.trustPoints) ? variant.trustPoints : [];
+        trustPoints.slice(0, 4).forEach(function (point) {
+            trustList.appendChild(createNode("li", "", "- " + safeString(point, 120)));
+        });
+        if (trustList.childElementCount) left.appendChild(trustList);
+
+        const cta = createNode("button", "ads-landing-cta", safeString(variant.ctaText || "Try Now", 48));
+        cta.type = "button";
+        cta.addEventListener("click", function () {
+            const target = safeString(variant.ctaTarget || "tool", 16);
+            focusWorkflow(target);
+            NS.emit("landing_cta_click", {
+                variant_key: variantKey,
+                cta_target: target,
+                in_offer: safeString(params.get("in_offer") || "", 64)
+            });
+        });
+
+        const right = createNode("div", "ads-landing-actions", "");
+        right.appendChild(cta);
+
+        const media = buildMedia(variant.media, variantKey);
+        if (media) right.appendChild(media);
+
+        card.appendChild(left);
+        card.appendChild(right);
+        root.appendChild(card);
+
+        container.parentNode.insertBefore(root, container);
+        NS.emit("landing_view", {
+            variant_key: variantKey,
+            in_offer: safeString(params.get("in_offer") || "", 64),
+            in_exp: safeString(params.get("in_exp") || "", 64)
+        });
+    }
+
+    function init() {
+        const params = readParams();
+        const resolved = resolveVariant(params);
+
+        // Render only for explicit landing traffic to avoid affecting regular users.
+        if (!params.has("in_lp") && !params.has("landing")) return;
+        if (!resolved.variant) return;
+
+        renderLanding(resolved.key, resolved.variant, params);
+    }
+
+    if (d.readyState === "loading") {
+        d.addEventListener("DOMContentLoaded", init, { once: true });
+    } else {
+        init();
+    }
+})(window, document);
 (function(G) {
     "use strict";
     G.parsers.parseText = function(text){
