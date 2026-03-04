@@ -49,6 +49,9 @@ jobs:
             features/fitting.js \
             features/tauc.js \
             features/upsell.js \
+            ads/variants.js \
+            ads/tracking.js \
+            ads/landing.js \
             parsers/parsers.js \
             parsers/xrd.js \
             parsers/nmr.js \
