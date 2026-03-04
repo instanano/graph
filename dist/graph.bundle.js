@@ -1176,841 +1176,554 @@ window.GraphPlotter = window.GraphPlotter || {
         }
     });
 })(window.GraphPlotter);
-(function (w) {
-    "use strict";
-
-    const NS = (w.InstaNanoAds = w.InstaNanoAds || {});
-    const UTM_KEYS = [
-        "utm_id",
-        "utm_source",
-        "utm_medium",
-        "utm_campaign",
-        "utm_content",
-        "utm_term",
-        "utm_source_platform",
-        "utm_creative_format",
-        "utm_marketing_tactic"
-    ];
-    const CLICK_ID_KEYS = ["gclid", "wbraid", "gbraid", "dclid", "fbclid"];
-    const INTERNAL_KEYS = ["in_lp", "in_flow", "in_offer", "in_exp", "in_ver", "landing"];
-
-    const variants = {
-        default: {
-            key: "default",
-            badge: "Free XRD Preview",
-            headline: "Plot your data instantly and preview top XRD matches for free.",
-            subheading:
-                "Get the top 3 peaks of the top 3 references free, then unlock full matching when needed.",
-            ctaText: "Try Your Sample",
-            ctaTarget: "tool",
-            trustPoints: [
-                "No app install required",
-                "Fast in-browser plotting workflow",
-                "Credit-based unlock only when you need full matching"
-            ]
-        },
-        xrd_v1: {
-            key: "xrd_v1",
-            badge: "XRD Matching",
-            headline: "Upload XRD data, preview top matches free, unlock full references when ready.",
-            subheading:
-                "Designed for researchers who want immediate plotting plus a practical phase-matching workflow.",
-            ctaText: "Try XRD Workflow",
-            ctaTarget: "xrd",
-            trustPoints: [
-                "Top-3 preview is free",
-                "Unlock flow keeps your current graph tab intact",
-                "Filters and references stay tied to your working sample"
-            ]
-        },
-        xrd_speed_v1: {
-            key: "xrd_speed_v1",
-            badge: "Fast Track",
-            headline: "From raw sample to XRD preview in minutes.",
-            subheading:
-                "Open graph, select peaks, search references, and unlock full detail only when required.",
-            ctaText: "Start Matching",
-            ctaTarget: "xrd",
-            trustPoints: [
-                "Built for quick ad-click onboarding",
-                "No forced flow change for checkout",
-                "Works with your existing credit plans"
-            ]
-        }
-    };
-
-    function deepFreeze(obj) {
-        if (!obj || typeof obj !== "object") return obj;
-        Object.getOwnPropertyNames(obj).forEach(function (name) {
-            const value = obj[name];
-            if (value && typeof value === "object") deepFreeze(value);
-        });
-        return Object.freeze(obj);
-    }
-
-    NS.schemaVersion = "ads_v1";
-    NS.paramKeys = {
-        utm: UTM_KEYS.slice(),
-        clickIds: CLICK_ID_KEYS.slice(),
-        internal: INTERNAL_KEYS.slice()
-    };
-    NS.variants = deepFreeze(variants);
-    NS._queue = Array.isArray(NS._queue) ? NS._queue : [];
-
-    NS.emit = function (name, payload) {
-        if (!name || typeof name !== "string") return;
-        const event = {
-            name: name,
-            payload: payload && typeof payload === "object" ? payload : {},
-            ts: Date.now()
-        };
-        if (typeof NS.onEvent === "function") {
-            try {
-                NS.onEvent(event);
-                return;
-            } catch (_) {
-                // fall through to queue for safety
-            }
-        }
-        NS._queue.push(event);
-    };
-
-    NS.consumeQueuedEvents = function (handler) {
-        if (typeof handler !== "function") return;
-        while (NS._queue.length) {
-            const event = NS._queue.shift();
-            handler(event);
-        }
-    };
+(function(w){
+"use strict";
+const A=w.InstaNanoAds=w.InstaNanoAds||{};
+function deepFreeze(obj,seen){
+if(!obj||typeof obj!=="object"||Object.isFrozen(obj))return obj;
+seen=seen||[];
+if(seen.indexOf(obj)!==-1)return obj;
+seen.push(obj);
+Object.getOwnPropertyNames(obj).forEach(function(key){deepFreeze(obj[key],seen);});
+return Object.freeze(obj);
+}
+const UTM_KEYS=["utm_source","utm_medium","utm_campaign","utm_term","utm_content"];
+const CLICK_ID_KEYS=["gclid","wbraid","gbraid","dclid","fbclid","li_fat_id"];
+const INTERNAL_PARAMS=["in_lp","in_flow","in_offer","in_exp","in_ver","landing"];
+const VARIANTS={
+default:{id:"default",experiment:"landing",version:"default",landing:{badge:"Scientific Analysis",headline:"Plot your spectra and unlock faster XRD decisions.",subheading:"Upload, inspect peaks, and move to XRD matching in one focused workflow.",trust_points:["No installation needed","Built for researchers and labs","Works with your existing files"],cta_label:"Open XRD Match",cta_target:"#xrd-filter-section",media_url:""}},
+landing_v1:{id:"landing_v1",experiment:"landing",version:"v1",landing:{badge:"XRD Match Ready",headline:"Turn raw peaks into match-ready XRD insights in minutes.",subheading:"Start in the graph workspace, switch to XRD Match, and run your search flow faster.",trust_points:["Interactive peak selection","Reference-backed matching","Credit plans available instantly"],cta_label:"Start XRD Match",cta_target:"#xrd-filter-section",media_url:""}}
+};
+A.constants=A.constants||{};
+A.constants.UTM_KEYS=deepFreeze(UTM_KEYS.slice());
+A.constants.CLICK_ID_KEYS=deepFreeze(CLICK_ID_KEYS.slice());
+A.constants.INTERNAL_PARAMS=deepFreeze(INTERNAL_PARAMS.slice());
+A.constants.ATTRIBUTION_KEYS=deepFreeze(UTM_KEYS.concat(CLICK_ID_KEYS));
+A.variants=deepFreeze(VARIANTS);
+A.state=A.state&&typeof A.state==="object"?A.state:{};
+if(!A.state.variantId)A.state.variantId="default";
+const q=Array.isArray(A._eventQueue)?A._eventQueue:[];
+const h=Array.isArray(A._eventHandlers)?A._eventHandlers:[];
+A._eventQueue=q;
+A._eventHandlers=h;
+A.emit=function(name,payload){
+if(typeof name!=="string"||!name)return;
+const p=payload&&typeof payload==="object"?payload:{};
+const evt={name:name,payload:p,ts:Date.now()};
+q.push(evt);
+for(let i=0;i<h.length;i++){try{h[i](evt.name,evt.payload,evt.ts);}catch(_){}}
+};
+A.consumeQueuedEvents=function(handler){
+if(typeof handler!=="function")return;
+h.push(handler);
+while(q.length){
+const evt=q.shift();
+try{handler(evt.name,evt.payload,evt.ts);}catch(_){}
+}
+};
 })(window);
-(function (w, d) {
-    "use strict";
-
-    const NS = (w.InstaNanoAds = w.InstaNanoAds || {});
-    if (NS.__trackingInitialized) return;
-    NS.__trackingInitialized = true;
-
-    const ATTR_KEY = "instanano_ads_attr_v1";
-    const VISITOR_KEY = "instanano_ads_vid_v1";
-    const SESSION_KEY = "instanano_ads_sid_v1";
-    const FLOW_KEY = "instanano_ads_flow_v1";
-    const CHECKOUT_KEY = "instanano_ads_checkout_v1";
-    const EVENT_VERSION = "1.0.0";
-    const CHECKOUT_TTL_MS = 24 * 60 * 60 * 1000;
-
-    const paramKeys = NS.paramKeys || {};
-    const UTM_KEYS = paramKeys.utm || [
-        "utm_id",
-        "utm_source",
-        "utm_medium",
-        "utm_campaign",
-        "utm_content",
-        "utm_term"
-    ];
-    const CLICK_ID_KEYS = paramKeys.clickIds || ["gclid", "wbraid", "gbraid", "dclid", "fbclid"];
-    const INTERNAL_KEYS = paramKeys.internal || ["in_lp", "in_flow", "in_offer", "in_exp", "in_ver", "landing"];
-    const TRACK_KEYS = UTM_KEYS.concat(CLICK_ID_KEYS, INTERNAL_KEYS);
-
-    let pendingSearchResult = false;
-    let lastUnlockClickAt = 0;
-    let planModalOpen = false;
-    let searchTimeoutHandle = null;
-
-    function safeString(value, maxLen) {
-        if (value == null) return "";
-        const str = String(value)
-            .replace(/[\u0000-\u001F\u007F]/g, "")
-            .trim();
-        return str.length > maxLen ? str.slice(0, maxLen) : str;
-    }
-
-    function toNumber(value, fallback) {
-        const n = Number(value);
-        return Number.isFinite(n) ? n : fallback;
-    }
-
-    function safeRead(storage, key) {
-        try {
-            return storage.getItem(key);
-        } catch (_) {
-            return null;
-        }
-    }
-
-    function safeWrite(storage, key, value) {
-        try {
-            storage.setItem(key, value);
-        } catch (_) {
-            // Ignore storage failures; tracking should not break UX.
-        }
-    }
-
-    function safeRemove(storage, key) {
-        try {
-            storage.removeItem(key);
-        } catch (_) {
-            // Ignore storage failures.
-        }
-    }
-
-    function parseJson(raw, fallback) {
-        if (!raw) return fallback;
-        try {
-            return JSON.parse(raw);
-        } catch (_) {
-            return fallback;
-        }
-    }
-
-    function uid(prefix) {
-        const base =
-            w.crypto && typeof w.crypto.randomUUID === "function"
-                ? w.crypto.randomUUID()
-                : Math.random().toString(36).slice(2) + Date.now().toString(36);
-        return prefix + "_" + base;
-    }
-
-    function getId(storage, key, prefix) {
-        const existing = safeRead(storage, key);
-        if (existing) return existing;
-        const created = uid(prefix);
-        safeWrite(storage, key, created);
-        return created;
-    }
-
-    function getSearchParams() {
-        try {
-            return new URLSearchParams(w.location.search || "");
-        } catch (_) {
-            return new URLSearchParams();
-        }
-    }
-
-    function hasAnyAttribution(data) {
-        return Object.keys(data).some(function (k) {
-            return !!data[k];
-        });
-    }
-
-    function readAttributionState() {
-        return parseJson(safeRead(w.localStorage, ATTR_KEY), {});
-    }
-
-    function writeAttributionState(state) {
-        safeWrite(w.localStorage, ATTR_KEY, JSON.stringify(state || {}));
-    }
-
-    function pickParams(params, keys) {
-        const out = {};
-        keys.forEach(function (key) {
-            if (!params.has(key)) return;
-            const value = safeString(params.get(key), 180);
-            if (value) out[key] = value;
-        });
-        return out;
-    }
-
-    function captureAttribution() {
-        const params = getSearchParams();
-        const incoming = Object.assign({}, pickParams(params, TRACK_KEYS));
-        const state = readAttributionState();
-
-        if (!state.first_touch && hasAnyAttribution(incoming)) {
-            state.first_touch = incoming;
-            state.first_touch_at = Date.now();
-        }
-
-        if (hasAnyAttribution(incoming)) {
-            state.last_touch = incoming;
-            state.last_touch_at = Date.now();
-        }
-
-        state.updated_at = Date.now();
-        writeAttributionState(state);
-        return state;
-    }
-
-    function buildAttributionPayload() {
-        const state = readAttributionState();
-        const first = state.first_touch || {};
-        const last = state.last_touch || {};
-        const out = {};
-
-        TRACK_KEYS.forEach(function (key) {
-            if (last[key]) out[key] = last[key];
-            if (first[key]) out["ft_" + key] = first[key];
-        });
-
-        return out;
-    }
-
-    function dataLayerPush(payload) {
-        w.dataLayer = w.dataLayer || [];
-        w.dataLayer.push(payload);
-    }
-
-    function getSelectedPeakCount() {
-        return d.querySelectorAll("#chart .xrd-user-peak").length;
-    }
-
-    function getMatchMetrics() {
-        const box = d.getElementById("xrd-matchedData");
-        if (!box) {
-            return { result_count: 0, locked_count: 0, limited_count: 0, has_no_match_text: false };
-        }
-
-        const rows = box.querySelectorAll(".matchedrow");
-        const locked = box.querySelectorAll('.matchedrow[data-tag="locked"]').length;
-        const limited = box.querySelectorAll('.matchedrow[data-tag="limited"]').length;
-        const text = safeString(box.textContent || "", 400).toLowerCase();
-
-        return {
-            result_count: rows.length,
-            locked_count: locked,
-            limited_count: limited,
-            has_no_match_text: text.indexOf("no matching peaks found") >= 0
-        };
-    }
-
-    function pushEvent(eventName, extra) {
-        const payload = Object.assign(
-            {
-                event: "instanano_event",
-                event_name: safeString(eventName, 64),
-                event_id: uid("evt"),
-                event_version: EVENT_VERSION,
-                ts: new Date().toISOString(),
-                visitor_id: getId(w.localStorage, VISITOR_KEY, "vid"),
-                session_id: getId(w.sessionStorage, SESSION_KEY, "sid"),
-                flow_id: getId(w.sessionStorage, FLOW_KEY, "flow"),
-                page_path: safeString(w.location.pathname, 200),
-                page_url: safeString(w.location.href, 1000),
-                page_title: safeString(d.title, 200),
-                referrer: safeString(d.referrer, 1000),
-                is_logged_in: typeof w.instananoCredits !== "undefined"
-            },
-            buildAttributionPayload(),
-            extra || {}
-        );
-
-        dataLayerPush(payload);
-    }
-
-    function consumeAdsEvent(event) {
-        if (!event || !event.name) return;
-        pushEvent(event.name, event.payload || {});
-    }
-
-    function onLandingReady() {
-        NS.onEvent = consumeAdsEvent;
-        if (typeof NS.consumeQueuedEvents === "function") NS.consumeQueuedEvents(consumeAdsEvent);
-    }
-
-    function emitSearchResult(source) {
-        const metrics = getMatchMetrics();
-        pushEvent("xrd_search_result", Object.assign({ source: source }, metrics));
-
-        if (metrics.locked_count > 0 || metrics.limited_count > 0) {
-            pushEvent("xrd_unlock_prompt_view", {
-                locked_count: metrics.locked_count,
-                limited_count: metrics.limited_count
-            });
-        }
-    }
-
-    function scheduleSearchTimeoutFallback() {
-        if (searchTimeoutHandle) w.clearTimeout(searchTimeoutHandle);
-        searchTimeoutHandle = w.setTimeout(function () {
-            if (!pendingSearchResult) return;
-            pendingSearchResult = false;
-            emitSearchResult("timeout");
-        }, 4500);
-    }
-
-    function isVisible(el) {
-        if (!el) return false;
-        const style = w.getComputedStyle(el);
-        return style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
-    }
-
-    function detectPlanModalOpen() {
-        const modal = d.getElementById("xrd-credit-plans");
-        if (!modal) return;
-        const visible = isVisible(modal);
-        if (visible && !planModalOpen) {
-            planModalOpen = true;
-            pushEvent("plans_modal_open", { location: "xrd_unlock" });
-        } else if (!visible && planModalOpen) {
-            planModalOpen = false;
-        }
-    }
-
-    function parseActionFromRequest(input, init) {
-        const req = input && typeof input === "object" ? input : null;
-        const url = safeString(
-            typeof input === "string" ? input : req && req.url ? req.url : "",
-            1000
-        );
-
-        let body = init && Object.prototype.hasOwnProperty.call(init, "body") ? init.body : null;
-        if (!body && req && req.bodyUsed === false) {
-            body = null;
-        }
-
-        let action = "";
-        if (body && typeof FormData !== "undefined" && body instanceof FormData) {
-            action = safeString(body.get("action"), 80);
-        } else if (typeof body === "string") {
-            const params = new URLSearchParams(body);
-            action = safeString(params.get("action"), 80);
-        }
-
-        return { url: url, action: action };
-    }
-
-    function rememberCheckout(planData) {
-        const payload = {
-            ts: Date.now(),
-            plan_id: safeString(planData.plan_id, 32),
-            plan_name: safeString(planData.plan_name, 120)
-        };
-        safeWrite(w.localStorage, CHECKOUT_KEY, JSON.stringify(payload));
-    }
-
-    function takeRecentCheckout() {
-        const data = parseJson(safeRead(w.localStorage, CHECKOUT_KEY), null);
-        if (!data || !data.ts) return null;
-        if (Date.now() - Number(data.ts) > CHECKOUT_TTL_MS) {
-            safeRemove(w.localStorage, CHECKOUT_KEY);
-            return null;
-        }
-        return data;
-    }
-
-    function attachUIListeners() {
-        const icon5 = d.getElementById("icon5");
-        if (icon5) {
-            icon5.addEventListener("change", function () {
-                if (icon5.checked) pushEvent("xrd_tab_open", { panel: "xrd" });
-            });
-        }
-
-        const searchBtn = d.getElementById("xrd-search-btn");
-        if (searchBtn) {
-            searchBtn.addEventListener("click", function () {
-                pendingSearchResult = true;
-                pushEvent("xrd_search_click", {
-                    selected_peak_count: getSelectedPeakCount(),
-                    filter_mode: safeString((d.getElementById("xrd-logic-mode") || {}).value, 16),
-                    filter_element_count: toNumber((d.getElementById("xrd-element-count") || {}).value, 0),
-                    has_element_filter: safeString((d.getElementById("xrd-elements") || {}).value, 200) !== ""
-                });
-                scheduleSearchTimeoutFallback();
-            });
-        }
-
-        const unlockBtn = d.getElementById("xrd-unlock-btn");
-        if (unlockBtn) {
-            unlockBtn.addEventListener("click", function () {
-                lastUnlockClickAt = Date.now();
-                pushEvent("xrd_unlock_click", {
-                    selected_peak_count: getSelectedPeakCount(),
-                    has_credit_nonce: typeof w.instananoCredits !== "undefined"
-                });
-            });
-        }
-
-        const plansRoot = d.getElementById("xrd-credit-plans");
-        if (plansRoot) {
-            plansRoot.addEventListener("click", function (event) {
-                const link = event.target && event.target.closest ? event.target.closest("a.cta-button[href]") : null;
-                if (!link) return;
-
-                let parsed;
-                try {
-                    parsed = new URL(link.getAttribute("href"), w.location.origin);
-                } catch (_) {
-                    return;
-                }
-
-                const planCard = link.closest(".pricing-card");
-                const planName = safeString(planCard && planCard.querySelector("h3") ? planCard.querySelector("h3").textContent : "", 120);
-                const amount = safeString(planCard && planCard.querySelector(".amount") ? planCard.querySelector(".amount").textContent : "", 40);
-                const planId = safeString(parsed.searchParams.get("add-to-cart") || "", 32);
-                const planData = {
-                    plan_id: planId,
-                    plan_name: planName,
-                    plan_amount_label: amount,
-                    checkout_mode: "new_tab"
-                };
-
-                pushEvent("plan_buy_click", planData);
-                pushEvent("checkout_started", planData);
-                rememberCheckout(planData);
-            });
-
-            const modalObserver = new MutationObserver(detectPlanModalOpen);
-            modalObserver.observe(plansRoot, {
-                attributes: true,
-                attributeFilter: ["style", "class"]
-            });
-        }
-
-        const matches = d.getElementById("xrd-matchedData");
-        if (matches) {
-            const matchObserver = new MutationObserver(function () {
-                if (!pendingSearchResult) return;
-                pendingSearchResult = false;
-                emitSearchResult("observer");
-            });
-            matchObserver.observe(matches, {
-                childList: true,
-                subtree: true
-            });
-        }
-    }
-
-    function patchFetch() {
-        if (typeof w.fetch !== "function" || w.fetch.__instananoAdsWrapped) return;
-
-        const originalFetch = w.fetch.bind(w);
-        const wrappedFetch = function (input, init) {
-            const meta = parseActionFromRequest(input, init);
-            const startedAt = Date.now();
-
-            return originalFetch(input, init)
-                .then(function (response) {
-                    if (
-                        meta.url.indexOf("admin-ajax.php") >= 0 &&
-                        meta.action === "instanano_use_credit" &&
-                        Date.now() - lastUnlockClickAt < 30000
-                    ) {
-                        response
-                            .clone()
-                            .json()
-                            .then(function (json) {
-                                const duration = Date.now() - startedAt;
-                                if (json && json.success) {
-                                    pushEvent("xrd_unlock_success", {
-                                        response_ms: duration,
-                                        analysis_type: safeString(
-                                            json.data && json.data.analysis_type ? json.data.analysis_type : "xrd",
-                                            16
-                                        )
-                                    });
-
-                                    const checkout = takeRecentCheckout();
-                                    if (checkout) {
-                                        pushEvent("xrd_unlock_after_payment_success", {
-                                            plan_id: safeString(checkout.plan_id, 32),
-                                            plan_name: safeString(checkout.plan_name, 120)
-                                        });
-                                        safeRemove(w.localStorage, CHECKOUT_KEY);
-                                    }
-                                } else {
-                                    pushEvent("xrd_unlock_failed", {
-                                        response_ms: duration,
-                                        error_code: safeString(json && json.data ? json.data.code : "unknown", 48),
-                                        error_message: safeString(json && json.data ? json.data.message : "Unlock failed", 200)
-                                    });
-                                }
-                            })
-                            .catch(function () {
-                                pushEvent("xrd_unlock_failed", {
-                                    response_ms: Date.now() - startedAt,
-                                    error_code: "invalid_json",
-                                    error_message: "Unlock response parse failed"
-                                });
-                            });
-                    }
-                    return response;
-                })
-                .catch(function (error) {
-                    if (
-                        meta.url.indexOf("admin-ajax.php") >= 0 &&
-                        meta.action === "instanano_use_credit" &&
-                        Date.now() - lastUnlockClickAt < 30000
-                    ) {
-                        pushEvent("xrd_unlock_failed", {
-                            response_ms: Date.now() - startedAt,
-                            error_code: "network_error",
-                            error_message: safeString(error && error.message ? error.message : "network error", 200)
-                        });
-                    }
-                    throw error;
-                });
-        };
-
-        wrappedFetch.__instananoAdsWrapped = true;
-        w.fetch = wrappedFetch;
-    }
-
-    function init() {
-        captureAttribution();
-        onLandingReady();
-        patchFetch();
-        attachUIListeners();
-
-        pushEvent("tracking_ready", {
-            tracking_mode: "browser_only",
-            schema: NS.schemaVersion || "ads_v1"
-        });
-
-        // If landing module is not used, still count visits with campaign params.
-        const params = getSearchParams();
-        if (params.has("in_lp") || params.has("landing") || params.has("utm_source") || params.has("gclid") || params.has("fbclid")) {
-            pushEvent("campaign_visit", {
-                in_lp: safeString(params.get("in_lp") || params.get("landing") || "", 64)
-            });
-        }
-
-        detectPlanModalOpen();
-    }
-
-    if (d.readyState === "loading") {
-        d.addEventListener("DOMContentLoaded", init, { once: true });
-    } else {
-        init();
-    }
-})(window, document);
-(function (w, d) {
-    "use strict";
-
-    const NS = (w.InstaNanoAds = w.InstaNanoAds || {});
-    if (NS.__landingInitialized) return;
-    NS.__landingInitialized = true;
-
-    const ROOT_ID = "instanano-ads-landing";
-    const STYLE_ID = "instanano-ads-landing-style";
-
-    function safeString(value, maxLen) {
-        if (value == null) return "";
-        const text = String(value)
-            .replace(/[\u0000-\u001F\u007F]/g, "")
-            .trim();
-        return text.length > maxLen ? text.slice(0, maxLen) : text;
-    }
-
-    function normalizeKey(value) {
-        const key = safeString(value, 64).toLowerCase();
-        return key.replace(/[^a-z0-9_-]/g, "");
-    }
-
-    function readParams() {
-        try {
-            return new URLSearchParams(w.location.search || "");
-        } catch (_) {
-            return new URLSearchParams();
-        }
-    }
-
-    function resolveVariant(params) {
-        const variants = NS.variants || {};
-        const requestedRaw = params.get("in_lp") || params.get("landing") || "";
-        let requested = normalizeKey(requestedRaw);
-        if (requested === "xrd") requested = "xrd_v1";
-
-        if (!requested) return { key: "", variant: null };
-        if (variants[requested]) return { key: requested, variant: variants[requested] };
-        if (variants.default) return { key: "default", variant: variants.default };
-
-        return { key: "", variant: null };
-    }
-
-    function ensureStyles() {
-        if (d.getElementById(STYLE_ID)) return;
-        const style = d.createElement("style");
-        style.id = STYLE_ID;
-        style.textContent =
-            "#" +
-            ROOT_ID +
-            "{max-width:1500px;margin:10px auto 8px;padding:0 10px;box-sizing:border-box;}" +
-            "#" +
-            ROOT_ID +
-            " .ads-landing-card{border:1px solid #dfd7ca;border-radius:14px;background:linear-gradient(120deg,#fffefb,#f6f0e5);padding:16px 18px;display:grid;grid-template-columns:1fr auto;gap:16px;align-items:center;}" +
-            "#" +
-            ROOT_ID +
-            " .ads-landing-badge{display:inline-block;font-size:12px;font-weight:700;letter-spacing:.02em;color:#7a5b00;background:#fdebb9;border:1px solid #f1d27a;border-radius:999px;padding:4px 10px;margin-bottom:8px;}" +
-            "#" +
-            ROOT_ID +
-            " .ads-landing-title{margin:0;font-size:28px;line-height:1.2;color:#2b2417;font-weight:700;}" +
-            "#" +
-            ROOT_ID +
-            " .ads-landing-sub{margin:7px 0 10px;color:#4c4130;font-size:15px;line-height:1.45;}" +
-            "#" +
-            ROOT_ID +
-            " .ads-landing-trust{display:flex;flex-wrap:wrap;gap:6px 12px;margin:0;padding:0;list-style:none;}" +
-            "#" +
-            ROOT_ID +
-            " .ads-landing-trust li{font-size:13px;color:#5a4c38;}" +
-            "#" +
-            ROOT_ID +
-            " .ads-landing-cta{display:inline-block;white-space:nowrap;border:0;border-radius:999px;background:#8a6a00;color:#fff;padding:11px 16px;font-weight:700;font-size:14px;cursor:pointer;}" +
-            "#" +
-            ROOT_ID +
-            " .ads-landing-cta:hover{background:#715500;}" +
-            "#" +
-            ROOT_ID +
-            " .ads-landing-media{width:100%;max-width:280px;border-radius:10px;overflow:hidden;border:1px solid #e7dcc7;background:#fff;}" +
-            "#" +
-            ROOT_ID +
-            " .ads-landing-media video,#" +
-            ROOT_ID +
-            " .ads-landing-media iframe{display:block;width:100%;height:160px;border:0;}" +
-            "@media (max-width:900px){#" +
-            ROOT_ID +
-            " .ads-landing-card{grid-template-columns:1fr;}#" +
-            ROOT_ID +
-            " .ads-landing-title{font-size:22px;}#" +
-            ROOT_ID +
-            " .ads-landing-media{max-width:none;}}";
-        d.head.appendChild(style);
-    }
-
-    function isSafeEmbedUrl(url) {
-        try {
-            const parsed = new URL(url, w.location.origin);
-            const host = parsed.hostname.toLowerCase();
-            return (
-                host === "www.youtube-nocookie.com" ||
-                host === "www.youtube.com" ||
-                host === "youtube.com" ||
-                host === "player.vimeo.com"
-            );
-        } catch (_) {
-            return false;
-        }
-    }
-
-    function createNode(tag, className, text) {
-        const node = d.createElement(tag);
-        if (className) node.className = className;
-        if (text) node.textContent = text;
-        return node;
-    }
-
-    function buildMedia(mediaConfig, variantKey) {
-        if (!mediaConfig || typeof mediaConfig !== "object") return null;
-
-        const wrapper = createNode("div", "ads-landing-media", "");
-
-        if (mediaConfig.type === "video" && mediaConfig.src) {
-            const video = d.createElement("video");
-            video.controls = true;
-            video.preload = "metadata";
-            video.src = safeString(mediaConfig.src, 1000);
-            video.addEventListener("play", function () {
-                NS.emit("landing_video_play", { variant_key: variantKey, media_type: "video" });
-            });
-            wrapper.appendChild(video);
-            return wrapper;
-        }
-
-        if (mediaConfig.type === "embed" && mediaConfig.src && isSafeEmbedUrl(mediaConfig.src)) {
-            const frame = d.createElement("iframe");
-            frame.loading = "lazy";
-            frame.referrerPolicy = "strict-origin-when-cross-origin";
-            frame.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
-            frame.allowFullscreen = true;
-            frame.src = safeString(mediaConfig.src, 1000);
-            wrapper.appendChild(frame);
-            return wrapper;
-        }
-
-        return null;
-    }
-
-    function focusWorkflow(target) {
-        if (target === "xrd") {
-            const xrdTab = d.getElementById("icon5");
-            if (xrdTab) xrdTab.checked = true;
-        }
-
-        const targetNode =
-            d.getElementById("dropzone") ||
-            d.getElementById("xrd-search-btn") ||
-            d.querySelector(".container");
-
-        if (targetNode && typeof targetNode.scrollIntoView === "function") {
-            targetNode.scrollIntoView({ behavior: "smooth", block: "center" });
-        }
-    }
-
-    function renderLanding(variantKey, variant, params) {
-        if (!variant || d.getElementById(ROOT_ID)) return;
-
-        const container = d.querySelector(".container");
-        if (!container || !container.parentNode) return;
-
-        ensureStyles();
-
-        const root = createNode("section", "", "");
-        root.id = ROOT_ID;
-        root.setAttribute("data-variant", variantKey);
-
-        const card = createNode("div", "ads-landing-card", "");
-        const left = createNode("div", "ads-landing-copy", "");
-
-        const badgeText = safeString(variant.badge, 64);
-        if (badgeText) left.appendChild(createNode("span", "ads-landing-badge", badgeText));
-
-        left.appendChild(createNode("h2", "ads-landing-title", safeString(variant.headline, 220)));
-        left.appendChild(createNode("p", "ads-landing-sub", safeString(variant.subheading, 320)));
-
-        const trustList = createNode("ul", "ads-landing-trust", "");
-        const trustPoints = Array.isArray(variant.trustPoints) ? variant.trustPoints : [];
-        trustPoints.slice(0, 4).forEach(function (point) {
-            trustList.appendChild(createNode("li", "", "- " + safeString(point, 120)));
-        });
-        if (trustList.childElementCount) left.appendChild(trustList);
-
-        const cta = createNode("button", "ads-landing-cta", safeString(variant.ctaText || "Try Now", 48));
-        cta.type = "button";
-        cta.addEventListener("click", function () {
-            const target = safeString(variant.ctaTarget || "tool", 16);
-            focusWorkflow(target);
-            NS.emit("landing_cta_click", {
-                variant_key: variantKey,
-                cta_target: target,
-                in_offer: safeString(params.get("in_offer") || "", 64)
-            });
-        });
-
-        const right = createNode("div", "ads-landing-actions", "");
-        right.appendChild(cta);
-
-        const media = buildMedia(variant.media, variantKey);
-        if (media) right.appendChild(media);
-
-        card.appendChild(left);
-        card.appendChild(right);
-        root.appendChild(card);
-
-        container.parentNode.insertBefore(root, container);
-        NS.emit("landing_view", {
-            variant_key: variantKey,
-            in_offer: safeString(params.get("in_offer") || "", 64),
-            in_exp: safeString(params.get("in_exp") || "", 64)
-        });
-    }
-
-    function init() {
-        const params = readParams();
-        const resolved = resolveVariant(params);
-
-        // Render only for explicit landing traffic to avoid affecting regular users.
-        if (!params.has("in_lp") && !params.has("landing")) return;
-        if (!resolved.variant) return;
-
-        renderLanding(resolved.key, resolved.variant, params);
-    }
-
-    if (d.readyState === "loading") {
-        d.addEventListener("DOMContentLoaded", init, { once: true });
-    } else {
-        init();
-    }
-})(window, document);
+(function(w,d){
+"use strict";
+const A=w.InstaNanoAds=w.InstaNanoAds||{};
+A.state=A.state&&typeof A.state==="object"?A.state:{};
+const C=A.constants||{};
+const UTM_KEYS=Array.isArray(C.UTM_KEYS)?C.UTM_KEYS:["utm_source","utm_medium","utm_campaign","utm_term","utm_content"];
+const CLICK_ID_KEYS=Array.isArray(C.CLICK_ID_KEYS)?C.CLICK_ID_KEYS:["gclid","wbraid","gbraid","dclid","fbclid","li_fat_id"];
+const INTERNAL_PARAMS=Array.isArray(C.INTERNAL_PARAMS)?C.INTERNAL_PARAMS:["in_lp","in_flow","in_offer","in_exp","in_ver","landing"];
+const TOUCH_KEYS=UTM_KEYS.concat(CLICK_ID_KEYS,INTERNAL_PARAMS);
+const TRACKED_EVENTS=new Set(["tracking_ready","campaign_visit","landing_view","landing_content_click","landing_cta_click","xrd_tab_open","xrd_peak_add_click","xrd_search_click","xrd_unlock_click","xrd_no_credit_prompt_view","xrd_plan_select","checkout_started","purchase_success"]);
+const FLOW_EVENTS=new Set(["landing_cta_click","xrd_tab_open","xrd_peak_add_click","xrd_search_click","xrd_unlock_click","xrd_no_credit_prompt_view","xrd_plan_select","checkout_started","purchase_success"]);
+const RESERVED_FIELDS=new Set(["event","event_id","ts","visitor_id","session_id","flow_id","variant_id","page_url","page_path","page_title","referrer"]);
+const VISITOR_KEY="in_ads_visitor_id_v1";
+const SESSION_KEY="in_ads_session_id_v1";
+const SESSION_TS_KEY="in_ads_session_ts_v1";
+const FLOW_KEY="in_ads_flow_id_v1";
+const FIRST_TOUCH_KEY="in_ads_first_touch_v1";
+const LAST_TOUCH_KEY="in_ads_last_touch_v1";
+const PENDING_CHECKOUT_KEY="in_ads_pending_checkout_v1";
+const PURCHASE_SYNC_KEY="in_ads_purchase_sync_v1";
+const PURCHASE_SEEN_KEY="in_ads_purchase_seen_v1";
+const SESSION_IDLE_MS=30*60*1000;
+const FIRST_TOUCH_TTL_MS=90*24*60*60*1000;
+const CHECKOUT_TTL_MS=7*24*60*60*1000;
+const DEDUP_WINDOW_MS=1000;
+const dedupMap=new Map();
+A._storageFallback=A._storageFallback||{local:{},session:{}};
+const localStore=createStore("localStorage",A._storageFallback.local);
+const sessionStore=createStore("sessionStorage",A._storageFallback.session);
+function createStore(name,fallback){
+let nativeOk;
+function raw(){try{return w[name];}catch(_){return null;}}
+function nativeAvailable(){
+if(nativeOk!==undefined)return nativeOk;
+const s=raw();
+if(!s){nativeOk=false;return nativeOk;}
+try{const t="__in_ads_test__";s.setItem(t,"1");s.removeItem(t);nativeOk=true;return nativeOk;}catch(_){nativeOk=false;return nativeOk;}
+}
+return{
+get:function(key){
+const s=raw();
+if(s){try{const v=s.getItem(key);if(v!==null)return v;}catch(_){}}
+return Object.prototype.hasOwnProperty.call(fallback,key)?fallback[key]:null;
+},
+set:function(key,value){
+const str=String(value);
+const s=raw();
+if(s){try{s.setItem(key,str);delete fallback[key];return true;}catch(_){}}
+fallback[key]=str;
+return false;
+},
+remove:function(key){
+const s=raw();
+if(s){try{s.removeItem(key);}catch(_){}}
+delete fallback[key];
+},
+hasNative:nativeAvailable
+};
+}
+function now(){return Date.now();}
+function makeId(prefix){return prefix+"_"+Math.random().toString(36).slice(2,10)+now().toString(36);}
+function cleanText(value,maxLen){return String(value==null?"":value).replace(/\s+/g," ").trim().slice(0,maxLen||240);}
+function cleanToken(value,maxLen){return cleanText(value,maxLen||96).replace(/[^a-zA-Z0-9_\-.]/g,"");}
+function toNumber(value){const n=Number(value);return Number.isFinite(n)?n:0;}
+function readJSON(store,key){const raw=store.get(key);if(!raw)return null;try{return JSON.parse(raw);}catch(_){return null;}}
+function writeJSON(store,key,obj){try{return store.set(key,JSON.stringify(obj));}catch(_){return false;}}
+function readParam(name){const params=new URLSearchParams(w.location.search||"");return cleanText(params.get(name)||"",120);}
+function getVariantId(preferred){
+const direct=cleanToken(preferred||"",64);
+if(direct)return direct;
+const stateVariant=cleanToken(A.state.variantId||"",64);
+if(stateVariant)return stateVariant;
+const qVariant=cleanToken(readParam("in_ver")||"",64);
+if(qVariant)return qVariant;
+const landing=cleanToken(readParam("landing")||"",64);
+if(landing==="xrd")return "landing_v1";
+if(landing)return landing;
+return "default";
+}
+function getVisitorId(){
+let id=cleanToken(localStore.get(VISITOR_KEY)||"",80);
+if(!id){id=makeId("visitor");localStore.set(VISITOR_KEY,id);}
+return id;
+}
+function getSessionId(){
+const ts=toNumber(sessionStore.get(SESSION_TS_KEY));
+let id=cleanToken(sessionStore.get(SESSION_KEY)||"",80);
+const t=now();
+if(!id||!ts||t-ts>SESSION_IDLE_MS){id=makeId("session");}
+sessionStore.set(SESSION_KEY,id);
+sessionStore.set(SESSION_TS_KEY,String(t));
+return id;
+}
+function getFlowId(createIfMissing){
+let flow=cleanToken(sessionStore.get(FLOW_KEY)||"",90);
+if(!flow){
+const qFlow=cleanToken(readParam("in_flow")||"",90);
+if(qFlow)flow=qFlow;
+}
+if(!flow&&createIfMissing)flow=makeId("flow");
+if(flow){sessionStore.set(FLOW_KEY,flow);A.state.flowId=flow;}
+return flow||"";
+}
+function hasAnyParams(obj,keys){for(let i=0;i<keys.length;i++){if(obj[keys[i]])return true;}return false;}
+function collectTouchParams(){
+const params=new URLSearchParams(w.location.search||"");
+const values={};
+for(let i=0;i<TOUCH_KEYS.length;i++){
+const key=TOUCH_KEYS[i];
+const value=cleanText(params.get(key)||"",180);
+if(value)values[key]=value;
+}
+return values;
+}
+function readFirstTouch(t){
+const ft=readJSON(localStore,FIRST_TOUCH_KEY);
+if(!ft||typeof ft!=="object")return null;
+if(toNumber(ft.exp)<(t||now())){localStore.remove(FIRST_TOUCH_KEY);return null;}
+return ft;
+}
+function readLastTouch(){
+const lt=readJSON(localStore,LAST_TOUCH_KEY);
+if(!lt||typeof lt!=="object")return null;
+return lt;
+}
+function captureAttribution(){
+const t=now();
+const values=collectTouchParams();
+if(!Object.keys(values).length)return {captured:false,values:{}};
+const payload={ts:t,page_url:w.location.href,referrer:d.referrer||"",values:values};
+writeJSON(localStore,LAST_TOUCH_KEY,payload);
+if(!readFirstTouch(t))writeJSON(localStore,FIRST_TOUCH_KEY,{ts:t,exp:t+FIRST_TOUCH_TTL_MS,page_url:w.location.href,referrer:d.referrer||"",values:values});
+return {captured:true,values:values};
+}
+function appendTouch(payload){
+const ft=readFirstTouch(now());
+const lt=readLastTouch();
+payload.ft_ts=ft?toNumber(ft.ts):0;
+payload.lt_ts=lt?toNumber(lt.ts):0;
+for(let i=0;i<TOUCH_KEYS.length;i++){
+const key=TOUCH_KEYS[i];
+payload["ft_"+key]=ft&&ft.values?cleanText(ft.values[key]||"",180):"";
+payload["lt_"+key]=lt&&lt.values?cleanText(lt.values[key]||"",180):"";
+}
+}
+function sanitizeValue(value){
+if(value==null)return "";
+if(typeof value==="string")return cleanText(value,240);
+if(typeof value==="number")return Number.isFinite(value)?value:0;
+if(typeof value==="boolean")return value;
+if(Array.isArray(value))return cleanText(value.join(","),240);
+try{return cleanText(JSON.stringify(value),240);}catch(_){return "";}
+}
+function sanitizeParams(params){
+const out={};
+if(!params||typeof params!=="object")return out;
+for(const key in params){
+if(!Object.prototype.hasOwnProperty.call(params,key))continue;
+if(RESERVED_FIELDS.has(key))continue;
+out[key]=sanitizeValue(params[key]);
+}
+return out;
+}
+function isDuplicate(eventName,params){
+const t=now();
+for(const [key,stamp]of dedupMap){if(t-stamp>DEDUP_WINDOW_MS)dedupMap.delete(key);}
+let encoded="";
+try{encoded=JSON.stringify(params||{});}catch(_){encoded="";}
+const dedupKey=eventName+"|"+encoded;
+const last=dedupMap.get(dedupKey);
+if(last&&t-last<DEDUP_WINDOW_MS)return true;
+dedupMap.set(dedupKey,t);
+return false;
+}
+function track(eventName,params){
+if(!TRACKED_EVENTS.has(eventName))return false;
+const safeParams=sanitizeParams(params);
+if(isDuplicate(eventName,safeParams))return false;
+const flowFromParams=cleanToken(params&&params.flow_id?params.flow_id:"",90);
+const flowId=flowFromParams||getFlowId(FLOW_EVENTS.has(eventName));
+if(flowId)sessionStore.set(FLOW_KEY,flowId);
+const variantId=getVariantId(params&&params.variant_id?params.variant_id:"");
+const payload={
+event:eventName,
+event_id:makeId("event"),
+ts:now(),
+visitor_id:getVisitorId(),
+session_id:getSessionId(),
+flow_id:flowId||"",
+variant_id:variantId,
+page_url:w.location.href,
+page_path:w.location.pathname+w.location.search,
+page_title:cleanText(d.title||"",200),
+referrer:d.referrer||""
+};
+appendTouch(payload);
+for(const key in safeParams){if(Object.prototype.hasOwnProperty.call(safeParams,key))payload[key]=safeParams[key];}
+w.dataLayer=Array.isArray(w.dataLayer)?w.dataLayer:[];
+try{w.dataLayer.push(payload);return true;}catch(_){return false;}
+}
+A.track=track;
+function inferNoCreditReason(){
+const code=cleanToken(A.state.lastUnlockCode||"",64);
+if(typeof w.instananoCredits==="undefined")return {reason:"logged_out",code:code};
+if(code==="no_credits"||code==="expired"||code==="email_monthly_limit")return {reason:"zero_credit",code:code};
+if(code==="no_account"||code==="email_not_verified"||code==="email_denied")return {reason:"no_plan",code:code};
+return {reason:"no_plan",code:code};
+}
+function parsePlanId(urlText){
+try{
+const url=new URL(urlText,w.location.href);
+const id=cleanToken(url.searchParams.get("add-to-cart")||url.searchParams.get("product_id")||"",80);
+return id;
+}catch(_){return "";}
+}
+function appendFlowParams(urlText,ctx){
+try{
+const url=new URL(urlText,w.location.href);
+if(url.origin!==w.location.origin)return urlText;
+if(!/\/(cart|checkout)\b/i.test(url.pathname)&&!url.searchParams.has("add-to-cart"))return urlText;
+if(ctx.flow_id)url.searchParams.set("in_flow",ctx.flow_id);
+if(ctx.variant_id)url.searchParams.set("in_ver",ctx.variant_id);
+const exp=readParam("in_exp");
+const offer=readParam("in_offer");
+if(exp&&!url.searchParams.get("in_exp"))url.searchParams.set("in_exp",exp);
+if(offer&&!url.searchParams.get("in_offer"))url.searchParams.set("in_offer",offer);
+return url.toString();
+}catch(_){return urlText;}
+}
+function readPendingCheckout(){
+const data=readJSON(localStore,PENDING_CHECKOUT_KEY);
+if(!data||typeof data!=="object")return null;
+const ts=toNumber(data.ts);
+if(ts&&now()-ts>CHECKOUT_TTL_MS){localStore.remove(PENDING_CHECKOUT_KEY);return null;}
+return data;
+}
+function purchaseKeyFromPage(){
+const queryOrder=cleanToken(readParam("order-received")||"",64);
+if(queryOrder)return "order_"+queryOrder;
+const pathMatch=(w.location.pathname||"").match(/order-received\/([^/]+)/i);
+if(pathMatch&&pathMatch[1])return "order_"+cleanToken(pathMatch[1],64);
+if(/order-received/i.test(w.location.pathname+w.location.search))return "order_path_"+cleanToken(w.location.pathname,96);
+if(d.body&&/\bwoocommerce-order-received\b/.test(d.body.className||""))return "woo_body_"+cleanToken(w.location.pathname,96);
+if(d.querySelector(".woocommerce-order,.woocommerce-thankyou-order-received,.woocommerce-order-overview"))return "woo_dom_"+cleanToken(w.location.pathname,96);
+return "";
+}
+function readSeenPurchases(){
+const map=readJSON(localStore,PURCHASE_SEEN_KEY);
+return map&&typeof map==="object"?map:{};
+}
+function writeSeenPurchases(map){
+const keys=Object.keys(map).sort(function(a,b){return toNumber(map[b])-toNumber(map[a]);}).slice(0,80);
+const out={};
+for(let i=0;i<keys.length;i++)out[keys[i]]=map[keys[i]];
+writeJSON(localStore,PURCHASE_SEEN_KEY,out);
+}
+function isPurchaseSeen(key){
+if(!key)return true;
+const map=readSeenPurchases();
+return !!map[key];
+}
+function markPurchaseSeen(key){
+if(!key)return;
+const map=readSeenPurchases();
+map[key]=now();
+writeSeenPurchases(map);
+}
+function emitPurchaseSuccess(context,synced){
+const c=context&&typeof context==="object"?context:{};
+const key=cleanToken(c.purchase_key||purchaseKeyFromPage()||"",120);
+if(!key||isPurchaseSeen(key))return false;
+const pending=readPendingCheckout()||{};
+const flowId=cleanToken(c.flow_id||pending.flow_id||"",90);
+const variantId=getVariantId(c.variant_id||pending.variant_id||"");
+const planId=cleanToken(c.plan_id||pending.plan_id||"",80);
+const checkoutTs=toNumber(c.ts||pending.ts||0);
+if(flowId)sessionStore.set(FLOW_KEY,flowId);
+markPurchaseSeen(key);
+track("purchase_success",{flow_id:flowId,variant_id:variantId,plan_id:planId,checkout_ts:checkoutTs,purchase_key:key,sync_source:synced?"storage":"page"});
+if(!synced)writeJSON(localStore,PURCHASE_SYNC_KEY,{purchase_key:key,flow_id:flowId,variant_id:variantId,plan_id:planId,ts:now()});
+localStore.remove(PENDING_CHECKOUT_KEY);
+return true;
+}
+function bindPurchaseSync(){
+w.addEventListener("storage",function(e){
+if(e.key!==PURCHASE_SYNC_KEY||!e.newValue)return;
+let payload;
+try{payload=JSON.parse(e.newValue);}catch(_){return;}
+if(!payload||!payload.purchase_key)return;
+emitPurchaseSuccess(payload,true);
+});
+}
+function patchUnlockOutcome(){
+const G=w.GraphPlotter;
+if(!G||!G.matchXRD||typeof G.matchXRD.unlock!=="function"||G.matchXRD.__inUnlockPatched)return;
+const base=G.matchXRD.unlock;
+G.matchXRD.unlock=async function(){
+try{
+const result=await base.apply(this,arguments);
+A.state.lastUnlockCode=result&&!result.ok?cleanToken(result.code||"",64):"";
+return result;
+}catch(err){
+A.state.lastUnlockCode="unknown";
+throw err;
+}
+};
+G.matchXRD.__inUnlockPatched=true;
+}
+function bindDomTracking(){
+const icon5=d.getElementById("icon5");
+if(icon5)icon5.addEventListener("change",function(){if(this.checked)track("xrd_tab_open",{tab_id:"icon5"});});
+const chart=d.getElementById("chart");
+if(chart)chart.addEventListener("click",function(e){
+const xrdTab=d.getElementById("icon5");
+if(!xrdTab||!xrdTab.checked)return;
+const svg=chart.querySelector("svg");
+if(!svg||!svg.contains(e.target))return;
+track("xrd_peak_add_click",{selector:"#chart svg"});
+});
+const searchBtn=d.getElementById("xrd-search-btn");
+if(searchBtn)searchBtn.addEventListener("click",function(){track("xrd_search_click",{selector:"#xrd-search-btn"});});
+const unlockBtn=d.getElementById("xrd-unlock-btn");
+if(unlockBtn)unlockBtn.addEventListener("click",function(){track("xrd_unlock_click",{selector:"#xrd-unlock-btn"});});
+const plans=d.getElementById("xrd-credit-plans");
+if(plans){
+plans.addEventListener("click",function(e){
+const link=e.target&&e.target.closest?e.target.closest("a[href]"):null;
+if(!link||!plans.contains(link))return;
+const flowId=getFlowId(true);
+const variantId=getVariantId("");
+const rawHref=link.getAttribute("href")||link.href||"";
+const appended=appendFlowParams(rawHref,{flow_id:flowId,variant_id:variantId});
+if(appended&&appended!==rawHref){link.setAttribute("href",appended);if(link.href)link.href=appended;}
+const checkoutUrl=appended||rawHref;
+const planId=parsePlanId(checkoutUrl);
+const checkoutContext={flow_id:flowId,plan_id:planId,variant_id:variantId,ts:now(),checkout_url:checkoutUrl};
+writeJSON(localStore,PENDING_CHECKOUT_KEY,checkoutContext);
+track("xrd_plan_select",{flow_id:flowId,variant_id:variantId,plan_id:planId,checkout_url:checkoutUrl});
+track("checkout_started",{flow_id:flowId,variant_id:variantId,plan_id:planId,checkout_url:checkoutUrl});
+});
+let promptVisible=false;
+let promptLastCheck=0;
+const evaluatePrompt=function(){
+const n=now();
+if(n-promptLastCheck<200)return;
+promptLastCheck=n;
+let visible=false;
+if(plans){
+const css=w.getComputedStyle(plans);
+visible=css.display!=="none"&&css.visibility!=="hidden"&&plans.getClientRects().length>0;
+}
+if(visible&&!promptVisible){
+const info=inferNoCreditReason();
+track("xrd_no_credit_prompt_view",{reason:info.reason,unlock_code:info.code});
+}
+promptVisible=visible;
+};
+const observer=new MutationObserver(evaluatePrompt);
+observer.observe(plans,{attributes:true,attributeFilter:["style","class"],childList:true,subtree:true});
+evaluatePrompt();
+}
+patchUnlockOutcome();
+emitPurchaseSuccess({},false);
+}
+function bindEventBus(){
+if(typeof A.consumeQueuedEvents!=="function")return;
+A.consumeQueuedEvents(function(name,payload){
+if(!TRACKED_EVENTS.has(name))return;
+track(name,payload&&typeof payload==="object"?payload:{});
+});
+}
+function checkCampaignEntry(captured){
+const params=new URLSearchParams(w.location.search||"");
+const hasLanding=params.has("landing");
+const hasInLp=params.get("in_lp")==="1";
+const hasAttrib=hasAnyParams(captured.values||{},UTM_KEYS.concat(CLICK_ID_KEYS));
+if(!hasLanding&&!hasInLp&&!hasAttrib)return;
+track("campaign_visit",{entry_landing:hasLanding?1:0,entry_in_lp:hasInLp?1:0,entry_attribution:hasAttrib?1:0});
+}
+function init(){
+const captured=captureAttribution();
+if(readParam("in_flow"))getFlowId(false);
+bindEventBus();
+bindPurchaseSync();
+track("tracking_ready",{storage_mode:localStore.hasNative()?"native":"memory"});
+checkCampaignEntry(captured);
+if(d.readyState==="loading")d.addEventListener("DOMContentLoaded",bindDomTracking,{once:true});
+else bindDomTracking();
+}
+init();
+})(window,document);
+(function(w,d){
+"use strict";
+try{
+const A=w.InstaNanoAds=w.InstaNanoAds||{};
+A.state=A.state&&typeof A.state==="object"?A.state:{};
+const C=A.constants||{};
+const UTM_KEYS=Array.isArray(C.UTM_KEYS)?C.UTM_KEYS:["utm_source","utm_medium","utm_campaign","utm_term","utm_content"];
+const CLICK_ID_KEYS=Array.isArray(C.CLICK_ID_KEYS)?C.CLICK_ID_KEYS:["gclid","wbraid","gbraid","dclid","fbclid","li_fat_id"];
+const params=new URLSearchParams(w.location.search||"");
+const hasAttribution=UTM_KEYS.concat(CLICK_ID_KEYS).some(function(key){return !!String(params.get(key)||"").trim();});
+const isAdEntry=params.get("in_lp")==="1"||params.has("landing")||hasAttribution;
+if(!isAdEntry)return;
+const variants=A.variants||{};
+function cleanText(value,maxLen){return String(value==null?"":value).replace(/\s+/g," ").trim().slice(0,maxLen||200);}
+function cleanToken(value,maxLen){return cleanText(value,maxLen||80).replace(/[^a-zA-Z0-9_\-.]/g,"");}
+function emit(name,payload){if(typeof A.emit==="function")A.emit(name,payload||{});}
+function resolveVariant(raw){
+const requested=cleanToken(raw||"",64);
+if(requested==="xrd")return "landing_v1";
+if(requested&&Object.prototype.hasOwnProperty.call(variants,requested))return requested;
+return "landing_v1";
+}
+const variantId=resolveVariant(params.get("landing")||"");
+const config=(variants[variantId]&&variants[variantId].landing)?variants[variantId].landing:(variants.landing_v1&&variants.landing_v1.landing?variants.landing_v1.landing:(variants.default&&variants.default.landing?variants.default.landing:null));
+if(!config)return;
+A.state.variantId=variantId;
+const container=d.querySelector(".container");
+if(!container||d.getElementById("in-ads-landing"))return;
+const allowedHosts={"cdn.jsdelivr.net":1,"images.unsplash.com":1,"instanano.com":1,"www.instanano.com":1};
+function safeMediaUrl(raw){
+const source=cleanText(raw||"",600);
+if(!source)return "";
+try{
+const url=new URL(source,w.location.href);
+if(!/^https?:$/.test(url.protocol))return "";
+if(!allowedHosts[url.hostname])return "";
+return url.toString();
+}catch(_){return "";}
+}
+const block=d.createElement("section");
+block.id="in-ads-landing";
+block.setAttribute("data-variant",variantId);
+block.style.cssText="max-width:1200px;margin:12px auto 0;padding:0 12px;";
+const card=d.createElement("div");
+card.style.cssText="border:1px solid #d8e5ee;background:linear-gradient(135deg,#f6fbff 0%,#eef6fc 100%);border-radius:12px;padding:16px 18px;color:#102a43;font-family:Arial,Helvetica,sans-serif;box-shadow:0 6px 16px rgba(16,42,67,0.08);";
+const top=d.createElement("div");
+top.style.cssText="display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap;";
+const copy=d.createElement("div");
+copy.style.cssText="min-width:260px;flex:1;";
+const badge=d.createElement("span");
+badge.textContent=cleanText(config.badge||"InstaNano",48);
+badge.style.cssText="display:inline-block;background:#d9eefb;color:#0a4a6c;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;letter-spacing:0.03em;text-transform:uppercase;";
+const title=d.createElement("h2");
+title.textContent=cleanText(config.headline||"Fast XRD workflow",120);
+title.style.cssText="margin:10px 0 6px;font-size:26px;line-height:1.2;color:#0c2d48;";
+const subtitle=d.createElement("p");
+subtitle.textContent=cleanText(config.subheading||"Open XRD Match and continue your analysis.",180);
+subtitle.style.cssText="margin:0;color:#334e68;font-size:15px;line-height:1.45;";
+const list=d.createElement("ul");
+list.style.cssText="display:flex;flex-wrap:wrap;gap:8px 16px;margin:12px 0 0;padding:0;list-style:none;color:#1f3f58;font-size:13px;";
+const points=Array.isArray(config.trust_points)?config.trust_points.slice(0,4):[];
+for(let i=0;i<points.length;i++){
+const li=d.createElement("li");
+li.textContent="- "+cleanText(points[i],80);
+li.style.cssText="white-space:nowrap;";
+list.appendChild(li);
+}
+copy.appendChild(badge);
+copy.appendChild(title);
+copy.appendChild(subtitle);
+if(points.length)copy.appendChild(list);
+const cta=d.createElement("button");
+cta.type="button";
+cta.id="in-landing-cta";
+cta.textContent=cleanText(config.cta_label||"Start XRD Match",48);
+cta.style.cssText="border:0;background:#0f6ea8;color:#fff;font-weight:700;font-size:15px;padding:12px 18px;border-radius:10px;cursor:pointer;white-space:nowrap;";
+const mediaUrl=safeMediaUrl(config.media_url||"");
+if(mediaUrl){
+const mediaWrap=d.createElement("div");
+mediaWrap.style.cssText="min-width:120px;";
+const img=d.createElement("img");
+img.src=mediaUrl;
+img.alt="Workflow preview";
+img.style.cssText="max-width:160px;border-radius:10px;border:1px solid #c5d9e8;display:block;";
+mediaWrap.appendChild(img);
+top.appendChild(mediaWrap);
+}
+top.appendChild(copy);
+top.appendChild(cta);
+card.appendChild(top);
+block.appendChild(card);
+container.parentNode.insertBefore(block,container);
+block.addEventListener("click",function(e){
+const hit=e.target&&e.target.closest?e.target.closest("button,a,li,h1,h2,h3,p,span,div"):null;
+if(!hit||!block.contains(hit))return;
+emit("landing_content_click",{variant_id:variantId,element_tag:cleanToken((hit.tagName||"div").toLowerCase(),24),element_id:cleanToken(hit.id||"",80),element_text:cleanText(hit.textContent||"",120)});
+});
+cta.addEventListener("click",function(e){
+e.preventDefault();
+emit("landing_cta_click",{variant_id:variantId,cta_id:"in-landing-cta"});
+const tab=d.getElementById("icon5");
+if(tab){
+if(!tab.checked)tab.checked=true;
+tab.dispatchEvent(new Event("change",{bubbles:true}));
+}
+const target=d.querySelector(cleanText(config.cta_target||"#xrd-filter-section",80))||d.getElementById("xrd-filter-section")||d.querySelector(".panel5")||d.getElementById("xrd-search-btn");
+if(target&&typeof target.scrollIntoView==="function")target.scrollIntoView({behavior:"smooth",block:"start"});
+});
+emit("landing_view",{variant_id:variantId});
+}catch(_){}}
+)(window,document);
 (function(G) {
     "use strict";
     G.parsers.parseText = function(text){
