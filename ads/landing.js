@@ -1,238 +1,111 @@
-(function (w, d) {
-    "use strict";
-
-    const NS = (w.InstaNanoAds = w.InstaNanoAds || {});
-    if (NS.__landingInitialized) return;
-    NS.__landingInitialized = true;
-
-    const ROOT_ID = "instanano-ads-landing";
-    const STYLE_ID = "instanano-ads-landing-style";
-
-    function safeString(value, maxLen) {
-        if (value == null) return "";
-        const text = String(value)
-            .replace(/[\u0000-\u001F\u007F]/g, "")
-            .trim();
-        return text.length > maxLen ? text.slice(0, maxLen) : text;
-    }
-
-    function normalizeKey(value) {
-        const key = safeString(value, 64).toLowerCase();
-        return key.replace(/[^a-z0-9_-]/g, "");
-    }
-
-    function readParams() {
-        try {
-            return new URLSearchParams(w.location.search || "");
-        } catch (_) {
-            return new URLSearchParams();
-        }
-    }
-
-    function resolveVariant(params) {
-        const variants = NS.variants || {};
-        const requestedRaw = params.get("in_lp") || params.get("landing") || "";
-        let requested = normalizeKey(requestedRaw);
-        if (requested === "xrd") requested = "xrd_v1";
-
-        if (!requested) return { key: "", variant: null };
-        if (variants[requested]) return { key: requested, variant: variants[requested] };
-        if (variants.default) return { key: "default", variant: variants.default };
-
-        return { key: "", variant: null };
-    }
-
-    function ensureStyles() {
-        if (d.getElementById(STYLE_ID)) return;
-        const style = d.createElement("style");
-        style.id = STYLE_ID;
-        style.textContent =
-            "#" +
-            ROOT_ID +
-            "{max-width:1500px;margin:10px auto 8px;padding:0 10px;box-sizing:border-box;}" +
-            "#" +
-            ROOT_ID +
-            " .ads-landing-card{border:1px solid #dfd7ca;border-radius:14px;background:linear-gradient(120deg,#fffefb,#f6f0e5);padding:16px 18px;display:grid;grid-template-columns:1fr auto;gap:16px;align-items:center;}" +
-            "#" +
-            ROOT_ID +
-            " .ads-landing-badge{display:inline-block;font-size:12px;font-weight:700;letter-spacing:.02em;color:#7a5b00;background:#fdebb9;border:1px solid #f1d27a;border-radius:999px;padding:4px 10px;margin-bottom:8px;}" +
-            "#" +
-            ROOT_ID +
-            " .ads-landing-title{margin:0;font-size:28px;line-height:1.2;color:#2b2417;font-weight:700;}" +
-            "#" +
-            ROOT_ID +
-            " .ads-landing-sub{margin:7px 0 10px;color:#4c4130;font-size:15px;line-height:1.45;}" +
-            "#" +
-            ROOT_ID +
-            " .ads-landing-trust{display:flex;flex-wrap:wrap;gap:6px 12px;margin:0;padding:0;list-style:none;}" +
-            "#" +
-            ROOT_ID +
-            " .ads-landing-trust li{font-size:13px;color:#5a4c38;}" +
-            "#" +
-            ROOT_ID +
-            " .ads-landing-cta{display:inline-block;white-space:nowrap;border:0;border-radius:999px;background:#8a6a00;color:#fff;padding:11px 16px;font-weight:700;font-size:14px;cursor:pointer;}" +
-            "#" +
-            ROOT_ID +
-            " .ads-landing-cta:hover{background:#715500;}" +
-            "#" +
-            ROOT_ID +
-            " .ads-landing-media{width:100%;max-width:280px;border-radius:10px;overflow:hidden;border:1px solid #e7dcc7;background:#fff;}" +
-            "#" +
-            ROOT_ID +
-            " .ads-landing-media video,#" +
-            ROOT_ID +
-            " .ads-landing-media iframe{display:block;width:100%;height:160px;border:0;}" +
-            "@media (max-width:900px){#" +
-            ROOT_ID +
-            " .ads-landing-card{grid-template-columns:1fr;}#" +
-            ROOT_ID +
-            " .ads-landing-title{font-size:22px;}#" +
-            ROOT_ID +
-            " .ads-landing-media{max-width:none;}}";
-        d.head.appendChild(style);
-    }
-
-    function isSafeEmbedUrl(url) {
-        try {
-            const parsed = new URL(url, w.location.origin);
-            const host = parsed.hostname.toLowerCase();
-            return (
-                host === "www.youtube-nocookie.com" ||
-                host === "www.youtube.com" ||
-                host === "youtube.com" ||
-                host === "player.vimeo.com"
-            );
-        } catch (_) {
-            return false;
-        }
-    }
-
-    function createNode(tag, className, text) {
-        const node = d.createElement(tag);
-        if (className) node.className = className;
-        if (text) node.textContent = text;
-        return node;
-    }
-
-    function buildMedia(mediaConfig, variantKey) {
-        if (!mediaConfig || typeof mediaConfig !== "object") return null;
-
-        const wrapper = createNode("div", "ads-landing-media", "");
-
-        if (mediaConfig.type === "video" && mediaConfig.src) {
-            const video = d.createElement("video");
-            video.controls = true;
-            video.preload = "metadata";
-            video.src = safeString(mediaConfig.src, 1000);
-            video.addEventListener("play", function () {
-                NS.emit("landing_video_play", { variant_key: variantKey, media_type: "video" });
-            });
-            wrapper.appendChild(video);
-            return wrapper;
-        }
-
-        if (mediaConfig.type === "embed" && mediaConfig.src && isSafeEmbedUrl(mediaConfig.src)) {
-            const frame = d.createElement("iframe");
-            frame.loading = "lazy";
-            frame.referrerPolicy = "strict-origin-when-cross-origin";
-            frame.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
-            frame.allowFullscreen = true;
-            frame.src = safeString(mediaConfig.src, 1000);
-            wrapper.appendChild(frame);
-            return wrapper;
-        }
-
-        return null;
-    }
-
-    function focusWorkflow(target) {
-        if (target === "xrd") {
-            const xrdTab = d.getElementById("icon5");
-            if (xrdTab) xrdTab.checked = true;
-        }
-
-        const targetNode =
-            d.getElementById("dropzone") ||
-            d.getElementById("xrd-search-btn") ||
-            d.querySelector(".container");
-
-        if (targetNode && typeof targetNode.scrollIntoView === "function") {
-            targetNode.scrollIntoView({ behavior: "smooth", block: "center" });
-        }
-    }
-
-    function renderLanding(variantKey, variant, params) {
-        if (!variant || d.getElementById(ROOT_ID)) return;
-
-        const container = d.querySelector(".container");
-        if (!container || !container.parentNode) return;
-
-        ensureStyles();
-
-        const root = createNode("section", "", "");
-        root.id = ROOT_ID;
-        root.setAttribute("data-variant", variantKey);
-
-        const card = createNode("div", "ads-landing-card", "");
-        const left = createNode("div", "ads-landing-copy", "");
-
-        const badgeText = safeString(variant.badge, 64);
-        if (badgeText) left.appendChild(createNode("span", "ads-landing-badge", badgeText));
-
-        left.appendChild(createNode("h2", "ads-landing-title", safeString(variant.headline, 220)));
-        left.appendChild(createNode("p", "ads-landing-sub", safeString(variant.subheading, 320)));
-
-        const trustList = createNode("ul", "ads-landing-trust", "");
-        const trustPoints = Array.isArray(variant.trustPoints) ? variant.trustPoints : [];
-        trustPoints.slice(0, 4).forEach(function (point) {
-            trustList.appendChild(createNode("li", "", "- " + safeString(point, 120)));
-        });
-        if (trustList.childElementCount) left.appendChild(trustList);
-
-        const cta = createNode("button", "ads-landing-cta", safeString(variant.ctaText || "Try Now", 48));
-        cta.type = "button";
-        cta.addEventListener("click", function () {
-            const target = safeString(variant.ctaTarget || "tool", 16);
-            focusWorkflow(target);
-            NS.emit("landing_cta_click", {
-                variant_key: variantKey,
-                cta_target: target,
-                in_offer: safeString(params.get("in_offer") || "", 64)
-            });
-        });
-
-        const right = createNode("div", "ads-landing-actions", "");
-        right.appendChild(cta);
-
-        const media = buildMedia(variant.media, variantKey);
-        if (media) right.appendChild(media);
-
-        card.appendChild(left);
-        card.appendChild(right);
-        root.appendChild(card);
-
-        container.parentNode.insertBefore(root, container);
-        NS.emit("landing_view", {
-            variant_key: variantKey,
-            in_offer: safeString(params.get("in_offer") || "", 64),
-            in_exp: safeString(params.get("in_exp") || "", 64)
-        });
-    }
-
-    function init() {
-        const params = readParams();
-        const resolved = resolveVariant(params);
-
-        // Render only for explicit landing traffic to avoid affecting regular users.
-        if (!params.has("in_lp") && !params.has("landing")) return;
-        if (!resolved.variant) return;
-
-        renderLanding(resolved.key, resolved.variant, params);
-    }
-
-    if (d.readyState === "loading") {
-        d.addEventListener("DOMContentLoaded", init, { once: true });
-    } else {
-        init();
-    }
-})(window, document);
+(function(w,d){
+"use strict";
+try{
+const A=w.InstaNanoAds=w.InstaNanoAds||{};
+A.state=A.state&&typeof A.state==="object"?A.state:{};
+const C=A.constants||{};
+const UTM_KEYS=Array.isArray(C.UTM_KEYS)?C.UTM_KEYS:["utm_source","utm_medium","utm_campaign","utm_term","utm_content"];
+const CLICK_ID_KEYS=Array.isArray(C.CLICK_ID_KEYS)?C.CLICK_ID_KEYS:["gclid","wbraid","gbraid","dclid","fbclid","li_fat_id"];
+const params=new URLSearchParams(w.location.search||"");
+const hasAttribution=UTM_KEYS.concat(CLICK_ID_KEYS).some(function(key){return !!String(params.get(key)||"").trim();});
+const isAdEntry=params.get("in_lp")==="1"||params.has("landing")||hasAttribution;
+if(!isAdEntry)return;
+const variants=A.variants||{};
+function cleanText(value,maxLen){return String(value==null?"":value).replace(/\s+/g," ").trim().slice(0,maxLen||200);}
+function cleanToken(value,maxLen){return cleanText(value,maxLen||80).replace(/[^a-zA-Z0-9_\-.]/g,"");}
+function emit(name,payload){if(typeof A.emit==="function")A.emit(name,payload||{});}
+function resolveVariant(raw){
+const requested=cleanToken(raw||"",64);
+if(requested==="xrd")return "landing_v1";
+if(requested&&Object.prototype.hasOwnProperty.call(variants,requested))return requested;
+return "landing_v1";
+}
+const variantId=resolveVariant(params.get("landing")||"");
+const config=(variants[variantId]&&variants[variantId].landing)?variants[variantId].landing:(variants.landing_v1&&variants.landing_v1.landing?variants.landing_v1.landing:(variants.default&&variants.default.landing?variants.default.landing:null));
+if(!config)return;
+A.state.variantId=variantId;
+const container=d.querySelector(".container");
+if(!container||d.getElementById("in-ads-landing"))return;
+const allowedHosts={"cdn.jsdelivr.net":1,"images.unsplash.com":1,"instanano.com":1,"www.instanano.com":1};
+function safeMediaUrl(raw){
+const source=cleanText(raw||"",600);
+if(!source)return "";
+try{
+const url=new URL(source,w.location.href);
+if(!/^https?:$/.test(url.protocol))return "";
+if(!allowedHosts[url.hostname])return "";
+return url.toString();
+}catch(_){return "";}
+}
+const block=d.createElement("section");
+block.id="in-ads-landing";
+block.setAttribute("data-variant",variantId);
+block.style.cssText="max-width:1200px;margin:12px auto 0;padding:0 12px;";
+const card=d.createElement("div");
+card.style.cssText="border:1px solid #d8e5ee;background:linear-gradient(135deg,#f6fbff 0%,#eef6fc 100%);border-radius:12px;padding:16px 18px;color:#102a43;font-family:Arial,Helvetica,sans-serif;box-shadow:0 6px 16px rgba(16,42,67,0.08);";
+const top=d.createElement("div");
+top.style.cssText="display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap;";
+const copy=d.createElement("div");
+copy.style.cssText="min-width:260px;flex:1;";
+const badge=d.createElement("span");
+badge.textContent=cleanText(config.badge||"InstaNano",48);
+badge.style.cssText="display:inline-block;background:#d9eefb;color:#0a4a6c;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;letter-spacing:0.03em;text-transform:uppercase;";
+const title=d.createElement("h2");
+title.textContent=cleanText(config.headline||"Fast XRD workflow",120);
+title.style.cssText="margin:10px 0 6px;font-size:26px;line-height:1.2;color:#0c2d48;";
+const subtitle=d.createElement("p");
+subtitle.textContent=cleanText(config.subheading||"Open XRD Match and continue your analysis.",180);
+subtitle.style.cssText="margin:0;color:#334e68;font-size:15px;line-height:1.45;";
+const list=d.createElement("ul");
+list.style.cssText="display:flex;flex-wrap:wrap;gap:8px 16px;margin:12px 0 0;padding:0;list-style:none;color:#1f3f58;font-size:13px;";
+const points=Array.isArray(config.trust_points)?config.trust_points.slice(0,4):[];
+for(let i=0;i<points.length;i++){
+const li=d.createElement("li");
+li.textContent="- "+cleanText(points[i],80);
+li.style.cssText="white-space:nowrap;";
+list.appendChild(li);
+}
+copy.appendChild(badge);
+copy.appendChild(title);
+copy.appendChild(subtitle);
+if(points.length)copy.appendChild(list);
+const cta=d.createElement("button");
+cta.type="button";
+cta.id="in-landing-cta";
+cta.textContent=cleanText(config.cta_label||"Start XRD Match",48);
+cta.style.cssText="border:0;background:#0f6ea8;color:#fff;font-weight:700;font-size:15px;padding:12px 18px;border-radius:10px;cursor:pointer;white-space:nowrap;";
+const mediaUrl=safeMediaUrl(config.media_url||"");
+if(mediaUrl){
+const mediaWrap=d.createElement("div");
+mediaWrap.style.cssText="min-width:120px;";
+const img=d.createElement("img");
+img.src=mediaUrl;
+img.alt="Workflow preview";
+img.style.cssText="max-width:160px;border-radius:10px;border:1px solid #c5d9e8;display:block;";
+mediaWrap.appendChild(img);
+top.appendChild(mediaWrap);
+}
+top.appendChild(copy);
+top.appendChild(cta);
+card.appendChild(top);
+block.appendChild(card);
+container.parentNode.insertBefore(block,container);
+block.addEventListener("click",function(e){
+const hit=e.target&&e.target.closest?e.target.closest("button,a,li,h1,h2,h3,p,span,div"):null;
+if(!hit||!block.contains(hit))return;
+emit("landing_content_click",{variant_id:variantId,element_tag:cleanToken((hit.tagName||"div").toLowerCase(),24),element_id:cleanToken(hit.id||"",80),element_text:cleanText(hit.textContent||"",120)});
+});
+cta.addEventListener("click",function(e){
+e.preventDefault();
+emit("landing_cta_click",{variant_id:variantId,cta_id:"in-landing-cta"});
+const tab=d.getElementById("icon5");
+if(tab){
+if(!tab.checked)tab.checked=true;
+tab.dispatchEvent(new Event("change",{bubbles:true}));
+}
+const target=d.querySelector(cleanText(config.cta_target||"#xrd-filter-section",80))||d.getElementById("xrd-filter-section")||d.querySelector(".panel5")||d.getElementById("xrd-search-btn");
+if(target&&typeof target.scrollIntoView==="function")target.scrollIntoView({behavior:"smooth",block:"start"});
+});
+emit("landing_view",{variant_id:variantId});
+}catch(_){}}
+)(window,document);
