@@ -7,8 +7,8 @@ const UTM_KEYS=Array.isArray(C.UTM_KEYS)?C.UTM_KEYS:["utm_source","utm_medium","
 const CLICK_ID_KEYS=Array.isArray(C.CLICK_ID_KEYS)?C.CLICK_ID_KEYS:["gclid","wbraid","gbraid","dclid","fbclid","li_fat_id"];
 const INTERNAL_PARAMS=Array.isArray(C.INTERNAL_PARAMS)?C.INTERNAL_PARAMS:["in_lp","in_flow","in_offer","in_exp","in_ver","landing"];
 const TOUCH_KEYS=UTM_KEYS.concat(CLICK_ID_KEYS,INTERNAL_PARAMS);
-const TRACKED_EVENTS=new Set(["tracking_ready","campaign_visit","landing_view","landing_content_click","landing_cta_click","xrd_tab_open","xrd_peak_add_click","xrd_search_click","xrd_unlock_click","xrd_no_credit_prompt_view","xrd_plan_select","checkout_started","purchase_success"]);
-const FLOW_EVENTS=new Set(["landing_cta_click","xrd_tab_open","xrd_peak_add_click","xrd_search_click","xrd_unlock_click","xrd_no_credit_prompt_view","xrd_plan_select","checkout_started","purchase_success"]);
+const TRACKED_EVENTS=new Set(["tracking_ready","campaign_visit","landing_view","landing_content_click","landing_cta_click","xrd_tab_open","xrd_peak_add_click","xrd_search_click","xrd_unlock_click","xrd_no_credit_prompt_view","xrd_plan_select","checkout_started","checkout_error","purchase_success"]);
+const FLOW_EVENTS=new Set(["landing_cta_click","xrd_tab_open","xrd_peak_add_click","xrd_search_click","xrd_unlock_click","xrd_no_credit_prompt_view","xrd_plan_select","checkout_started","checkout_error","purchase_success"]);
 const RESERVED_FIELDS=new Set(["event","event_id","ts","visitor_id","session_id","flow_id","variant_id","page_url","page_path","page_title","referrer"]);
 const VISITOR_KEY="in_ads_visitor_id_v1";
 const SESSION_KEY="in_ads_session_id_v1";
@@ -306,6 +306,62 @@ throw err;
 };
 G.matchXRD.__inUnlockPatched=true;
 }
+function isCheckoutContext(){
+const path=(w.location.pathname||"").toLowerCase();
+const bodyClass=(d.body&&d.body.className?d.body.className:"").toLowerCase();
+if(path.indexOf("order-received")!==-1||bodyClass.indexOf("woocommerce-order-received")!==-1)return false;
+if(bodyClass.indexOf("woocommerce-checkout")!==-1)return true;
+if(/\/checkout\b/.test(path))return true;
+return !!d.querySelector("form.checkout");
+}
+function inferCheckoutErrorType(message){
+const text=String(message||"").toLowerCase();
+if(!text)return "unknown";
+if(text.indexOf("coupon")!==-1)return "coupon_error";
+if(text.indexOf("session")!==-1||text.indexOf("expired")!==-1)return "session_expired";
+if(text.indexOf("payment")!==-1||text.indexOf("card")!==-1||text.indexOf("declin")!==-1||text.indexOf("gateway")!==-1)return "payment_failed";
+if(text.indexOf("required")!==-1||text.indexOf("invalid")!==-1||text.indexOf("billing")!==-1||text.indexOf("shipping")!==-1||text.indexOf("email")!==-1||text.indexOf("phone")!==-1||text.indexOf("postcode")!==-1||text.indexOf("address")!==-1)return "validation_error";
+return "unknown";
+}
+function emitCheckoutError(node){
+if(!node||!node.getClientRects||node.getClientRects().length===0)return false;
+const css=w.getComputedStyle? w.getComputedStyle(node):null;
+if(css&&(css.display==="none"||css.visibility==="hidden"))return false;
+const message=cleanText(node.textContent||"",220);
+if(!message)return false;
+const sig=cleanToken(message,120)+"|"+cleanToken(w.location.pathname,96);
+if(A.state.lastCheckoutErrorSig===sig)return false;
+A.state.lastCheckoutErrorSig=sig;
+const pending=readPendingCheckout()||{};
+track("checkout_error",{flow_id:cleanToken(pending.flow_id||"",90),variant_id:getVariantId(pending.variant_id||""),plan_id:cleanToken(pending.plan_id||"",80),error_type:inferCheckoutErrorType(message),error_text:message});
+return true;
+}
+function scanCheckoutErrors(root){
+const scope=root&&root.querySelectorAll?root:d;
+const notices=scope.querySelectorAll(".woocommerce-error,.woocommerce-NoticeGroup-checkout .woocommerce-error,.wc-block-components-notice-banner.is-error,.wc-block-components-notice-banner[role='alert']");
+for(let i=0;i<notices.length;i++)emitCheckoutError(notices[i]);
+}
+function bindCheckoutErrorTracking(){
+if(!isCheckoutContext())return;
+let timer=0;
+const run=function(root){
+if(timer)clearTimeout(timer);
+timer=setTimeout(function(){timer=0;scanCheckoutErrors(root||d);},80);
+};
+run(d);
+const hosts=[];
+const checkoutForm=d.querySelector("form.checkout");
+const noticesWrap=d.querySelector(".woocommerce-notices-wrapper");
+const noticesGroup=d.querySelector(".woocommerce-NoticeGroup-checkout");
+if(checkoutForm)hosts.push(checkoutForm);
+if(noticesWrap&&hosts.indexOf(noticesWrap)===-1)hosts.push(noticesWrap);
+if(noticesGroup&&hosts.indexOf(noticesGroup)===-1)hosts.push(noticesGroup);
+if(!hosts.length&&d.body)hosts.push(d.body);
+for(let i=0;i<hosts.length;i++){
+const observer=new MutationObserver(function(){run(hosts[i]);});
+observer.observe(hosts[i],{childList:true,subtree:true,attributes:true,attributeFilter:["class","style"]});
+}
+}
 function bindDomTracking(){
 const icon5=d.getElementById("icon5");
 if(icon5)icon5.addEventListener("change",function(){if(this.checked)track("xrd_tab_open",{tab_id:"icon5"});});
@@ -360,6 +416,7 @@ observer.observe(plans,{attributes:true,attributeFilter:["style","class"],childL
 evaluatePrompt();
 }
 patchUnlockOutcome();
+bindCheckoutErrorTracking();
 emitPurchaseSuccess({},false);
 }
 function bindEventBus(){
