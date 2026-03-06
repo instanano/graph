@@ -1738,53 +1738,43 @@ const parts=(url.pathname||"").split("/");
 return cleanToken(parts[2]||"",32);
 }catch(_){return "";}
 }
-const block=d.createElement("section");
+function createEl(tag,className,text){
+const el=d.createElement(tag);
+if(className)el.className=className;
+if(text!=null)el.textContent=text;
+return el;
+}
+const block=createEl("section","in-ads-landing");
 block.id="in-ads-landing";
 block.setAttribute("data-variant",variantId);
-block.style.cssText="max-width:1200px;margin:12px auto 0;padding:0 12px;";
-const card=d.createElement("div");
-card.style.cssText="border:1px solid #d8e5ee;background:linear-gradient(135deg,#f6fbff 0%,#eef6fc 100%);border-radius:12px;padding:16px 18px;color:#102a43;font-family:Arial,Helvetica,sans-serif;box-shadow:0 6px 16px rgba(16,42,67,0.08);";
-const top=d.createElement("div");
-top.style.cssText="display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap;";
-const copy=d.createElement("div");
-copy.style.cssText="min-width:260px;flex:1;";
-const badge=d.createElement("span");
-badge.textContent=cleanText(config.badge||"InstaNano",48);
-badge.style.cssText="display:inline-block;background:#d9eefb;color:#0a4a6c;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;letter-spacing:0.03em;text-transform:uppercase;";
-const title=d.createElement("h2");
-title.textContent=cleanText(config.headline||"Fast XRD workflow",120);
-title.style.cssText="margin:10px 0 6px;font-size:26px;line-height:1.2;color:#0c2d48;";
-const subtitle=d.createElement("p");
-subtitle.textContent=cleanText(config.subheading||"Open XRD Match and continue your analysis.",180);
-subtitle.style.cssText="margin:0;color:#334e68;font-size:15px;line-height:1.45;";
-const list=d.createElement("ul");
-list.style.cssText="display:flex;flex-wrap:wrap;gap:8px 16px;margin:12px 0 0;padding:0;list-style:none;color:#1f3f58;font-size:13px;";
+const card=createEl("div","in-ads-landing__card");
+const top=createEl("div","in-ads-landing__layout");
+const copy=createEl("div","in-ads-landing__copy");
+const badge=createEl("span","in-ads-landing__badge",cleanText(config.badge||"InstaNano",48));
+const title=createEl("h2","in-ads-landing__title",cleanText(config.headline||"Fast XRD workflow",120));
+const subtitle=createEl("p","in-ads-landing__subtitle",cleanText(config.subheading||"Open XRD Match and continue your analysis.",180));
+const list=createEl("ul","in-ads-landing__list");
 const points=Array.isArray(config.trust_points)?config.trust_points.slice(0,4):[];
 for(let i=0;i<points.length;i++){
-const li=d.createElement("li");
-li.textContent="- "+cleanText(points[i],80);
-li.style.cssText="white-space:nowrap;";
+const li=createEl("li","in-ads-landing__list-item","- "+cleanText(points[i],80));
 list.appendChild(li);
 }
 copy.appendChild(badge);
 copy.appendChild(title);
 copy.appendChild(subtitle);
 if(points.length)copy.appendChild(list);
-const cta=d.createElement("button");
+const cta=createEl("button","in-ads-landing__cta",cleanText(config.cta_label||"Start XRD Match",48));
 cta.type="button";
 cta.id="in-landing-cta";
-cta.textContent=cleanText(config.cta_label||"Start XRD Match",48);
-cta.style.cssText="border:0;background:#0f6ea8;color:#fff;font-weight:700;font-size:15px;padding:12px 18px;border-radius:10px;cursor:pointer;white-space:nowrap;";
+copy.appendChild(cta);
 const videoUrl=safeVideoUrl(config.video_url||"");
 if(videoUrl){
-const mediaWrap=d.createElement("div");
-mediaWrap.style.cssText="min-width:240px;max-width:380px;flex:1;";
-const frame=d.createElement("iframe");
+const mediaWrap=createEl("div","in-ads-landing__media");
+const frame=createEl("iframe","in-ads-landing__frame");
 frame.src=videoUrl;
 frame.title=cleanText(config.video_title||config.headline||"Workflow preview",120);
 frame.allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
 frame.allowFullscreen=true;
-frame.style.cssText="width:100%;aspect-ratio:16/9;border-radius:10px;border:1px solid #c5d9e8;display:block;background:#000;";
 mediaWrap.appendChild(frame);
 top.appendChild(mediaWrap);
 let played=false;
@@ -1805,31 +1795,22 @@ try{frame.contentWindow.postMessage('{"event":"command","func":"addEventListener
 }else{
 const mediaUrl=safeMediaUrl(config.media_url||"");
 if(mediaUrl){
-const mediaWrap=d.createElement("div");
-mediaWrap.style.cssText="min-width:120px;";
-const img=d.createElement("img");
+const mediaWrap=createEl("div","in-ads-landing__media in-ads-landing__media--image");
+const img=createEl("img","in-ads-landing__image");
 img.src=mediaUrl;
 img.alt="Workflow preview";
-img.style.cssText="max-width:160px;border-radius:10px;border:1px solid #c5d9e8;display:block;";
 mediaWrap.appendChild(img);
 top.appendChild(mediaWrap);
 }
 }
 top.appendChild(copy);
-top.appendChild(cta);
 card.appendChild(top);
 block.appendChild(card);
-container.parentNode.insertBefore(block,container);
+d.body.appendChild(block);
 cta.addEventListener("click",function(e){
 e.preventDefault();
 emit("landing_cta_click",{variant_id:variantId,cta_id:"in-landing-cta"});
-const tab=d.getElementById("icon5");
-if(tab){
-if(!tab.checked)tab.checked=true;
-tab.dispatchEvent(new Event("change",{bubbles:true}));
-}
-const target=d.querySelector(cleanText(config.cta_target||"#xrd-filter-section",80))||d.getElementById("xrd-filter-section")||d.querySelector(".panel5")||d.getElementById("xrd-search-btn");
-if(target&&typeof target.scrollIntoView==="function")target.scrollIntoView({behavior:"smooth",block:"start"});
+block.classList.add("in-ads-landing--hidden");
 });
 emit("landing_view",{variant_id:variantId});
 }catch(_){}}
