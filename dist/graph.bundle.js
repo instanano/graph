@@ -1191,8 +1191,9 @@ const UTM_KEYS=["utm_source","utm_medium","utm_campaign","utm_term","utm_content
 const CLICK_ID_KEYS=["gclid","wbraid","gbraid","dclid","fbclid","li_fat_id"];
 const INTERNAL_PARAMS=["in_lp","in_flow","in_offer","in_exp","in_ver","landing"];
 const VARIANTS={
-default:{id:"default",experiment:"landing",version:"default",landing:{badge:"Scientific Analysis",headline:"Plot your spectra and unlock faster XRD decisions.",subheading:"Upload, inspect peaks, and move to XRD matching in one focused workflow.",trust_points:["No installation needed","Built for researchers and labs","Works with your existing files"],cta_label:"Open XRD Match",cta_target:"#xrd-filter-section",media_url:""}},
-landing_v1:{id:"landing_v1",experiment:"landing",version:"v1",landing:{badge:"XRD Match Ready",headline:"Turn raw peaks into match-ready XRD insights in minutes.",subheading:"Start in the graph workspace, switch to XRD Match, and run your search flow faster.",trust_points:["Interactive peak selection","Reference-backed matching","Credit plans available instantly"],cta_label:"Start XRD Match",cta_target:"#xrd-filter-section",media_url:""}}
+default:{id:"default",experiment:"landing",version:"default",landing:{badge:"Scientific Analysis",headline:"Plot your spectra and unlock faster XRD decisions.",subheading:"Upload, inspect peaks, and move to XRD matching in one focused workflow.",trust_points:["No installation needed","Built for researchers and labs","Works with your existing files"],cta_label:"Open XRD Match",cta_target:"#xrd-filter-section",media_url:"",video_url:"https://www.youtube.com/watch?v=uKmeZx3cwo8"}},
+landing_v1:{id:"landing_v1",experiment:"landing",version:"v1",landing:{badge:"XRD Match Ready",headline:"Turn raw peaks into match-ready XRD insights in minutes.",subheading:"Start in the graph workspace, switch to XRD Match, and run your search flow faster.",trust_points:["Interactive peak selection","Reference-backed matching","Credit plans available instantly"],cta_label:"Start XRD Match",cta_target:"#xrd-filter-section",media_url:"",video_url:"https://www.youtube.com/watch?v=VkA4wvNuAZA"}},
+landing_v2:{id:"landing_v1",experiment:"landing",version:"v1",landing:{badge:"XRD Match Ready",headline:"Turn raw peaks into match-ready XRD insights in minutes.",subheading:"Start in the graph workspace, switch to XRD Match, and run your search flow faster.",trust_points:["Interactive peak selection","Reference-backed matching","Credit plans available instantly"],cta_label:"Start XRD Match",cta_target:"#xrd-filter-section",media_url:"https://instanano.com/wp-content/uploads/2021/05/xrd-data-match.png",video_url:""}}
 };
 A.constants=A.constants||{};
 A.constants.UTM_KEYS=deepFreeze(UTM_KEYS.slice());
@@ -1231,7 +1232,7 @@ const UTM_KEYS=Array.isArray(C.UTM_KEYS)?C.UTM_KEYS:["utm_source","utm_medium","
 const CLICK_ID_KEYS=Array.isArray(C.CLICK_ID_KEYS)?C.CLICK_ID_KEYS:["gclid","wbraid","gbraid","dclid","fbclid","li_fat_id"];
 const INTERNAL_PARAMS=Array.isArray(C.INTERNAL_PARAMS)?C.INTERNAL_PARAMS:["in_lp","in_flow","in_offer","in_exp","in_ver","landing"];
 const TOUCH_KEYS=UTM_KEYS.concat(CLICK_ID_KEYS,INTERNAL_PARAMS);
-const TRACKED_EVENTS=new Set(["tracking_ready","campaign_visit","landing_view","landing_content_click","landing_cta_click","xrd_tab_open","xrd_peak_add_click","xrd_search_click","xrd_unlock_click","xrd_no_credit_prompt_view","xrd_plan_select","checkout_started","checkout_error","purchase_success"]);
+const TRACKED_EVENTS=new Set(["tracking_ready","campaign_visit","landing_view","landing_video_play","landing_cta_click","xrd_tab_open","xrd_peak_add_click","xrd_search_click","xrd_unlock_click","xrd_no_credit_prompt_view","xrd_plan_select","checkout_started","checkout_error","purchase_success"]);
 const FLOW_EVENTS=new Set(["landing_cta_click","xrd_tab_open","xrd_peak_add_click","xrd_search_click","xrd_unlock_click","xrd_no_credit_prompt_view","xrd_plan_select","checkout_started","checkout_error","purchase_success"]);
 const RESERVED_FIELDS=new Set(["event","event_id","ts","visitor_id","session_id","flow_id","variant_id","page_url","page_path","page_title","referrer"]);
 const VISITOR_KEY="in_ads_visitor_id_v1";
@@ -1709,6 +1710,34 @@ if(!allowedHosts[url.hostname])return "";
 return url.toString();
 }catch(_){return "";}
 }
+function safeVideoUrl(raw){
+const source=cleanText(raw||"",600);
+if(!source)return "";
+try{
+const url=new URL(source,w.location.href);
+if(!/^https?:$/.test(url.protocol))return "";
+const host=(url.hostname||"").replace(/^www\./,"");
+let id="";
+if(host==="youtu.be")id=cleanToken((url.pathname||"").slice(1),32);
+else if(host==="youtube.com"||host==="m.youtube.com"||host==="youtube-nocookie.com"){
+if((url.pathname||"").indexOf("/embed/")===0)id=cleanToken((url.pathname.split("/")[2]||""),32);
+else id=cleanToken(url.searchParams.get("v")||"",32);
+}
+if(!id)return "";
+const embed=new URL("https://www.youtube.com/embed/"+id);
+embed.searchParams.set("enablejsapi","1");
+embed.searchParams.set("playsinline","1");
+embed.searchParams.set("rel","0");
+return embed.toString();
+}catch(_){return "";}
+}
+function videoIdFromUrl(raw){
+try{
+const url=new URL(raw,w.location.href);
+const parts=(url.pathname||"").split("/");
+return cleanToken(parts[2]||"",32);
+}catch(_){return "";}
+}
 const block=d.createElement("section");
 block.id="in-ads-landing";
 block.setAttribute("data-variant",variantId);
@@ -1746,6 +1775,34 @@ cta.type="button";
 cta.id="in-landing-cta";
 cta.textContent=cleanText(config.cta_label||"Start XRD Match",48);
 cta.style.cssText="border:0;background:#0f6ea8;color:#fff;font-weight:700;font-size:15px;padding:12px 18px;border-radius:10px;cursor:pointer;white-space:nowrap;";
+const videoUrl=safeVideoUrl(config.video_url||"");
+if(videoUrl){
+const mediaWrap=d.createElement("div");
+mediaWrap.style.cssText="min-width:240px;max-width:380px;flex:1;";
+const frame=d.createElement("iframe");
+frame.src=videoUrl;
+frame.title=cleanText(config.video_title||config.headline||"Workflow preview",120);
+frame.allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
+frame.allowFullscreen=true;
+frame.style.cssText="width:100%;aspect-ratio:16/9;border-radius:10px;border:1px solid #c5d9e8;display:block;background:#000;";
+mediaWrap.appendChild(frame);
+top.appendChild(mediaWrap);
+let played=false;
+const onMessage=function(evt){
+if(played||evt.source!==frame.contentWindow)return;
+let payload=evt.data;
+if(typeof payload==="string"){try{payload=JSON.parse(payload);}catch(_){return;}}
+if(!payload||payload.event!=="onStateChange"||Number(payload.info)!==1)return;
+played=true;
+w.removeEventListener("message",onMessage);
+emit("landing_video_play",{variant_id:variantId,video_id:videoIdFromUrl(videoUrl)});
+};
+w.addEventListener("message",onMessage);
+frame.addEventListener("load",function(){
+try{frame.contentWindow.postMessage('{"event":"listening","id":"in_landing_video"}',"*");}catch(_){}
+try{frame.contentWindow.postMessage('{"event":"command","func":"addEventListener","args":["onStateChange"],"id":"in_landing_video"}',"*");}catch(_){}
+});
+}else{
 const mediaUrl=safeMediaUrl(config.media_url||"");
 if(mediaUrl){
 const mediaWrap=d.createElement("div");
@@ -1757,16 +1814,12 @@ img.style.cssText="max-width:160px;border-radius:10px;border:1px solid #c5d9e8;d
 mediaWrap.appendChild(img);
 top.appendChild(mediaWrap);
 }
+}
 top.appendChild(copy);
 top.appendChild(cta);
 card.appendChild(top);
 block.appendChild(card);
 container.parentNode.insertBefore(block,container);
-block.addEventListener("click",function(e){
-const hit=e.target&&e.target.closest?e.target.closest("button,a,li,h1,h2,h3,p,span,div"):null;
-if(!hit||!block.contains(hit))return;
-emit("landing_content_click",{variant_id:variantId,element_tag:cleanToken((hit.tagName||"div").toLowerCase(),24),element_id:cleanToken(hit.id||"",80),element_text:cleanText(hit.textContent||"",120)});
-});
 cta.addEventListener("click",function(e){
 e.preventDefault();
 emit("landing_cta_click",{variant_id:variantId,cta_id:"in-landing-cta"});
