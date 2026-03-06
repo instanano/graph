@@ -134,10 +134,14 @@ top.appendChild(copy);
 card.appendChild(top);
 block.appendChild(card);
 d.body.appendChild(block);
+function hideLanding(){block.classList.add("in-ads-landing--hidden");}
+block.addEventListener("click",function(e){
+if(e.target===block)hideLanding();
+});
 cta.addEventListener("click",function(e){
 e.preventDefault();
 emit("landing_cta_click",{variant_id:variantId,cta_id:"in-landing-cta"});
-block.classList.add("in-ads-landing--hidden");
+hideLanding();
 });
 emit("landing_view",{variant_id:variantId});
 }catch(_){}}
